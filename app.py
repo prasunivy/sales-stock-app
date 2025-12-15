@@ -65,12 +65,13 @@ if not st.session_state.logged_in:
             login(username, password)
 
 else:
+else:
     st.success(f"Logged in as {st.session_state.username} ({st.session_state.role})")
 
     if st.button("Logout"):
         logout()
 
-        if st.session_state.role == "admin":
+    if st.session_state.role == "admin":
         st.header("Admin Dashboard")
 
         tab1, tab2, tab3 = st.tabs(["👤 Users", "📦 Products", "🏪 Stockists"])
@@ -161,5 +162,6 @@ else:
                     supabase.table("stockists").delete().eq("id", s["id"]).execute()
                     st.warning("Stockist deleted")
                     st.experimental_rerun()
+
     else:
         st.header("User Dashboard (Coming next)")
