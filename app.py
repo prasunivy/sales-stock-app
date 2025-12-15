@@ -1,47 +1,54 @@
 import streamlit as st
 from supabase import create_client
 
-# ---------------- CONFIG ----------------
+# ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Sales & Stock App", layout="wide")
 
+# ---------------- SUPABASE ----------------
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
-
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ---------------- SESSION ----------------
+# ---------------- SESSION STATE ----------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-    st.session_state.role = None
     st.session_state.username = None
+    st.session_state.role = None
+    st.session_state.login_mode = None
 
-# ---------------- LOGIN FUNCTION ----------------
-def login(username, password):
-    res = supabase.table("users") \
-        .select("*") \
-        .eq("username", username) \
-        .eq("password", password) \
+# ---------------- FUNCTIONS ----------------
+def login_user(username, password):
+    res = (
+        supabase.table("users")
+        .select("*")
+        .eq("username", username)
+        .eq("password", password)
         .execute()
+    )
 
     if res.data:
         user = res.data[0]
         st.session_state.logged_in = True
-        st.session_state.role = user["role"]
         st.session_state.username = user["username"]
+        st.session_state.role = user["role"]
         st.success("Login successful")
+        st.experimental_rerun()
     else:
         st.error("Invalid username or password")
 
-# ---------------- LOGOUT ----------------
+
 def logout():
     st.session_state.logged_in = False
-    st.session_state.role = None
     st.session_state.username = None
+    st.session_state.role = None
+    st.session_state.login_mode = None
     st.experimental_rerun()
+
 
 # ---------------- UI ----------------
 st.title("Sales & Stock Statement App")
 
+# ========== LOGIN SCREEN ==========
 if not st.session_state.logged_in:
     st.subheader("Login")
 
@@ -55,41 +62,50 @@ if not st.session_state.logged_in:
         if st.button("Login as User"):
             st.session_state.login_mode = "user"
 
-    if "login_mode" in st.session_state:
+    if st.session_state.login_mode:
         st.write(f"Logging in as **{st.session_state.login_mode}**")
 
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
 
         if st.button("Login"):
-            login(username, password)
+            login_user(username, password)
 
+# ========== DASHBOARD ==========
 else:
-else:
-    st.success(f"Logged in as {st.session_state.username} ({st.session_state.role})")
+    st.success(
+        f"Logged in as {st.session_state.username} ({st.session_state.role})"
+    )
 
     if st.button("Logout"):
         logout()
 
+    # ---------- ADMIN DASHBOARD ----------
     if st.session_state.role == "admin":
         st.header("Admin Dashboard")
 
-        tab1, tab2, tab3 = st.tabs(["👤 Users", "📦 Products", "🏪 Stockists"])
+        tab1, tab2, tab3 = st.tabs(
+            ["👤 Users", "📦 Products", "🏪 Stockists"]
+        )
 
-        # ---------------- USERS ----------------
+        # ----- USERS -----
         with tab1:
             st.subheader("Add New User")
 
             new_username = st.text_input("Username", key="new_user")
-            new_password = st.text_input("Password", type="password", key="new_pass")
+            new_password = st.text_input(
+                "Password", type="password", key="new_pass"
+            )
 
             if st.button("Add User"):
                 if new_username and new_password:
-                    supabase.table("users").insert({
-                        "username": new_username,
-                        "password": new_password,
-                        "role": "user"
-                    }).execute()
+                    supabase.table("users").insert(
+                        {
+                            "username": new_username,
+                            "password": new_password,
+                            "role": "user",
+                        }
+                    ).execute()
                     st.success("User added")
                     st.experimental_rerun()
                 else:
@@ -104,12 +120,16 @@ else:
                 if u["role"] == "user":
                     col1, col2 = st.columns([3, 1])
                     col1.write(u["username"])
-                    if col2.button("Delete", key=f"del_user_{u['id']}"):
-                        supabase.table("users").delete().eq("id", u["id"]).execute()
+                    if col2.button(
+                        "Delete", key=f"del_user_{u['id']}"
+                    ):
+                        supabase.table("users").delete().eq(
+                            "id", u["id"]
+                        ).execute()
                         st.warning("User deleted")
                         st.experimental_rerun()
 
-        # ---------------- PRODUCTS ----------------
+        # ----- PRODUCTS -----
         with tab2:
             st.subheader("Add Product")
 
@@ -117,26 +137,36 @@ else:
 
             if st.button("Add Product"):
                 if product_name:
-                    supabase.table("products").insert({
-                        "name": product_name
-                    }).execute()
+                    supabase.table("products").insert(
+                        {"name": product_name}
+                    ).execute()
                     st.success("Product added")
                     st.experimental_rerun()
 
             st.divider()
             st.subheader("Product List")
 
-            products = supabase.table("products").select("*").order("name").execute().data
+            products = (
+                supabase.table("products")
+                .select("*")
+                .order("name")
+                .execute()
+                .data
+            )
 
             for p in products:
                 col1, col2 = st.columns([3, 1])
                 col1.write(p["name"])
-                if col2.button("Delete", key=f"del_prod_{p['id']}"):
-                    supabase.table("products").delete().eq("id", p["id"]).execute()
+                if col2.button(
+                    "Delete", key=f"del_prod_{p['id']}"
+                ):
+                    supabase.table("products").delete().eq(
+                        "id", p["id"]
+                    ).execute()
                     st.warning("Product deleted")
                     st.experimental_rerun()
 
-        # ---------------- STOCKISTS ----------------
+        # ----- STOCKISTS -----
         with tab3:
             st.subheader("Add Stockist")
 
@@ -144,24 +174,36 @@ else:
 
             if st.button("Add Stockist"):
                 if stockist_name:
-                    supabase.table("stockists").insert({
-                        "name": stockist_name
-                    }).execute()
+                    supabase.table("stockists").insert(
+                        {"name": stockist_name}
+                    ).execute()
                     st.success("Stockist added")
                     st.experimental_rerun()
 
             st.divider()
             st.subheader("Stockist List")
 
-            stockists = supabase.table("stockists").select("*").order("name").execute().data
+            stockists = (
+                supabase.table("stockists")
+                .select("*")
+                .order("name")
+                .execute()
+                .data
+            )
 
             for s in stockists:
                 col1, col2 = st.columns([3, 1])
                 col1.write(s["name"])
-                if col2.button("Delete", key=f"del_stock_{s['id']}"):
-                    supabase.table("stockists").delete().eq("id", s["id"]).execute()
+                if col2.button(
+                    "Delete", key=f"del_stock_{s['id']}"
+                ):
+                    supabase.table("stockists").delete().eq(
+                        "id", s["id"]
+                    ).execute()
                     st.warning("Stockist deleted")
                     st.experimental_rerun()
 
+    # ---------- USER DASHBOARD ----------
     else:
         st.header("User Dashboard (Coming next)")
+
