@@ -37,11 +37,14 @@ def logout():
     st.session_state.clear()
     st.rerun()
 
-def get_last_month_data(stockist_id, product_id):
+def get_last_month_data(product_id):
+    """
+    Fetch last 2 records of the same product
+    (stockist-level filtering will come later)
+    """
     res = (
         supabase.table("sales_stock_items")
         .select("issue, closing")
-        .eq("stockist_id", stockist_id)
         .eq("product_id", product_id)
         .order("created_at", desc=True)
         .limit(2)
@@ -76,6 +79,7 @@ else:
             ["👤 Users", "📦 Products", "🏪 Stockists", "🔗 Allocate Stockists"]
         )
 
+        # USERS
         with tab1:
             u = st.text_input("Username")
             p = st.text_input("Password", type="password")
@@ -86,6 +90,7 @@ else:
                     ).execute()
                     st.rerun()
 
+        # PRODUCTS
         with tab2:
             prod = st.text_input("Product")
             if st.button("Add Product"):
@@ -93,6 +98,7 @@ else:
                     supabase.table("products").insert({"name": prod.strip()}).execute()
                     st.rerun()
 
+        # STOCKISTS
         with tab3:
             stk = st.text_input("Stockist")
             if st.button("Add Stockist"):
@@ -100,14 +106,18 @@ else:
                     supabase.table("stockists").insert({"name": stk.strip()}).execute()
                     st.rerun()
 
+        # ALLOCATION
         with tab4:
             users = supabase.table("users").select("id,username").eq("role","user").execute().data
             stockists = supabase.table("stockists").select("id,name").execute().data
+
             if users and stockists:
                 u_map = {u["username"]:u["id"] for u in users}
                 s_map = {s["name"]:s["id"] for s in stockists}
+
                 su = st.selectbox("User", list(u_map.keys()))
                 ss = st.multiselect("Stockists", list(s_map.keys()))
+
                 if st.button("Allocate"):
                     for s in ss:
                         supabase.table("user_stockists").insert(
@@ -155,18 +165,16 @@ else:
                     }).execute()
                     st.session_state.statement_id = res.data[0]["id"]
                     st.session_state.product_index = 0
+                    st.success("Statement created successfully ✅")
 
-        # -------- PRODUCT ENTRY --------
+        # -------- PRODUCT ENTRY (RECTIFIED) --------
         if st.session_state.statement_id:
             products = supabase.table("products").select("id,name").order("name").execute().data
             product = products[st.session_state.product_index]
 
             st.subheader(f"Product: {product['name']}")
 
-            last_data = get_last_month_data(
-                s_map[sel_stockist], product["id"]
-            )
-
+            last_data = get_last_month_data(product["id"])
             last_closing = last_data[0]["closing"] if last_data else 0
             last_issues = [d["issue"] for d in last_data]
 
@@ -175,15 +183,16 @@ else:
                 key=f"op_{product['id']}"
             )
             purchase = st.number_input(
-                "Purchase", step=1.0, key=f"pur_{product['id']}"
+                "Purchase", value=0.0, step=1.0,
+                key=f"pur_{product['id']}"
             )
             issue = st.number_input(
-                "Issue", step=1.0, key=f"iss_{product['id']}"
+                "Issue", value=0.0, step=1.0,
+                key=f"iss_{product['id']}"
             )
-            closing = st.number_input(
-                "Closing", value=float(opening + purchase - issue),
-                step=1.0, key=f"cl_{product['id']}"
-            )
+
+            closing = opening + purchase - issue
+            st.write(f"Closing (auto): {closing}")
 
             diff = opening + purchase - issue - closing
             st.info(f"Difference in Closing: {diff}")
