@@ -31,7 +31,7 @@ def login_user(username, password):
         st.session_state.logged_in = True
         st.session_state.username = user["username"]
         st.session_state.role = user["role"]
-        st.experimental_rerun()
+        st.rerun()
     else:
         st.error("Invalid credentials")
 
@@ -40,7 +40,7 @@ def logout():
     st.session_state.username = None
     st.session_state.role = None
     st.session_state.login_mode = None
-    st.experimental_rerun()
+    st.rerun()
 
 # ---------------- UI ----------------
 st.title("Sales & Stock Statement App")
@@ -93,7 +93,7 @@ else:
                         {"username": u, "password": p, "role": "user"}
                     ).execute()
                     st.success("User added")
-                    st.experimental_rerun()
+                    st.rerun()
 
             st.divider()
             users = supabase.table("users").select("*").execute().data
@@ -101,11 +101,11 @@ else:
                 if user["role"] == "user":
                     c1, c2 = st.columns([3, 1])
                     c1.write(user["username"])
-                    if c2.button("Delete", key=user["id"]):
+                    if c2.button("Delete", key=f"user_{user['id']}"):
                         supabase.table("users").delete().eq(
                             "id", user["id"]
                         ).execute()
-                        st.experimental_rerun()
+                        st.rerun()
 
         # ---------- PRODUCTS ----------
         with tab2:
@@ -117,7 +117,7 @@ else:
                     supabase.table("products").insert(
                         {"name": prod}
                     ).execute()
-                    st.experimental_rerun()
+                    st.rerun()
 
             st.divider()
             products = (
@@ -130,11 +130,11 @@ else:
             for p in products:
                 c1, c2 = st.columns([3, 1])
                 c1.write(p["name"])
-                if c2.button("Delete", key=p["id"]):
+                if c2.button("Delete", key=f"prod_{p['id']}"):
                     supabase.table("products").delete().eq(
                         "id", p["id"]
                     ).execute()
-                    st.experimental_rerun()
+                    st.rerun()
 
         # ---------- STOCKISTS ----------
         with tab3:
@@ -146,7 +146,7 @@ else:
                     supabase.table("stockists").insert(
                         {"name": stk}
                     ).execute()
-                    st.experimental_rerun()
+                    st.rerun()
 
             st.divider()
             stockists = (
@@ -159,11 +159,11 @@ else:
             for s in stockists:
                 c1, c2 = st.columns([3, 1])
                 c1.write(s["name"])
-                if c2.button("Delete", key=s["id"]):
+                if c2.button("Delete", key=f"stk_{s['id']}"):
                     supabase.table("stockists").delete().eq(
                         "id", s["id"]
                     ).execute()
-                    st.experimental_rerun()
+                    st.rerun()
 
         # ---------- ALLOCATION ----------
         with tab4:
@@ -186,19 +186,22 @@ else:
             user_map = {u["username"]: u["id"] for u in users}
             stk_map = {s["name"]: s["id"] for s in stockists}
 
-            sel_user = st.selectbox("User", list(user_map.keys()))
-            sel_stk = st.multiselect("Stockists", list(stk_map.keys()))
+            if user_map and stk_map:
+                sel_user = st.selectbox("User", list(user_map.keys()))
+                sel_stk = st.multiselect(
+                    "Stockists", list(stk_map.keys())
+                )
 
-            if st.button("Allocate"):
-                for s in sel_stk:
-                    supabase.table("user_stockists").insert(
-                        {
-                            "user_id": user_map[sel_user],
-                            "stockist_id": stk_map[s],
-                        }
-                    ).execute()
-                st.success("Allocated")
-                st.experimental_rerun()
+                if st.button("Allocate"):
+                    for s in sel_stk:
+                        supabase.table("user_stockists").insert(
+                            {
+                                "user_id": user_map[sel_user],
+                                "stockist_id": stk_map[s],
+                            }
+                        ).execute()
+                    st.success("Allocated")
+                    st.rerun()
 
             st.divider()
             allocs = (
@@ -213,12 +216,12 @@ else:
                 c1.write(
                     f"{a['users']['username']} → {a['stockists']['name']}"
                 )
-                if c2.button("Remove", key=a["id"]):
+                if c2.button("Remove", key=f"alloc_{a['id']}"):
                     supabase.table("user_stockists").delete().eq(
                         "id", a["id"]
                     ).execute()
-                    st.experimental_rerun()
+                    st.rerun()
 
     # ================= USER =================
     else:
-        st.header("User Dashboard (next step)")
+        st.header("User Dashboard (Coming Next)")
