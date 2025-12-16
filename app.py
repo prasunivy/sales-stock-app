@@ -1,263 +1,156 @@
 import streamlit as st
 from supabase import create_client
 
-# ---------------- PAGE CONFIG ----------------
+# ---------------- CONFIG ----------------
 st.set_page_config(page_title="Sales & Stock App", layout="wide")
 
-# ---------------- SUPABASE ----------------
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ---------------- SESSION INIT ----------------
+# ---------------- SESSION ----------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-    st.session_state.username = None
-    st.session_state.role = None
-    st.session_state.login_mode = None
-    st.session_state.create_statement = False
+    st.session_state.user = None
 
 # ---------------- FUNCTIONS ----------------
-def login_user(username, password):
+def login(username, password):
     res = (
         supabase.table("users")
-        .select("id, username, role")
+        .select("*")
         .eq("username", username)
         .eq("password", password)
         .execute()
     )
 
     if res.data:
-        user = res.data[0]
         st.session_state.logged_in = True
-        st.session_state.username = user["username"]
-        st.session_state.role = user["role"]
+        st.session_state.user = res.data[0]
         st.rerun()
     else:
-        st.error("Invalid credentials")
+        st.error("Invalid username or password")
 
 def logout():
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
+    st.session_state.clear()
     st.rerun()
 
 # ---------------- UI ----------------
 st.title("Sales & Stock Statement App")
 
-# ================= LOGIN =================
+# ========== LOGIN ==========
 if not st.session_state.logged_in:
     st.subheader("Login")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Login as Admin"):
-            st.session_state.login_mode = "admin"
-    with col2:
-        if st.button("Login as User"):
-            st.session_state.login_mode = "user"
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
 
-    if st.session_state.login_mode:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        login(username, password)
 
-        if st.button("Login"):
-            login_user(username, password)
-
-# ================= DASHBOARD =================
+# ========== DASHBOARD ==========
 else:
-    st.success(
-        f"Logged in as {st.session_state.username} ({st.session_state.role})"
-    )
+    user = st.session_state.user
+    st.success(f"Logged in as {user['username']} ({user['role']})")
 
     if st.button("Logout"):
         logout()
 
     # ================= ADMIN =================
-    if st.session_state.role == "admin":
+    if user["role"] == "admin":
         st.header("Admin Dashboard")
 
         tab1, tab2, tab3, tab4 = st.tabs(
             ["👤 Users", "📦 Products", "🏪 Stockists", "🔗 Allocate Stockists"]
         )
 
-        # ---------- USERS ----------
+        # USERS
         with tab1:
-            st.subheader("Add User")
-            u = st.text_input("Username")
+            u = st.text_input("New Username")
             p = st.text_input("Password", type="password")
 
             if st.button("Add User"):
-                if u and p:
-                    supabase.table("users").insert(
-                        {"username": u, "password": p, "role": "user"}
-                    ).execute()
-                    st.success("User added")
-                    st.rerun()
+                if not u or not p:
+                    st.error("Username and password required")
+                else:
+                    exists = supabase.table("users").select("id").eq("username", u).execute()
+                    if exists.data:
+                        st.error("Username already exists")
+                    else:
+                        supabase.table("users").insert(
+                            {"username": u, "password": p, "role": "user"}
+                        ).execute()
+                        st.success("User added")
+                        st.rerun()
 
             st.divider()
             users = supabase.table("users").select("*").execute().data
-            for user in users:
-                if user["role"] == "user":
-                    c1, c2 = st.columns([3, 1])
-                    c1.write(user["username"])
-                    if c2.button("Delete", key=f"user_{user['id']}"):
-                        supabase.table("users").delete().eq(
-                            "id", user["id"]
-                        ).execute()
+            for x in users:
+                if x["role"] == "user":
+                    c1, c2 = st.columns([4,1])
+                    c1.write(x["username"])
+                    if c2.button("Delete", key=x["id"]):
+                        supabase.table("users").delete().eq("id", x["id"]).execute()
                         st.rerun()
 
-        # ---------- PRODUCTS ----------
+        # PRODUCTS
         with tab2:
-            st.subheader("Add Product")
             prod = st.text_input("Product name")
-
             if st.button("Add Product"):
                 if prod:
-                    supabase.table("products").insert(
-                        {"name": prod}
-                    ).execute()
+                    supabase.table("products").insert({"name": prod}).execute()
                     st.rerun()
 
             st.divider()
-            products = (
-                supabase.table("products")
-                .select("*")
-                .order("name")
-                .execute()
-                .data
-            )
-            for p in products:
-                c1, c2 = st.columns([3, 1])
+            for p in supabase.table("products").select("*").execute().data:
+                c1, c2 = st.columns([4,1])
                 c1.write(p["name"])
-                if c2.button("Delete", key=f"prod_{p['id']}"):
-                    supabase.table("products").delete().eq(
-                        "id", p["id"]
-                    ).execute()
+                if c2.button("Delete", key=p["id"]):
+                    supabase.table("products").delete().eq("id", p["id"]).execute()
                     st.rerun()
 
-        # ---------- STOCKISTS ----------
+        # STOCKISTS
         with tab3:
-            st.subheader("Add Stockist")
             stk = st.text_input("Stockist name")
-
             if st.button("Add Stockist"):
                 if stk:
-                    supabase.table("stockists").insert(
-                        {"name": stk}
-                    ).execute()
+                    supabase.table("stockists").insert({"name": stk}).execute()
                     st.rerun()
 
             st.divider()
-            stockists = (
-                supabase.table("stockists")
-                .select("*")
-                .order("name")
-                .execute()
-                .data
-            )
-            for s in stockists:
-                c1, c2 = st.columns([3, 1])
+            for s in supabase.table("stockists").select("*").execute().data:
+                c1, c2 = st.columns([4,1])
                 c1.write(s["name"])
-                if c2.button("Delete", key=f"stk_{s['id']}"):
-                    supabase.table("stockists").delete().eq(
-                        "id", s["id"]
-                    ).execute()
+                if c2.button("Delete", key=s["id"]):
+                    supabase.table("stockists").delete().eq("id", s["id"]).execute()
                     st.rerun()
 
-        # ---------- ALLOCATION ----------
+        # ALLOCATION
         with tab4:
-            st.subheader("Allocate Stockists to Users")
-
-            users = (
-                supabase.table("users")
-                .select("id, username")
-                .eq("role", "user")
-                .execute()
-                .data
-            )
-            stockists = (
-                supabase.table("stockists")
-                .select("id, name")
-                .execute()
-                .data
-            )
+            users = supabase.table("users").select("id, username").eq("role","user").execute().data
+            stockists = supabase.table("stockists").select("id, name").execute().data
 
             if users and stockists:
-                user_map = {u["username"]: u["id"] for u in users}
-                stk_map = {s["name"]: s["id"] for s in stockists}
+                u_map = {u["username"]:u["id"] for u in users}
+                s_map = {s["name"]:s["id"] for s in stockists}
 
-                sel_user = st.selectbox("User", list(user_map.keys()))
-                sel_stk = st.multiselect("Stockists", list(stk_map.keys()))
+                sel_user = st.selectbox("User", list(u_map.keys()))
+                sel_stk = st.multiselect("Stockists", list(s_map.keys()))
 
                 if st.button("Allocate"):
                     for s in sel_stk:
                         supabase.table("user_stockists").insert(
-                            {
-                                "user_id": user_map[sel_user],
-                                "stockist_id": stk_map[s],
-                            }
+                            {"user_id": u_map[sel_user], "stockist_id": s_map[s]}
                         ).execute()
                     st.success("Allocated")
                     st.rerun()
 
             st.divider()
-            allocs = supabase.table("user_stockists").select("*").execute().data
-            for a in allocs:
-                user = supabase.table("users").select("username").eq("id", a["user_id"]).execute().data[0]
-                stk = supabase.table("stockists").select("name").eq("id", a["stockist_id"]).execute().data[0]
-                c1, c2 = st.columns([4, 1])
-                c1.write(f"{user['username']} → {stk['name']}")
-                if c2.button("Remove", key=f"alloc_{a['id']}"):
-                    supabase.table("user_stockists").delete().eq(
-                        "id", a["id"]
-                    ).execute()
-                    st.rerun()
+            for a in supabase.table("user_stockists").select("*").execute().data:
+                u = supabase.table("users").select("username").eq("id", a["user_id"]).execute().data[0]
+                s = supabase.table("stockists").select("name").eq("id", a["stockist_id"]).execute().data[0]
+                st.write(f"{u['username']} → {s['name']}")
 
     # ================= USER =================
     else:
         st.header("User Dashboard")
-
-        st.subheader("Monthly Sales & Stock Statement")
-
-        if st.button("➕ Create New Statement"):
-            st.session_state.create_statement = True
-
-        if st.session_state.create_statement:
-            user = (
-                supabase.table("users")
-                .select("id")
-                .eq("username", st.session_state.username)
-                .execute()
-                .data[0]
-            )
-
-            allocs = (
-                supabase.table("user_stockists")
-                .select("stockist_id")
-                .eq("user_id", user["id"])
-                .execute()
-                .data
-            )
-
-            if not allocs:
-                st.warning("No stockists allocated to you.")
-            else:
-                stockist_ids = [a["stockist_id"] for a in allocs]
-                stockists = (
-                    supabase.table("stockists")
-                    .select("name")
-                    .in_("id", stockist_ids)
-                    .execute()
-                    .data
-                )
-
-                stk_names = [s["name"] for s in stockists]
-
-                st.selectbox("Select Stockist", stk_names)
-                st.selectbox("Year", [2024, 2025])
-                st.selectbox("Month", ["Jan", "Feb", "Mar"])
-                st.date_input("From Date")
-                st.date_input("To Date")
-
-                if st.button("Temporary Submit"):
-                    st.success("Temporary data saved (next phase)")
+        st.info("Monthly Sales & Stock Statement will start here (Phase 8)")
