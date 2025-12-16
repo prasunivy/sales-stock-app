@@ -26,7 +26,6 @@ def login(username, password):
         .eq("password", password.strip())
         .execute()
     )
-
     if res.data:
         st.session_state.logged_in = True
         st.session_state.user = res.data[0]
@@ -44,10 +43,8 @@ st.title("Sales & Stock Statement App")
 # ================= LOGIN =================
 if not st.session_state.logged_in:
     st.subheader("Login")
-
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-
     if st.button("Login"):
         login(username, password)
 
@@ -87,7 +84,7 @@ else:
             st.divider()
             for usr in supabase.table("users").select("*").execute().data:
                 if usr["role"] == "user":
-                    c1, c2 = st.columns([4,1])
+                    c1, c2 = st.columns([4, 1])
                     c1.write(usr["username"])
                     if c2.button("Delete", key=usr["id"]):
                         supabase.table("users").delete().eq("id", usr["id"]).execute()
@@ -103,9 +100,8 @@ else:
                     st.rerun()
 
             st.divider()
-            products = supabase.table("products").select("*").order("name").execute().data
-            for p in products:
-                c1, c2 = st.columns([4,1])
+            for p in supabase.table("products").select("*").order("name").execute().data:
+                c1, c2 = st.columns([4, 1])
                 c1.write(p["name"])
                 if c2.button("Delete", key=p["id"]):
                     supabase.table("products").delete().eq("id", p["id"]).execute()
@@ -122,7 +118,7 @@ else:
 
             st.divider()
             for s in supabase.table("stockists").select("*").order("name").execute().data:
-                c1, c2 = st.columns([4,1])
+                c1, c2 = st.columns([4, 1])
                 c1.write(s["name"])
                 if c2.button("Delete", key=s["id"]):
                     supabase.table("stockists").delete().eq("id", s["id"]).execute()
@@ -130,12 +126,12 @@ else:
 
         # ALLOCATION
         with tab4:
-            users = supabase.table("users").select("id, username").eq("role","user").execute().data
+            users = supabase.table("users").select("id, username").eq("role", "user").execute().data
             stockists = supabase.table("stockists").select("id, name").execute().data
 
             if users and stockists:
-                u_map = {u["username"]:u["id"] for u in users}
-                s_map = {s["name"]:s["id"] for s in stockists}
+                u_map = {u["username"]: u["id"] for u in users}
+                s_map = {s["name"]: s["id"] for s in stockists}
 
                 sel_user = st.selectbox("User", list(u_map.keys()))
                 sel_stk = st.multiselect("Stockists", list(s_map.keys()))
@@ -151,6 +147,7 @@ else:
     # ================= USER =================
     else:
         st.header("User Dashboard")
+        st.subheader("Monthly Sales & Stock Statement")
 
         if st.button("➕ Create New Statement"):
             st.session_state.create_statement = True
@@ -164,9 +161,7 @@ else:
                 "user_id", user_id
             ).execute().data
 
-            if not allocs:
-                st.warning("No stockists allocated.")
-            else:
+            if allocs:
                 stockist_ids = [a["stockist_id"] for a in allocs]
                 stockists = supabase.table("stockists").select("id, name").in_(
                     "id", stockist_ids
@@ -195,31 +190,45 @@ else:
                         st.session_state.product_index = 0
                         st.success("Statement created successfully ✅")
 
-        # -------- PRODUCT ENTRY (FIXED) --------
+        # -------- PRODUCT ENTRY --------
         if st.session_state.statement_id:
             products = supabase.table("products").select("id, name").order("name").execute().data
 
-            if not products:
-                st.warning("No products found in database.")
-            else:
+            if products:
                 product = products[st.session_state.product_index]
-
                 st.subheader(f"Product Name: {product['name']}")
 
-                col1, col2 = st.columns(2)
+                opening = st.number_input(
+                    "Opening Stock", min_value=0.0, step=1.0,
+                    key=f"opening_{product['id']}"
+                )
+                purchase = st.number_input(
+                    "Purchase", min_value=0.0, step=1.0,
+                    key=f"purchase_{product['id']}"
+                )
+                issue = st.number_input(
+                    "Issue", min_value=0.0, step=1.0,
+                    key=f"issue_{product['id']}"
+                )
+                closing = st.number_input(
+                    "Closing Stock", min_value=0.0, step=1.0,
+                    key=f"closing_{product['id']}"
+                )
 
-                with col1:
-                    if st.button("⬅ Previous Product"):
-                        if st.session_state.product_index > 0:
-                            st.session_state.product_index -= 1
-                            st.rerun()
+                diff = opening + purchase - issue - closing
+                st.info(f"Difference in Closing Stock: {diff}")
 
-                with col2:
-                    if st.button("Next Product ➡"):
-                        if st.session_state.product_index < len(products) - 1:
-                            st.session_state.product_index += 1
-                            st.rerun()
+                c1, c2 = st.columns(2)
+                if c1.button("⬅ Previous"):
+                    if st.session_state.product_index > 0:
+                        st.session_state.product_index -= 1
+                        st.rerun()
 
-                st.info(
+                if c2.button("Next ➡"):
+                    if st.session_state.product_index < len(products) - 1:
+                        st.session_state.product_index += 1
+                        st.rerun()
+
+                st.caption(
                     f"Product {st.session_state.product_index + 1} of {len(products)}"
                 )
