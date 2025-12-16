@@ -9,7 +9,7 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ---------------- SESSION INIT ----------------
+# ---------------- SESSION ----------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user = None
@@ -73,17 +73,20 @@ else:
             p = st.text_input("Password", type="password")
 
             if st.button("Add User"):
-                if not u or not p:
+                u_clean = u.strip()
+                p_clean = p.strip()
+
+                if not u_clean or not p_clean:
                     st.error("Username and password required")
                 else:
-                    check = supabase.table("users").select("id").eq("username", u.strip()).execute()
+                    check = supabase.table("users").select("id").eq("username", u_clean).execute()
                     if check.data:
                         st.error("Username already exists")
                     else:
                         supabase.table("users").insert(
-                            {"username": u.strip(), "password": p.strip(), "role": "user"}
+                            {"username": u_clean, "password": p_clean, "role": "user"}
                         ).execute()
-                        st.success("User added")
+                        st.success("User added successfully")
                         st.rerun()
 
             st.divider()
@@ -102,7 +105,7 @@ else:
             prod = st.text_input("Product name")
 
             if st.button("Add Product"):
-                if prod:
+                if prod.strip():
                     supabase.table("products").insert({"name": prod.strip()}).execute()
                     st.rerun()
 
@@ -121,7 +124,7 @@ else:
             stk = st.text_input("Stockist name")
 
             if st.button("Add Stockist"):
-                if stk:
+                if stk.strip():
                     supabase.table("stockists").insert({"name": stk.strip()}).execute()
                     st.rerun()
 
@@ -153,7 +156,7 @@ else:
                         supabase.table("user_stockists").insert(
                             {"user_id": user_map[sel_user], "stockist_id": stk_map[s]}
                         ).execute()
-                    st.success("Allocated")
+                    st.success("Stockists allocated")
                     st.rerun()
 
             st.divider()
@@ -172,12 +175,10 @@ else:
             st.session_state.create_statement = True
 
         if st.session_state.create_statement:
-            # get user id
             user_row = supabase.table("users").select("id").eq(
                 "username", user["username"]
             ).execute().data[0]
 
-            # allocated stockists
             allocs = supabase.table("user_stockists").select("stockist_id").eq(
                 "user_id", user_row["id"]
             ).execute().data
@@ -204,8 +205,8 @@ else:
                         "stockist_id": stockist_map[sel_stockist],
                         "year": year,
                         "month": month,
-                        "from_date": from_date,
-                        "to_date": to_date
+                        "from_date": from_date.isoformat(),
+                        "to_date": to_date.isoformat()
                     }).execute()
 
                     if res.data:
