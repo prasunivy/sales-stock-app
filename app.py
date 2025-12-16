@@ -74,18 +74,18 @@ else:
 
             if st.button("Add User"):
                 if u.strip() and p.strip():
-                    check = supabase.table("users").select("id").eq("username", u.strip()).execute()
-                    if check.data:
+                    exists = supabase.table("users").select("id").eq("username", u.strip()).execute()
+                    if exists.data:
                         st.error("Username already exists")
                     else:
                         supabase.table("users").insert(
                             {"username": u.strip(), "password": p.strip(), "role": "user"}
                         ).execute()
+                        st.success("User added")
                         st.rerun()
 
             st.divider()
-            users = supabase.table("users").select("*").execute().data
-            for usr in users:
+            for usr in supabase.table("users").select("*").execute().data:
                 if usr["role"] == "user":
                     c1, c2 = st.columns([4,1])
                     c1.write(usr["username"])
@@ -99,10 +99,12 @@ else:
             if st.button("Add Product"):
                 if prod.strip():
                     supabase.table("products").insert({"name": prod.strip()}).execute()
+                    st.success("Product added")
                     st.rerun()
 
             st.divider()
-            for p in supabase.table("products").select("*").order("name").execute().data:
+            products = supabase.table("products").select("*").order("name").execute().data
+            for p in products:
                 c1, c2 = st.columns([4,1])
                 c1.write(p["name"])
                 if c2.button("Delete", key=p["id"]):
@@ -115,6 +117,7 @@ else:
             if st.button("Add Stockist"):
                 if stk.strip():
                     supabase.table("stockists").insert({"name": stk.strip()}).execute()
+                    st.success("Stockist added")
                     st.rerun()
 
             st.divider()
@@ -142,23 +145,23 @@ else:
                         supabase.table("user_stockists").insert(
                             {"user_id": u_map[sel_user], "stockist_id": s_map[s]}
                         ).execute()
+                    st.success("Allocated")
                     st.rerun()
 
     # ================= USER =================
     else:
         st.header("User Dashboard")
-        st.subheader("Monthly Sales & Stock Statement")
 
         if st.button("➕ Create New Statement"):
             st.session_state.create_statement = True
 
         if st.session_state.create_statement:
-            user_row = supabase.table("users").select("id").eq(
+            user_id = supabase.table("users").select("id").eq(
                 "username", user["username"]
-            ).execute().data[0]
+            ).execute().data[0]["id"]
 
             allocs = supabase.table("user_stockists").select("stockist_id").eq(
-                "user_id", user_row["id"]
+                "user_id", user_id
             ).execute().data
 
             if not allocs:
@@ -179,7 +182,7 @@ else:
 
                 if st.button("Temporary Submit"):
                     res = supabase.table("sales_stock_statements").insert({
-                        "user_id": user_row["id"],
+                        "user_id": user_id,
                         "stockist_id": stockist_map[sel_stockist],
                         "year": year,
                         "month": month,
@@ -192,23 +195,31 @@ else:
                         st.session_state.product_index = 0
                         st.success("Statement created successfully ✅")
 
-        # -------- PRODUCT NAVIGATION --------
+        # -------- PRODUCT ENTRY (FIXED) --------
         if st.session_state.statement_id:
             products = supabase.table("products").select("id, name").order("name").execute().data
 
-            if products:
+            if not products:
+                st.warning("No products found in database.")
+            else:
                 product = products[st.session_state.product_index]
-                st.subheader(f"Product: {product['name']}")
 
-                c1, c2 = st.columns(2)
-                if c1.button("⬅ Previous"):
-                    if st.session_state.product_index > 0:
-                        st.session_state.product_index -= 1
-                        st.rerun()
+                st.subheader(f"Product Name: {product['name']}")
 
-                if c2.button("Next ➡"):
-                    if st.session_state.product_index < len(products) - 1:
-                        st.session_state.product_index += 1
-                        st.rerun()
+                col1, col2 = st.columns(2)
 
-                st.info(f"Product {st.session_state.product_index+1} of {len(products)}")
+                with col1:
+                    if st.button("⬅ Previous Product"):
+                        if st.session_state.product_index > 0:
+                            st.session_state.product_index -= 1
+                            st.rerun()
+
+                with col2:
+                    if st.button("Next Product ➡"):
+                        if st.session_state.product_index < len(products) - 1:
+                            st.session_state.product_index += 1
+                            st.rerun()
+
+                st.info(
+                    f"Product {st.session_state.product_index + 1} of {len(products)}"
+                )
