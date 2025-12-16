@@ -9,18 +9,19 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ---------------- SESSION ----------------
+# ---------------- SESSION INIT ----------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.role = None
     st.session_state.login_mode = None
+    st.session_state.create_statement = False
 
 # ---------------- FUNCTIONS ----------------
 def login_user(username, password):
     res = (
         supabase.table("users")
-        .select("*")
+        .select("id, username, role")
         .eq("username", username)
         .eq("password", password)
         .execute()
@@ -36,16 +37,14 @@ def login_user(username, password):
         st.error("Invalid credentials")
 
 def logout():
-    st.session_state.logged_in = False
-    st.session_state.username = None
-    st.session_state.role = None
-    st.session_state.login_mode = None
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
     st.rerun()
 
 # ---------------- UI ----------------
 st.title("Sales & Stock Statement App")
 
-# ========== LOGIN ==========
+# ================= LOGIN =================
 if not st.session_state.logged_in:
     st.subheader("Login")
 
@@ -64,7 +63,7 @@ if not st.session_state.logged_in:
         if st.button("Login"):
             login_user(username, password)
 
-# ========== DASHBOARD ==========
+# ================= DASHBOARD =================
 else:
     st.success(
         f"Logged in as {st.session_state.username} ({st.session_state.role})"
@@ -84,8 +83,8 @@ else:
         # ---------- USERS ----------
         with tab1:
             st.subheader("Add User")
-            u = st.text_input("Username", key="u")
-            p = st.text_input("Password", type="password", key="p")
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
 
             if st.button("Add User"):
                 if u and p:
@@ -183,14 +182,12 @@ else:
                 .data
             )
 
-            user_map = {u["username"]: u["id"] for u in users}
-            stk_map = {s["name"]: s["id"] for s in stockists}
+            if users and stockists:
+                user_map = {u["username"]: u["id"] for u in users}
+                stk_map = {s["name"]: s["id"] for s in stockists}
 
-            if user_map and stk_map:
                 sel_user = st.selectbox("User", list(user_map.keys()))
-                sel_stk = st.multiselect(
-                    "Stockists", list(stk_map.keys())
-                )
+                sel_stk = st.multiselect("Stockists", list(stk_map.keys()))
 
                 if st.button("Allocate"):
                     for s in sel_stk:
@@ -204,18 +201,12 @@ else:
                     st.rerun()
 
             st.divider()
-            allocs = (
-                supabase.table("user_stockists")
-                .select("id, users(username), stockists(name)")
-                .execute()
-                .data
-            )
-
+            allocs = supabase.table("user_stockists").select("*").execute().data
             for a in allocs:
+                user = supabase.table("users").select("username").eq("id", a["user_id"]).execute().data[0]
+                stk = supabase.table("stockists").select("name").eq("id", a["stockist_id"]).execute().data[0]
                 c1, c2 = st.columns([4, 1])
-                c1.write(
-                    f"{a['users']['username']} → {a['stockists']['name']}"
-                )
+                c1.write(f"{user['username']} → {stk['name']}")
                 if c2.button("Remove", key=f"alloc_{a['id']}"):
                     supabase.table("user_stockists").delete().eq(
                         "id", a["id"]
@@ -224,4 +215,49 @@ else:
 
     # ================= USER =================
     else:
-        st.header("User Dashboard (Coming Next)")
+        st.header("User Dashboard")
+
+        st.subheader("Monthly Sales & Stock Statement")
+
+        if st.button("➕ Create New Statement"):
+            st.session_state.create_statement = True
+
+        if st.session_state.create_statement:
+            user = (
+                supabase.table("users")
+                .select("id")
+                .eq("username", st.session_state.username)
+                .execute()
+                .data[0]
+            )
+
+            allocs = (
+                supabase.table("user_stockists")
+                .select("stockist_id")
+                .eq("user_id", user["id"])
+                .execute()
+                .data
+            )
+
+            if not allocs:
+                st.warning("No stockists allocated to you.")
+            else:
+                stockist_ids = [a["stockist_id"] for a in allocs]
+                stockists = (
+                    supabase.table("stockists")
+                    .select("name")
+                    .in_("id", stockist_ids)
+                    .execute()
+                    .data
+                )
+
+                stk_names = [s["name"] for s in stockists]
+
+                st.selectbox("Select Stockist", stk_names)
+                st.selectbox("Year", [2024, 2025])
+                st.selectbox("Month", ["Jan", "Feb", "Mar"])
+                st.date_input("From Date")
+                st.date_input("To Date")
+
+                if st.button("Temporary Submit"):
+                    st.success("Temporary data saved (next phase)")
