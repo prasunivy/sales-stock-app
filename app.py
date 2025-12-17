@@ -25,8 +25,7 @@ defaults = {
     "preview": False,
     "edit_product_id": None,
     "selected_stockist_id": None,
-    "selected_year": None,
-    "selected_month": None,
+    "current_statement_from_date": None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -48,37 +47,30 @@ def logout():
     st.session_state.clear()
     st.rerun()
 
-def get_previous_month(year, month):
-    idx = MONTHS.index(month)
-    if idx == 0:
-        return year - 1, MONTHS[-1]
-    return year, MONTHS[idx - 1]
+def get_last_statement(stockist_id, current_from_date):
+    """
+    Get the immediately previous statement for this stockist
+    based on from_date (robust, month-independent)
+    """
+    res = supabase.table("sales_stock_statements") \
+        .select("id") \
+        .eq("stockist_id", stockist_id) \
+        .lt("from_date", current_from_date) \
+        .order("from_date", desc=True) \
+        .limit(1).execute()
+    return res.data[0]["id"] if res.data else None
 
 def last_month_data(product_id):
-    if not all([
+    """
+    Fetch last month's product data based on previous statement
+    """
+    stmt_id = get_last_statement(
         st.session_state.selected_stockist_id,
-        st.session_state.selected_year,
-        st.session_state.selected_month
-    ]):
-        return {"closing": 0, "diff_closing": 0, "issue": 0}
-
-    prev_year, prev_month = get_previous_month(
-        st.session_state.selected_year,
-        st.session_state.selected_month
+        st.session_state.current_statement_from_date
     )
 
-    stmt = supabase.table("sales_stock_statements") \
-        .select("id") \
-        .eq("stockist_id", st.session_state.selected_stockist_id) \
-        .eq("year", prev_year) \
-        .eq("month", prev_month) \
-        .order("created_at", desc=True) \
-        .limit(1).execute()
-
-    if not stmt.data:
+    if not stmt_id:
         return {"closing": 0, "diff_closing": 0, "issue": 0}
-
-    stmt_id = stmt.data[0]["id"]
 
     item = supabase.table("sales_stock_items") \
         .select("closing,diff_closing,issue") \
@@ -107,78 +99,10 @@ else:
     if st.button("Logout"):
         logout()
 
-    # ================= ADMIN =================
-    if user["role"] == "admin":
-        st.header("Admin Dashboard")
-
-        tab1, tab2, tab3, tab4 = st.tabs(
-            ["👤 Users", "📦 Products", "🏪 Stockists", "🔗 Allocation"]
-        )
-
-        with tab1:
-            u = st.text_input("New Username")
-            p = st.text_input("Password", type="password")
-            if st.button("Add User"):
-                supabase.table("users").insert(
-                    {"username": u, "password": p, "role": "user"}
-                ).execute()
-                st.rerun()
-
-            for usr in supabase.table("users").select("*").execute().data:
-                c1, c2 = st.columns([4, 1])
-                c1.write(f"{usr['username']} ({usr['role']})")
-                if usr["role"] == "user" and c2.button("Delete", key=f"u{usr['id']}"):
-                    supabase.table("users").delete().eq("id", usr["id"]).execute()
-                    st.rerun()
-
-        with tab2:
-            prod = st.text_input("Product")
-            if st.button("Add Product"):
-                supabase.table("products").insert({"name": prod}).execute()
-                st.rerun()
-
-            for p in supabase.table("products").select("*").order("name").execute().data:
-                c1, c2 = st.columns([4, 1])
-                c1.write(p["name"])
-                if c2.button("Delete", key=f"p{p['id']}"):
-                    supabase.table("products").delete().eq("id", p["id"]).execute()
-                    st.rerun()
-
-        with tab3:
-            stk = st.text_input("Stockist")
-            if st.button("Add Stockist"):
-                supabase.table("stockists").insert({"name": stk}).execute()
-                st.rerun()
-
-            for s in supabase.table("stockists").select("*").order("name").execute().data:
-                c1, c2 = st.columns([4, 1])
-                c1.write(s["name"])
-                if c2.button("Delete", key=f"s{s['id']}"):
-                    supabase.table("stockists").delete().eq("id", s["id"]).execute()
-                    st.rerun()
-
-        with tab4:
-            users = supabase.table("users").select("id,username").eq("role","user").execute().data
-            stockists = supabase.table("stockists").select("id,name").execute().data
-
-            u_map = {u["username"]:u["id"] for u in users}
-            s_map = {s["name"]:s["id"] for s in stockists}
-
-            su = st.selectbox("User", list(u_map.keys()))
-            ss = st.multiselect("Stockists", list(s_map.keys()))
-
-            if st.button("Allocate"):
-                for s in ss:
-                    supabase.table("user_stockists").insert(
-                        {"user_id":u_map[su],"stockist_id":s_map[s]}
-                    ).execute()
-                st.rerun()
-
     # ================= USER =================
-    else:
+    if user["role"] == "user":
         st.header("User Dashboard")
 
-        # ALWAYS SHOW THIS BUTTON
         if st.button("➕ Create New Statement"):
             st.session_state.create_statement = True
 
@@ -191,31 +115,30 @@ else:
                 .eq("user_id", uid).execute().data
 
             if not allocs:
-                st.warning("No stockist allocated to you.")
+                st.warning("No stockist allocated.")
             else:
                 stk_ids = [a["stockist_id"] for a in allocs]
                 stockists = supabase.table("stockists") \
                     .select("id,name").in_("id", stk_ids).execute().data
-                s_map = {s["name"]:s["id"] for s in stockists}
+                s_map = {s["name"]: s["id"] for s in stockists}
 
                 sel_stockist = st.selectbox("Stockist", list(s_map.keys()))
-                year = st.selectbox("Year", [2023,2024,2025])
+                year = st.selectbox("Year", [2023, 2024, 2025])
                 month = st.selectbox("Month", MONTHS)
                 fd = st.date_input("From Date", date.today())
                 td = st.date_input("To Date", date.today())
 
                 if st.button("Temporary Submit"):
                     st.session_state.selected_stockist_id = s_map[sel_stockist]
-                    st.session_state.selected_year = year
-                    st.session_state.selected_month = month
+                    st.session_state.current_statement_from_date = fd.isoformat()
 
                     res = supabase.table("sales_stock_statements").insert({
-                        "user_id":uid,
-                        "stockist_id":s_map[sel_stockist],
-                        "year":year,
-                        "month":month,
-                        "from_date":fd.isoformat(),
-                        "to_date":td.isoformat()
+                        "user_id": uid,
+                        "stockist_id": s_map[sel_stockist],
+                        "year": year,
+                        "month": month,
+                        "from_date": fd.isoformat(),
+                        "to_date": td.isoformat()
                     }).execute()
 
                     st.session_state.statement_id = res.data[0]["id"]
@@ -254,6 +177,6 @@ else:
             if c1.button("⬅ Previous") and st.session_state.product_index > 0:
                 st.session_state.product_index -= 1
                 st.rerun()
-            if c2.button("Next ➡") and st.session_state.product_index < len(products)-1:
+            if c2.button("Next ➡") and st.session_state.product_index < len(products) - 1:
                 st.session_state.product_index += 1
                 st.rerun()
