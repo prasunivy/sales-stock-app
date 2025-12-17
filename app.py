@@ -41,13 +41,18 @@ def logout():
     st.session_state.clear()
     st.rerun()
 
-def last_month_issue(product_id):
+def get_last_month_data(product_id):
     res = supabase.table("sales_stock_items") \
-        .select("issue") \
+        .select("opening, closing, diff_closing, issue") \
         .eq("product_id", product_id) \
         .order("created_at", desc=True) \
         .limit(1).execute()
-    return res.data[0]["issue"] if res.data else 0
+    return res.data[0] if res.data else {
+        "opening": 0,
+        "closing": 0,
+        "diff_closing": 0,
+        "issue": 0
+    }
 
 # ---------------- UI ----------------
 st.title("Sales & Stock Statement App")
@@ -86,6 +91,7 @@ else:
                 stockist_ids = [a["stockist_id"] for a in allocs]
                 stockists = supabase.table("stockists").select("id,name") \
                     .in_("id", stockist_ids).execute().data
+
                 s_map = {s["name"]: s["id"] for s in stockists}
 
                 sel_stockist = st.selectbox("Stockist", list(s_map.keys()))
@@ -122,22 +128,54 @@ else:
                 st.session_state.edit_product_id = None
 
             product = products[st.session_state.product_index]
+
+            last = get_last_month_data(product["id"])
+
             st.subheader(f"Product: {product['name']}")
 
-            prev_issue = last_month_issue(product["id"])
+            # -------- LAST MONTH INFO --------
+            st.markdown(
+                f"""
+                **Last Month Closing:** {last['closing']}  
+                **Last Month Difference:** {last['diff_closing']}
+                """
+            )
 
-            opening = st.number_input("Opening", value=0.0, key=f"op_{product['id']}")
-            purchase = st.number_input("Purchase", value=0.0, key=f"pur_{product['id']}")
-            issue = st.number_input("Issue", value=0.0, key=f"iss_{product['id']}")
-            closing = st.number_input("Closing (Physical)", value=opening, key=f"cl_{product['id']}")
+            opening = st.number_input(
+                "Opening (Editable)",
+                value=float(last["closing"]),
+                step=1.0,
+                key=f"op_{product['id']}"
+            )
+            purchase = st.number_input(
+                "Purchase",
+                value=0.0,
+                step=1.0,
+                key=f"pur_{product['id']}"
+            )
+            issue = st.number_input(
+                "Issue",
+                value=0.0,
+                step=1.0,
+                key=f"iss_{product['id']}"
+            )
+            closing = st.number_input(
+                "Closing (Physical)",
+                value=float(opening),
+                step=1.0,
+                key=f"cl_{product['id']}"
+            )
 
+            # -------- CORRECT DIFFERENCE --------
             expected = opening + purchase - issue
             diff = expected - closing
 
             if diff != 0:
                 st.warning(f"Difference in Closing: {diff}")
+            else:
+                st.success("Closing stock matched")
 
-            # Save temp
+            # SAVE TEMP DATA
             st.session_state.product_data[product["id"]] = {
                 "name": product["name"],
                 "opening": opening,
@@ -145,7 +183,7 @@ else:
                 "issue": issue,
                 "closing": closing,
                 "diff": diff,
-                "prev_issue": prev_issue,
+                "prev_issue": last["issue"]
             }
 
             c1, c2, c3 = st.columns(3)
@@ -160,56 +198,3 @@ else:
             if c3.button("Preview"):
                 st.session_state.preview = True
                 st.rerun()
-
-        # -------- PREVIEW + RULES --------
-        if st.session_state.preview:
-            st.header("Preview Statement")
-
-            table = []
-            for pid, d in st.session_state.product_data.items():
-                order_qty = max((d["issue"] * 1.5) - d["closing"], 0)
-
-                remarks = []
-                if d["issue"] == 0 and d["closing"] > 0:
-                    remarks.append("No issue but stock exists")
-                if d["closing"] >= 2 * d["issue"] and d["issue"] > 0:
-                    remarks.append("Closing stock high")
-                if d["issue"] < d["prev_issue"]:
-                    remarks.append("Going Down")
-                if d["issue"] > d["prev_issue"]:
-                    remarks.append("Going Up")
-
-                table.append({
-                    "Product": d["name"],
-                    "Opening": d["opening"],
-                    "Purchase": d["purchase"],
-                    "Issue": d["issue"],
-                    "Closing": d["closing"],
-                    "Difference": d["diff"],
-                    "Order Qty": round(order_qty, 2),
-                    "Remarks": ", ".join(remarks),
-                })
-
-            st.table(table)
-
-            st.subheader("Edit Products")
-            for pid, d in st.session_state.product_data.items():
-                if st.button(f"Edit {d['name']}"):
-                    st.session_state.edit_product_id = pid
-                    st.session_state.preview = False
-                    st.rerun()
-
-            if st.button("Final Submit"):
-                for pid, d in st.session_state.product_data.items():
-                    supabase.table("sales_stock_items").insert({
-                        "statement_id": st.session_state.statement_id,
-                        "product_id": pid,
-                        "opening": d["opening"],
-                        "purchase": d["purchase"],
-                        "issue": d["issue"],
-                        "closing": d["closing"],
-                        "diff_closing": d["diff"],
-                    }).execute()
-
-                st.success("✅ Thank you! Statement submitted.")
-                st.session_state.clear()
