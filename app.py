@@ -23,7 +23,10 @@ defaults = {
     "product_index": 0,
     "product_data": {},
     "preview": False,
-    "edit_product_id": None
+    "edit_product_id": None,
+    "selected_stockist_id": None,
+    "selected_year": None,
+    "selected_month": None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -44,13 +47,41 @@ def logout():
     st.session_state.clear()
     st.rerun()
 
+def get_previous_month(year, month):
+    idx = MONTHS.index(month)
+    if idx == 0:
+        return year - 1, MONTHS[-1]
+    return year, MONTHS[idx - 1]
+
 def last_month_data(product_id):
-    res = supabase.table("sales_stock_items") \
-        .select("closing, diff_closing, issue") \
-        .eq("product_id", product_id) \
+    """
+    Stockist + Month aware last month fetch
+    """
+    prev_year, prev_month = get_previous_month(
+        st.session_state.selected_year,
+        st.session_state.selected_month
+    )
+
+    stmt = supabase.table("sales_stock_statements") \
+        .select("id") \
+        .eq("stockist_id", st.session_state.selected_stockist_id) \
+        .eq("year", prev_year) \
+        .eq("month", prev_month) \
         .order("created_at", desc=True) \
         .limit(1).execute()
-    return res.data[0] if res.data else {"closing":0,"diff_closing":0,"issue":0}
+
+    if not stmt.data:
+        return {"closing": 0, "diff_closing": 0, "issue": 0}
+
+    stmt_id = stmt.data[0]["id"]
+
+    item = supabase.table("sales_stock_items") \
+        .select("closing,diff_closing,issue") \
+        .eq("statement_id", stmt_id) \
+        .eq("product_id", product_id) \
+        .execute()
+
+    return item.data[0] if item.data else {"closing": 0, "diff_closing": 0, "issue": 0}
 
 # ================= UI =================
 st.title("Sales & Stock Statement App")
@@ -79,6 +110,7 @@ else:
             ["👤 Users","📦 Products","🏪 Stockists","🔗 Allocation"]
         )
 
+        # USERS
         with t1:
             u = st.text_input("Username")
             p = st.text_input("Password", type="password")
@@ -87,182 +119,64 @@ else:
                     {"username":u,"password":p,"role":"user"}
                 ).execute()
                 st.rerun()
-            st.divider()
-            for r in supabase.table("users").select("*").execute().data:
-                st.write(r["username"], r["role"])
 
+            for usr in supabase.table("users").select("*").execute().data:
+                c1,c2 = st.columns([4,1])
+                c1.write(f"{usr['username']} ({usr['role']})")
+                if usr["role"]=="user" and c2.button("Delete", key=f"du{usr['id']}"):
+                    supabase.table("users").delete().eq("id", usr["id"]).execute()
+                    st.rerun()
+
+        # PRODUCTS
         with t2:
             prod = st.text_input("Product")
             if st.button("Add Product"):
                 supabase.table("products").insert({"name":prod}).execute()
                 st.rerun()
-            for p in supabase.table("products").select("*").order("name").execute().data:
-                st.write(p["name"])
 
+            for p in supabase.table("products").select("*").order("name").execute().data:
+                c1,c2 = st.columns([4,1])
+                c1.write(p["name"])
+                if c2.button("Delete", key=f"dp{p['id']}"):
+                    supabase.table("products").delete().eq("id", p["id"]).execute()
+                    st.rerun()
+
+        # STOCKISTS
         with t3:
             stk = st.text_input("Stockist")
             if st.button("Add Stockist"):
                 supabase.table("stockists").insert({"name":stk}).execute()
                 st.rerun()
-            for s in supabase.table("stockists").select("*").order("name").execute().data:
-                st.write(s["name"])
 
+            for s in supabase.table("stockists").select("*").order("name").execute().data:
+                c1,c2 = st.columns([4,1])
+                c1.write(s["name"])
+                if c2.button("Delete", key=f"ds{s['id']}"):
+                    supabase.table("stockists").delete().eq("id", s["id"]).execute()
+                    st.rerun()
+
+        # ALLOCATION
         with t4:
             users = supabase.table("users").select("id,username").eq("role","user").execute().data
             stockists = supabase.table("stockists").select("id,name").execute().data
-            if users and stockists:
-                u_map = {u["username"]:u["id"] for u in users}
-                s_map = {s["name"]:s["id"] for s in stockists}
-                su = st.selectbox("User", list(u_map.keys()))
-                ss = st.multiselect("Stockists", list(s_map.keys()))
-                if st.button("Allocate"):
-                    for s in ss:
-                        supabase.table("user_stockists").insert(
-                            {"user_id":u_map[su],"stockist_id":s_map[s]}
-                        ).execute()
+
+            u_map = {u["username"]:u["id"] for u in users}
+            s_map = {s["name"]:s["id"] for s in stockists}
+
+            sel_user = st.selectbox("User", list(u_map.keys()))
+            sel_stk = st.multiselect("Stockists", list(s_map.keys()))
+
+            if st.button("Allocate"):
+                for s in sel_stk:
+                    supabase.table("user_stockists").insert(
+                        {"user_id":u_map[sel_user],"stockist_id":s_map[s]}
+                    ).execute()
+                st.rerun()
+
+            st.divider()
+            for a in supabase.table("user_stockists").select("id,user_id,stockist_id").execute().data:
+                c1,c2 = st.columns([4,1])
+                c1.write(f"User ID {a['user_id']} → Stockist ID {a['stockist_id']}")
+                if c2.button("Delete", key=f"da{a['id']}"):
+                    supabase.table("user_stockists").delete().eq("id", a["id"]).execute()
                     st.rerun()
-
-    # ================= USER =================
-    else:
-        st.header("User Dashboard")
-
-        if st.button("➕ Create New Statement"):
-            st.session_state.create_statement = True
-
-        if st.session_state.create_statement:
-            uid = supabase.table("users").select("id") \
-                .eq("username", user["username"]).execute().data[0]["id"]
-
-            allocs = supabase.table("user_stockists").select("stockist_id") \
-                .eq("user_id", uid).execute().data
-
-            if allocs:
-                stk_ids = [a["stockist_id"] for a in allocs]
-                stockists = supabase.table("stockists") \
-                    .select("id,name").in_("id", stk_ids).execute().data
-                s_map = {s["name"]:s["id"] for s in stockists}
-
-                sel_stockist = st.selectbox("Stockist", list(s_map.keys()))
-                year = st.selectbox("Year",[2023,2024,2025])
-                month = st.selectbox("Month", MONTHS)
-                fd = st.date_input("From Date", date.today())
-                td = st.date_input("To Date", date.today())
-
-                if st.button("Temporary Submit"):
-                    res = supabase.table("sales_stock_statements").insert({
-                        "user_id":uid,
-                        "stockist_id":s_map[sel_stockist],
-                        "year":year,
-                        "month":month,
-                        "from_date":fd.isoformat(),
-                        "to_date":td.isoformat()
-                    }).execute()
-                    st.session_state.statement_id = res.data[0]["id"]
-                    st.session_state.product_index = 0
-                    st.session_state.product_data = {}
-                    st.success("Statement created")
-
-        # -------- PRODUCT ENTRY --------
-        if st.session_state.statement_id and not st.session_state.preview:
-            products = supabase.table("products").select("id,name") \
-                .order("name").execute().data
-
-            if st.session_state.edit_product_id:
-                for i,p in enumerate(products):
-                    if p["id"] == st.session_state.edit_product_id:
-                        st.session_state.product_index = i
-                st.session_state.edit_product_id = None
-
-            p = products[st.session_state.product_index]
-            last = last_month_data(p["id"])
-
-            st.subheader(f"Product: {p['name']}")
-            st.markdown(
-                f"**Last Month Closing:** {last['closing']}  \n"
-                f"**Last Month Difference:** {last['diff_closing']}"
-            )
-
-            opening = st.number_input("Opening", value=float(last["closing"]), key=f"op_{p['id']}")
-            purchase = st.number_input("Purchase", value=0.0, key=f"pur_{p['id']}")
-            issue = st.number_input("Issue", value=0.0, key=f"iss_{p['id']}")
-            closing = st.number_input("Closing (Physical)", value=float(opening), key=f"cl_{p['id']}")
-
-            expected = opening + purchase - issue
-            diff = expected - closing
-
-            if diff != 0:
-                st.warning(f"Difference in Closing: {diff}")
-            else:
-                st.success("Closing matched")
-
-            st.session_state.product_data[p["id"]] = {
-                "name":p["name"],
-                "opening":opening,
-                "purchase":purchase,
-                "issue":issue,
-                "closing":closing,
-                "diff":diff,
-                "prev_issue":last["issue"]
-            }
-
-            c1,c2,c3 = st.columns(3)
-            if c1.button("⬅ Previous") and st.session_state.product_index>0:
-                st.session_state.product_index -= 1
-                st.rerun()
-            if c2.button("Next ➡") and st.session_state.product_index<len(products)-1:
-                st.session_state.product_index += 1
-                st.rerun()
-            if c3.button("Preview"):
-                st.session_state.preview = True
-                st.rerun()
-
-        # -------- PREVIEW --------
-        if st.session_state.preview:
-            st.header("Preview Statement")
-            rows = []
-
-            for pid,d in st.session_state.product_data.items():
-                order_qty = max(d["issue"]*1.5 - d["closing"], 0)
-                remarks=[]
-                if d["issue"]==0 and d["closing"]>0:
-                    remarks.append("No issue but stock exists")
-                if d["closing"]>=2*d["issue"] and d["issue"]>0:
-                    remarks.append("Closing stock high")
-                if d["issue"]<d["prev_issue"]:
-                    remarks.append("Going Down")
-                if d["issue"]>d["prev_issue"]:
-                    remarks.append("Going Up")
-
-                rows.append({
-                    "Product":d["name"],
-                    "Opening":d["opening"],
-                    "Purchase":d["purchase"],
-                    "Issue":d["issue"],
-                    "Closing":d["closing"],
-                    "Difference":d["diff"],
-                    "Order Qty":round(order_qty,2),
-                    "Remarks":", ".join(remarks)
-                })
-
-            st.table(rows)
-
-            st.subheader("Edit Products")
-            for pid,d in st.session_state.product_data.items():
-                if st.button(f"Edit {d['name']}"):
-                    st.session_state.edit_product_id = pid
-                    st.session_state.preview = False
-                    st.rerun()
-
-            if st.button("Final Submit"):
-                for pid,d in st.session_state.product_data.items():
-                    supabase.table("sales_stock_items").insert({
-                        "statement_id":st.session_state.statement_id,
-                        "product_id":pid,
-                        "opening":d["opening"],
-                        "purchase":d["purchase"],
-                        "issue":d["issue"],
-                        "closing":d["closing"],
-                        "diff_closing":d["diff"]
-                    }).execute()
-                st.success("✅ Thank you! Statement submitted.")
-                st.session_state.clear()
