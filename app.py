@@ -25,7 +25,7 @@ for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ---------------- FUNCTIONS ----------------
+# ---------------- HELPERS ----------------
 def login(username, password):
     res = supabase.table("users").select("*") \
         .eq("username", username.strip()) \
@@ -43,16 +43,16 @@ def logout():
 
 def get_last_month_data(product_id):
     res = supabase.table("sales_stock_items") \
-        .select("opening, closing, diff_closing, issue") \
+        .select("closing, diff_closing, issue") \
         .eq("product_id", product_id) \
         .order("created_at", desc=True) \
         .limit(1).execute()
-    return res.data[0] if res.data else {
-        "opening": 0,
-        "closing": 0,
-        "diff_closing": 0,
-        "issue": 0
-    }
+    return res.data[0] if res.data else {"closing": 0, "diff_closing": 0, "issue": 0}
+
+MONTHS = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December"
+]
 
 # ---------------- UI ----------------
 st.title("Sales & Stock Statement App")
@@ -68,18 +68,85 @@ if not st.session_state.logged_in:
 # ================= DASHBOARD =================
 else:
     user = st.session_state.user
-    st.success(f"Logged in as {user['username']}")
+    st.success(f"Logged in as {user['username']} ({user['role']})")
 
     if st.button("Logout"):
         logout()
 
+    # ================= ADMIN =================
+    if user["role"] == "admin":
+        st.header("Admin Dashboard")
+
+        tab1, tab2, tab3, tab4 = st.tabs(
+            ["👤 Users", "📦 Products", "🏪 Stockists", "🔗 Allocation"]
+        )
+
+        # USERS
+        with tab1:
+            u = st.text_input("New Username")
+            p = st.text_input("Password", type="password")
+            if st.button("Add User"):
+                supabase.table("users").insert(
+                    {"username": u.strip(), "password": p.strip(), "role": "user"}
+                ).execute()
+                st.success("User added")
+                st.rerun()
+
+            st.divider()
+            for usr in supabase.table("users").select("*").execute().data:
+                st.write(usr["username"], usr["role"])
+
+        # PRODUCTS
+        with tab2:
+            prod = st.text_input("Product Name")
+            if st.button("Add Product"):
+                supabase.table("products").insert({"name": prod.strip()}).execute()
+                st.success("Product added")
+                st.rerun()
+
+            st.divider()
+            for p in supabase.table("products").select("*").order("name").execute().data:
+                st.write(p["name"])
+
+        # STOCKISTS
+        with tab3:
+            stk = st.text_input("Stockist Name")
+            if st.button("Add Stockist"):
+                supabase.table("stockists").insert({"name": stk.strip()}).execute()
+                st.success("Stockist added")
+                st.rerun()
+
+            st.divider()
+            for s in supabase.table("stockists").select("*").order("name").execute().data:
+                st.write(s["name"])
+
+        # ALLOCATION
+        with tab4:
+            users = supabase.table("users").select("id,username").eq("role","user").execute().data
+            stockists = supabase.table("stockists").select("id,name").execute().data
+
+            if users and stockists:
+                u_map = {u["username"]:u["id"] for u in users}
+                s_map = {s["name"]:s["id"] for s in stockists}
+
+                sel_user = st.selectbox("User", list(u_map.keys()))
+                sel_stk = st.multiselect("Stockists", list(s_map.keys()))
+
+                if st.button("Allocate"):
+                    for s in sel_stk:
+                        supabase.table("user_stockists").insert(
+                            {"user_id": u_map[sel_user], "stockist_id": s_map[s]}
+                        ).execute()
+                    st.success("Allocated")
+                    st.rerun()
+
     # ================= USER =================
-    if user["role"] == "user":
+    else:
+        st.header("User Dashboard")
 
         if st.button("➕ Create New Statement"):
             st.session_state.create_statement = True
 
-        # -------- CREATE STATEMENT --------
         if st.session_state.create_statement:
             user_id = supabase.table("users").select("id") \
                 .eq("username", user["username"]).execute().data[0]["id"]
@@ -91,12 +158,11 @@ else:
                 stockist_ids = [a["stockist_id"] for a in allocs]
                 stockists = supabase.table("stockists").select("id,name") \
                     .in_("id", stockist_ids).execute().data
-
                 s_map = {s["name"]: s["id"] for s in stockists}
 
                 sel_stockist = st.selectbox("Stockist", list(s_map.keys()))
-                year = st.selectbox("Year", [2024, 2025])
-                month = st.selectbox("Month", ["Jan", "Feb", "Mar"])
+                year = st.selectbox("Year", [2023, 2024, 2025])
+                month = st.selectbox("Month", MONTHS)
                 fd = st.date_input("From Date", date.today())
                 td = st.date_input("To Date", date.today())
 
@@ -114,87 +180,3 @@ else:
                     st.session_state.product_index = 0
                     st.session_state.product_data = {}
                     st.success("Statement created")
-
-        # -------- PRODUCT ENTRY --------
-        if st.session_state.statement_id and not st.session_state.preview:
-            products = supabase.table("products").select("id,name") \
-                .order("name").execute().data
-
-            # Jump from preview edit
-            if st.session_state.edit_product_id:
-                for i, p in enumerate(products):
-                    if p["id"] == st.session_state.edit_product_id:
-                        st.session_state.product_index = i
-                st.session_state.edit_product_id = None
-
-            product = products[st.session_state.product_index]
-
-            last = get_last_month_data(product["id"])
-
-            st.subheader(f"Product: {product['name']}")
-
-            # -------- LAST MONTH INFO --------
-            st.markdown(
-                f"""
-                **Last Month Closing:** {last['closing']}  
-                **Last Month Difference:** {last['diff_closing']}
-                """
-            )
-
-            opening = st.number_input(
-                "Opening (Editable)",
-                value=float(last["closing"]),
-                step=1.0,
-                key=f"op_{product['id']}"
-            )
-            purchase = st.number_input(
-                "Purchase",
-                value=0.0,
-                step=1.0,
-                key=f"pur_{product['id']}"
-            )
-            issue = st.number_input(
-                "Issue",
-                value=0.0,
-                step=1.0,
-                key=f"iss_{product['id']}"
-            )
-            closing = st.number_input(
-                "Closing (Physical)",
-                value=float(opening),
-                step=1.0,
-                key=f"cl_{product['id']}"
-            )
-
-            # -------- CORRECT DIFFERENCE --------
-            expected = opening + purchase - issue
-            diff = expected - closing
-
-            if diff != 0:
-                st.warning(f"Difference in Closing: {diff}")
-            else:
-                st.success("Closing stock matched")
-
-            # SAVE TEMP DATA
-            st.session_state.product_data[product["id"]] = {
-                "name": product["name"],
-                "opening": opening,
-                "purchase": purchase,
-                "issue": issue,
-                "closing": closing,
-                "diff": diff,
-                "prev_issue": last["issue"]
-            }
-
-            c1, c2, c3 = st.columns(3)
-            if c1.button("⬅ Previous") and st.session_state.product_index > 0:
-                st.session_state.product_index -= 1
-                st.rerun()
-
-            if c2.button("Next ➡") and st.session_state.product_index < len(products) - 1:
-                st.session_state.product_index += 1
-                st.rerun()
-
-            if c3.button("Preview"):
-                st.session_state.preview = True
-                st.rerun()
