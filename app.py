@@ -73,17 +73,16 @@ def last_month_data(product_id):
 
     return item.data[0] if item.data else {"closing": 0, "diff_closing": 0, "issue": 0}
 
-def build_report(stockist_name, month, year, items):
-    lines = []
-    lines.append(f"📦 Stock Statement")
-    lines.append(f"Stockist: {stockist_name}")
-    lines.append(f"Month: {month} {year}")
-    lines.append("-" * 30)
-
+def build_report(stockist, month, year, items):
+    lines = [
+        f"📦 Stock Statement",
+        f"Stockist: {stockist}",
+        f"Month: {month} {year}",
+        "-"*30
+    ]
     for d in items:
         order_qty = max(d["issue"] * 1.5 - d["closing"], 0)
         remarks = []
-
         if d["issue"] == 0 and d["closing"] > 0:
             remarks.append("No issue but stock exists")
         if d["closing"] >= 2 * d["issue"] and d["issue"] > 0:
@@ -95,12 +94,11 @@ def build_report(stockist_name, month, year, items):
 
         lines.append(
             f"{d['name']} | O:{d['opening']} P:{d['purchase']} "
-            f"I:{d['issue']} C:{d['closing']} "
-            f"D:{d['diff']} | Order:{round(order_qty,1)}"
+            f"I:{d['issue']} C:{d['closing']} D:{d['diff']} "
+            f"| Order:{round(order_qty,1)}"
         )
         if remarks:
-            lines.append("  • " + ", ".join(remarks))
-
+            lines.append(" • " + ", ".join(remarks))
     return "\n".join(lines)
 
 # ================= UI =================
@@ -137,16 +135,14 @@ else:
             allocs = supabase.table("user_stockists").select("stockist_id") \
                 .eq("user_id", uid).execute().data
 
-            if not allocs:
-                st.warning("No stockist allocated.")
-            else:
+            if allocs:
                 stk_ids = [a["stockist_id"] for a in allocs]
                 stockists = supabase.table("stockists") \
                     .select("id,name").in_("id", stk_ids).execute().data
                 s_map = {s["name"]: s["id"] for s in stockists}
 
                 sel_stockist = st.selectbox("Stockist", list(s_map.keys()))
-                year = st.selectbox("Year", [2023,2024,2025])
+                year = st.selectbox("Year", [2023, 2024, 2025])
                 month = st.selectbox("Month", MONTHS)
                 fd = st.date_input("From Date", date.today())
                 td = st.date_input("To Date", date.today())
@@ -159,12 +155,12 @@ else:
                     st.session_state.sel_year = year
 
                     res = supabase.table("sales_stock_statements").insert({
-                        "user_id":uid,
-                        "stockist_id":s_map[sel_stockist],
-                        "year":year,
-                        "month":month,
-                        "from_date":fd.isoformat(),
-                        "to_date":td.isoformat()
+                        "user_id": uid,
+                        "stockist_id": s_map[sel_stockist],
+                        "year": year,
+                        "month": month,
+                        "from_date": fd.isoformat(),
+                        "to_date": td.isoformat()
                     }).execute()
 
                     st.session_state.statement_id = res.data[0]["id"]
@@ -179,6 +175,8 @@ else:
 
             p = products[st.session_state.product_index]
             last = last_month_data(p["id"])
+
+            st.subheader(f"Product: {p['name']}")
 
             opening = st.number_input("Opening", value=float(last["closing"]), key=f"op_{p['id']}")
             purchase = st.number_input("Purchase", value=0.0, key=f"pur_{p['id']}")
@@ -198,14 +196,20 @@ else:
                 "prev_issue": last["issue"]
             }
 
-            if st.button("Preview"):
+            c1, c2, c3 = st.columns(3)
+            if c1.button("⬅ Previous") and st.session_state.product_index > 0:
+                st.session_state.product_index -= 1
+                st.rerun()
+            if c2.button("Next ➡") and st.session_state.product_index < len(products)-1:
+                st.session_state.product_index += 1
+                st.rerun()
+            if c3.button("Preview"):
                 st.session_state.preview = True
                 st.rerun()
 
-        # -------- PREVIEW + FINAL SUBMIT --------
+        # -------- PREVIEW --------
         if st.session_state.preview:
-            st.header("Preview & Submit")
-
+            st.header("Preview")
             rows = []
             for d in st.session_state.product_data.values():
                 rows.append({
@@ -230,24 +234,22 @@ else:
                         "diff_closing": d["diff"]
                     }).execute()
 
-                report = build_report(
+                st.session_state.final_report = build_report(
                     st.session_state.stockist_name,
                     st.session_state.sel_month,
                     st.session_state.sel_year,
                     list(st.session_state.product_data.values())
                 )
-
-                st.session_state.final_report = report
                 st.success("Statement submitted successfully")
+                st.session_state.preview = False
 
         # -------- WHATSAPP --------
         if st.session_state.final_report:
             st.header("Send via WhatsApp")
-
             st.text_area("Report", st.session_state.final_report, height=300)
-
             phone = st.text_input("WhatsApp Number (with country code)", "91")
             encoded = urllib.parse.quote(st.session_state.final_report)
-            wa_link = f"https://wa.me/{phone}?text={encoded}"
-
-            st.markdown(f"[📲 Send on WhatsApp]({wa_link})", unsafe_allow_html=True)
+            st.markdown(
+                f"[📲 Send on WhatsApp](https://wa.me/{phone}?text={encoded})",
+                unsafe_allow_html=True
+            )
