@@ -1,6 +1,7 @@
 import streamlit as st
 from supabase import create_client
 from datetime import date
+import urllib.parse
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Sales & Stock App", layout="wide")
@@ -23,9 +24,9 @@ defaults = {
     "product_index": 0,
     "product_data": {},
     "preview": False,
-    "edit_product_id": None,
     "selected_stockist_id": None,
     "current_statement_from_date": None,
+    "final_report": "",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -72,6 +73,36 @@ def last_month_data(product_id):
 
     return item.data[0] if item.data else {"closing": 0, "diff_closing": 0, "issue": 0}
 
+def build_report(stockist_name, month, year, items):
+    lines = []
+    lines.append(f"📦 Stock Statement")
+    lines.append(f"Stockist: {stockist_name}")
+    lines.append(f"Month: {month} {year}")
+    lines.append("-" * 30)
+
+    for d in items:
+        order_qty = max(d["issue"] * 1.5 - d["closing"], 0)
+        remarks = []
+
+        if d["issue"] == 0 and d["closing"] > 0:
+            remarks.append("No issue but stock exists")
+        if d["closing"] >= 2 * d["issue"] and d["issue"] > 0:
+            remarks.append("Closing stock high")
+        if d["issue"] < d["prev_issue"]:
+            remarks.append("Going Down")
+        if d["issue"] > d["prev_issue"]:
+            remarks.append("Going Up")
+
+        lines.append(
+            f"{d['name']} | O:{d['opening']} P:{d['purchase']} "
+            f"I:{d['issue']} C:{d['closing']} "
+            f"D:{d['diff']} | Order:{round(order_qty,1)}"
+        )
+        if remarks:
+            lines.append("  • " + ", ".join(remarks))
+
+    return "\n".join(lines)
+
 # ================= UI =================
 st.title("Sales & Stock Statement App")
 
@@ -91,75 +122,8 @@ else:
     if st.button("Logout"):
         logout()
 
-    # ================= ADMIN =================
-    if user["role"] == "admin":
-        st.header("Admin Dashboard")
-
-        t1, t2, t3, t4 = st.tabs(
-            ["👤 Users", "📦 Products", "🏪 Stockists", "🔗 Allocation"]
-        )
-
-        with t1:
-            u = st.text_input("New Username")
-            p = st.text_input("Password", type="password")
-            if st.button("Add User"):
-                supabase.table("users").insert(
-                    {"username": u, "password": p, "role": "user"}
-                ).execute()
-                st.rerun()
-
-            for usr in supabase.table("users").select("*").execute().data:
-                c1, c2 = st.columns([4, 1])
-                c1.write(f"{usr['username']} ({usr['role']})")
-                if usr["role"] == "user" and c2.button("Delete", key=f"u{usr['id']}"):
-                    supabase.table("users").delete().eq("id", usr["id"]).execute()
-                    st.rerun()
-
-        with t2:
-            prod = st.text_input("Product")
-            if st.button("Add Product"):
-                supabase.table("products").insert({"name": prod}).execute()
-                st.rerun()
-
-            for p in supabase.table("products").select("*").order("name").execute().data:
-                c1, c2 = st.columns([4, 1])
-                c1.write(p["name"])
-                if c2.button("Delete", key=f"p{p['id']}"):
-                    supabase.table("products").delete().eq("id", p["id"]).execute()
-                    st.rerun()
-
-        with t3:
-            stk = st.text_input("Stockist")
-            if st.button("Add Stockist"):
-                supabase.table("stockists").insert({"name": stk}).execute()
-                st.rerun()
-
-            for s in supabase.table("stockists").select("*").order("name").execute().data:
-                c1, c2 = st.columns([4, 1])
-                c1.write(s["name"])
-                if c2.button("Delete", key=f"s{s['id']}"):
-                    supabase.table("stockists").delete().eq("id", s["id"]).execute()
-                    st.rerun()
-
-        with t4:
-            users = supabase.table("users").select("id,username").eq("role","user").execute().data
-            stockists = supabase.table("stockists").select("id,name").execute().data
-
-            u_map = {u["username"]:u["id"] for u in users}
-            s_map = {s["name"]:s["id"] for s in stockists}
-
-            su = st.selectbox("User", list(u_map.keys()))
-            ss = st.multiselect("Stockists", list(s_map.keys()))
-
-            if st.button("Allocate"):
-                for s in ss:
-                    supabase.table("user_stockists").insert(
-                        {"user_id":u_map[su],"stockist_id":s_map[s]}
-                    ).execute()
-                st.rerun()
-
     # ================= USER =================
-    else:
+    if user["role"] == "user":
         st.header("User Dashboard")
 
         if st.button("➕ Create New Statement"):
@@ -190,6 +154,9 @@ else:
                 if st.button("Temporary Submit"):
                     st.session_state.selected_stockist_id = s_map[sel_stockist]
                     st.session_state.current_statement_from_date = fd.isoformat()
+                    st.session_state.stockist_name = sel_stockist
+                    st.session_state.sel_month = month
+                    st.session_state.sel_year = year
 
                     res = supabase.table("sales_stock_statements").insert({
                         "user_id":uid,
@@ -213,24 +180,13 @@ else:
             p = products[st.session_state.product_index]
             last = last_month_data(p["id"])
 
-            st.subheader(f"Product: {p['name']}")
-            st.markdown(
-                f"**Last Month Closing:** {last['closing']}  \n"
-                f"**Last Month Difference:** {last['diff_closing']}"
-            )
-
             opening = st.number_input("Opening", value=float(last["closing"]), key=f"op_{p['id']}")
             purchase = st.number_input("Purchase", value=0.0, key=f"pur_{p['id']}")
             issue = st.number_input("Issue", value=0.0, key=f"iss_{p['id']}")
-            closing = st.number_input("Closing (Physical)", value=float(opening), key=f"cl_{p['id']}")
+            closing = st.number_input("Closing", value=float(opening), key=f"cl_{p['id']}")
 
             expected = opening + purchase - issue
             diff = expected - closing
-
-            if diff != 0:
-                st.warning(f"Difference in Closing: {diff}")
-            else:
-                st.success("Closing matched")
 
             st.session_state.product_data[p["id"]] = {
                 "name": p["name"],
@@ -238,26 +194,20 @@ else:
                 "purchase": purchase,
                 "issue": issue,
                 "closing": closing,
-                "diff": diff
+                "diff": diff,
+                "prev_issue": last["issue"]
             }
 
-            c1, c2, c3 = st.columns(3)
-            if c1.button("⬅ Previous") and st.session_state.product_index > 0:
-                st.session_state.product_index -= 1
-                st.rerun()
-            if c2.button("Next ➡") and st.session_state.product_index < len(products)-1:
-                st.session_state.product_index += 1
-                st.rerun()
-            if c3.button("Preview"):
+            if st.button("Preview"):
                 st.session_state.preview = True
                 st.rerun()
 
-        # -------- PREVIEW --------
+        # -------- PREVIEW + FINAL SUBMIT --------
         if st.session_state.preview:
-            st.header("Preview Statement")
-            rows = []
+            st.header("Preview & Submit")
 
-            for pid, d in st.session_state.product_data.items():
+            rows = []
+            for d in st.session_state.product_data.values():
                 rows.append({
                     "Product": d["name"],
                     "Opening": d["opening"],
@@ -266,7 +216,6 @@ else:
                     "Closing": d["closing"],
                     "Difference": d["diff"]
                 })
-
             st.table(rows)
 
             if st.button("Final Submit"):
@@ -281,5 +230,24 @@ else:
                         "diff_closing": d["diff"]
                     }).execute()
 
-                st.success("✅ Thank you! Statement submitted successfully.")
-                st.session_state.clear()
+                report = build_report(
+                    st.session_state.stockist_name,
+                    st.session_state.sel_month,
+                    st.session_state.sel_year,
+                    list(st.session_state.product_data.values())
+                )
+
+                st.session_state.final_report = report
+                st.success("Statement submitted successfully")
+
+        # -------- WHATSAPP --------
+        if st.session_state.final_report:
+            st.header("Send via WhatsApp")
+
+            st.text_area("Report", st.session_state.final_report, height=300)
+
+            phone = st.text_input("WhatsApp Number (with country code)", "91")
+            encoded = urllib.parse.quote(st.session_state.final_report)
+            wa_link = f"https://wa.me/{phone}?text={encoded}"
+
+            st.markdown(f"[📲 Send on WhatsApp]({wa_link})", unsafe_allow_html=True)
