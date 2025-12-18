@@ -3,6 +3,9 @@ from supabase import create_client
 from datetime import date
 import urllib.parse
 import pandas as pd
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Sales & Stock App", layout="wide")
@@ -112,6 +115,23 @@ def build_report(stockist, month, year, items):
     return "\n".join(lines)
 
 
+# PDF Generator
+def generate_pdf(text):
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    y = height - 40
+    for line in text.split("\n"):
+        c.drawString(40, y, line)
+        y -= 15
+        if y <= 40:
+            c.showPage()
+            y = height - 40
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+
 # ================= UI =================
 st.title("Sales & Stock Statement App")
 
@@ -137,173 +157,151 @@ else:
     # ================= ADMIN DASHBOARD =================
     if user["role"] == "admin":
         st.header("Admin Dashboard")
+        st.subheader("⬇ Export Data")
 
-        st.subheader("⬇ Download CSV Data")
-
-        # -------- SUMMARY CSV ----------
+        # SUMMARY CSV
         if st.button("Download Statements Summary CSV"):
             data = supabase.table("sales_stock_statements").select("*").execute().data
-
-            summary = []
-            for row in data:
-                uid = row.get("user_id")
-                sid = row.get("stockist_id")
-
-                ures = supabase.table("users").select("username").eq("id", uid).execute()
-                sres = supabase.table("stockists").select("name").eq("id", sid).execute()
-
+            summary=[]
+            for r in data:
+                u = supabase.table("users").select("username").eq("id", r["user_id"]).execute()
+                s = supabase.table("stockists").select("name").eq("id", r["stockist_id"]).execute()
                 summary.append({
-                    "statement_id": row.get("id"),
-                    "username": ures.data[0]["username"] if ures.data else "Unknown",
-                    "stockist": sres.data[0]["name"] if sres.data else "Unknown",
-                    "from_date": row.get("from_date", ""),
-                    "to_date": row.get("to_date", ""),
-                    "month": row.get("month", ""),
-                    "year": row.get("year", "")
+                    "statement_id": r.get("id"),
+                    "username": u.data[0]["username"] if u.data else "Unknown",
+                    "stockist": s.data[0]["name"] if s.data else "Unknown",
+                    "from_date": r.get("from_date",""),
+                    "to_date": r.get("to_date",""),
+                    "month": r.get("month",""),
+                    "year": r.get("year","")
                 })
-
             df = pd.DataFrame(summary)
-            st.download_button(
-                "Download Summary CSV",
-                df.to_csv(index=False),
-                "statements_summary.csv",
-                "text/csv"
-            )
+            st.download_button("Download Summary CSV", df.to_csv(index=False), "summary.csv")
 
-        # -------- ITEM DETAILS CSV ----------
+        # Detailed CSV
         if st.button("Download Item Details CSV"):
             items = supabase.table("sales_stock_items").select("*").execute().data
-
-            detailed = []
+            detailed=[]
             for it in items:
-                stmt = supabase.table("sales_stock_statements") \
-                    .select("*").eq("id", it["statement_id"]).execute()
-                stmt_rec = stmt.data[0] if stmt.data else {}
-
-                uid = stmt_rec.get("user_id")
-                sid = stmt_rec.get("stockist_id")
-
-                ures = supabase.table("users").select("username").eq("id", uid).execute()
-                sres = supabase.table("stockists").select("name").eq("id", sid).execute()
-
-                pname = supabase.table("products") \
-                    .select("name").eq("id", it["product_id"]).execute()
-                product_name = pname.data[0]["name"] if pname.data else "Unknown"
-
+                stmt = supabase.table("sales_stock_statements").select("*").eq("id", it["statement_id"]).execute()
+                rec = stmt.data[0] if stmt.data else {}
+                u = supabase.table("users").select("username").eq("id", rec.get("user_id")).execute()
+                s = supabase.table("stockists").select("name").eq("id", rec.get("stockist_id")).execute()
+                p = supabase.table("products").select("name").eq("id", it["product_id"]).execute()
                 detailed.append({
                     "statement_id": it.get("statement_id"),
-                    "username": ures.data[0]["username"] if ures.data else "Unknown",
-                    "stockist": sres.data[0]["name"] if sres.data else "Unknown",
-                    "from_date": stmt_rec.get("from_date", ""),
-                    "to_date": stmt_rec.get("to_date", ""),
-                    "month": stmt_rec.get("month", ""),
-                    "year": stmt_rec.get("year", ""),
-                    "product": product_name,
+                    "username": u.data[0]["username"] if u.data else "Unknown",
+                    "stockist": s.data[0]["name"] if s.data else "Unknown",
+                    "from_date": rec.get("from_date",""),
+                    "to_date": rec.get("to_date",""),
+                    "month": rec.get("month",""),
+                    "year": rec.get("year",""),
+                    "product": p.data[0]["name"] if p.data else "Unknown",
                     "opening": it.get("opening"),
                     "purchase": it.get("purchase"),
                     "issue": it.get("issue"),
                     "closing": it.get("closing"),
-                    "difference": it.get("diff_closing")
+                    "difference": it.get("diff_closing"),
                 })
-
             df = pd.DataFrame(detailed)
-            st.download_button(
-                "Download Detailed CSV",
-                df.to_csv(index=False),
-                "items_detailed.csv",
-                "text/csv"
-            )
+            st.download_button("Download Detailed CSV", df.to_csv(index=False), "items.csv")
 
-        st.info("CSV export ready.")
+        # Admin PDF
+        st.subheader("📄 Export Statements as PDF")
+        data = supabase.table("sales_stock_statements").select("*").execute().data
+        for r in data:
+            sname = supabase.table("stockists").select("name").eq("id", r["stockist_id"]).execute().data
+            stock = sname[0]["name"] if sname else "Unknown"
+            label = f"{r['month']} {r['year']} | {stock}"
+            if st.button(f"PDF: {label}", key=f"adm_pdf{r['id']}"):
+                items = supabase.table("sales_stock_items").select("*").eq("statement_id", r["id"]).execute().data
+                full=[]
+                for it in items:
+                    pname = supabase.table("products").select("name").eq("id",it["product_id"]).execute().data
+                    full.append({
+                        "name": pname[0]["name"] if pname else "Unknown",
+                        "opening": it["opening"],
+                        "purchase": it["purchase"],
+                        "issue": it["issue"],
+                        "closing": it["closing"],
+                        "diff": it["diff_closing"],
+                        "prev_issue": 0
+                    })
+                rep = build_report(stock, r["month"], r["year"], full)
+                pdf = generate_pdf(rep)
+                st.download_button("Download PDF", pdf, f"{stock}_{r['month']}_{r['year']}.pdf")
 
 
     # ================= USER DASHBOARD =================
     else:
         st.header("User Dashboard")
 
-        # ===== Recent submissions =====
+        # Recent Submissions
         st.subheader("🕘 Recent Submissions")
-        uid = user["id"]
+        uid=user["id"]
+        rec = supabase.table("sales_stock_statements").select("*").eq("user_id",uid).order("from_date",desc=True).execute().data
 
-        rec = supabase.table("sales_stock_statements") \
-            .select("*") \
-            .eq("user_id", uid) \
-            .order("from_date", desc=True).execute().data
+        for r in rec:
+            s = supabase.table("stockists").select("name").eq("id", r["stockist_id"]).execute().data
+            stock_name = s[0]["name"] if s else "Unknown"
+            label = f"{r['month']} {r['year']} | {stock_name}"
 
-        if rec:
-            for r in rec:
-                sres = supabase.table("stockists").select("name").eq("id", r["stockist_id"]).execute()
-                stock_name = sres.data[0]["name"] if sres.data else "Unknown"
+            if st.button(f"View: {label}", key=f"view{r['id']}"):
+                items = supabase.table("sales_stock_items").select("*").eq("statement_id", r["id"]).execute().data
+                full=[]
+                for it in items:
+                    pname=supabase.table("products").select("name").eq("id",it["product_id"]).execute().data
+                    full.append({
+                        "name": pname[0]["name"] if pname else "Unknown",
+                        "opening": it["opening"],
+                        "purchase": it["purchase"],
+                        "issue": it["issue"],
+                        "closing": it["closing"],
+                        "diff": it["diff_closing"],
+                        "prev_issue": 0
+                    })
 
-                label = f"{r['month']} {r['year']} | {stock_name}"
-
-                if st.button(f"View Report: {label}", key=f"rec{r['id']}"):
-                    items = supabase.table("sales_stock_items") \
-                        .select("*") \
-                        .eq("statement_id", r["id"]).execute().data
-
-                    full = []
-                    for it in items:
-                        pname = supabase.table("products") \
-                            .select("name").eq("id", it["product_id"]).execute()
-                        product_name = pname.data[0]["name"] if pname.data else "Unknown"
-
-                        full.append({
-                            "name": product_name,
-                            "opening": int(it["opening"]),
-                            "purchase": int(it["purchase"]),
-                            "issue": int(it["issue"]),
-                            "closing": int(it["closing"]),
-                            "diff": int(it["diff_closing"]),
-                            "prev_issue": 0
-                        })
-
-                    rep = build_report(stock_name, r["month"], r["year"], full)
-
-                    st.session_state.recent_view_report = rep
-                    st.session_state.recent_view_title = label
-                    st.rerun()
+                rep = build_report(stock_name, r["month"], r["year"], full)
+                st.session_state.recent_view_report = rep
+                st.session_state.recent_view_title = label
+                st.rerun()
 
         if st.session_state.recent_view_report:
             st.subheader(f"Report — {st.session_state.recent_view_title}")
             st.text_area("Report", st.session_state.recent_view_report, height=300)
 
-            phone = st.text_input("WhatsApp Number", "91")
+            # PDF export for historical
+            pdf = generate_pdf(st.session_state.recent_view_report)
+            st.download_button("📄 Download PDF", pdf, "report.pdf")
+
+            phone = st.text_input("WhatsApp Number","91")
             encoded = urllib.parse.quote(st.session_state.recent_view_report)
-            st.markdown(
-                f"[📲 Send WhatsApp](https://wa.me/{phone}?text={encoded})",
-                unsafe_allow_html=True
-            )
+            st.markdown(f"[📲 WhatsApp](https://wa.me/{phone}?text={encoded})", unsafe_allow_html=True)
 
         st.divider()
 
-        # ===== Create new statement =====
+        # Create new
         if st.button("➕ Create New Statement"):
-            st.session_state.create_statement = True
-            st.session_state.statement_id = None
-            st.session_state.preview = False
-            st.session_state.final_report = ""
-            st.session_state.recent_view_report = ""
+            st.session_state.create_statement=True
+            st.session_state.statement_id=None
+            st.session_state.preview=False
+            st.session_state.final_report=""
+            st.session_state.recent_view_report=""
             st.rerun()
 
-        # ===== Statement header =====
+        # Header
         if st.session_state.create_statement and not st.session_state.statement_id:
-            uid = user["id"]
-
-            allocs = supabase.table("user_stockists").select("stockist_id") \
-                .eq("user_id", uid).execute().data
-
-            if allocs:
-                stk_ids = [a["stockist_id"] for a in allocs]
-                stockists = supabase.table("stockists") \
-                    .select("id,name").in_("id", stk_ids).execute().data
-                s_map = {s["name"]: s["id"] for s in stockists}
-
+            uid=user["id"]
+            alloc = supabase.table("user_stockists").select("stockist_id").eq("user_id",uid).execute().data
+            if alloc:
+                stk_ids = [a["stockist_id"] for a in alloc]
+                stockists = supabase.table("stockists").select("id,name").in_("id",stk_ids).execute().data
+                s_map={s["name"]:s["id"] for s in stockists}
                 sel_stockist = st.selectbox("Stockist", list(s_map.keys()))
-                year = st.selectbox("Year", [2023,2024,2025])
-                month = st.selectbox("Month", MONTHS)
-                fd = st.date_input("From Date", date.today())
-                td = st.date_input("To Date", date.today())
+                year = st.selectbox("Year",[2023,2024,2025])
+                month = st.selectbox("Month",MONTHS)
+                fd=st.date_input("From",date.today())
+                td=st.date_input("To",date.today())
 
                 if st.button("Temporary Submit"):
                     st.session_state.selected_stockist_id = s_map[sel_stockist]
@@ -321,17 +319,15 @@ else:
                         "to_date":td.isoformat()
                     }).execute()
 
-                    st.session_state.statement_id = res.data[0]["id"]
-                    st.session_state.product_index = 0
-                    st.session_state.product_data = {}
-                    st.success("Statement created")
+                    st.session_state.statement_id=res.data[0]["id"]
+                    st.session_state.product_index=0
+                    st.session_state.product_data={}
+                    st.success("Statement created!")
 
-        # ===== Product entry =====
+        # Product Entry
         if st.session_state.statement_id and not st.session_state.preview and not st.session_state.final_report:
-            products = supabase.table("products").select("id,name") \
-                .order("name").execute().data
-
-            p = products[st.session_state.product_index]
+            prods = supabase.table("products").select("id,name").order("name").execute().data
+            p = prods[st.session_state.product_index]
             last = last_month_data(p["id"])
 
             st.subheader(f"Product: {p['name']}")
@@ -354,18 +350,18 @@ else:
                 "prev_issue": int(last["issue"])
             }
 
-            c1, c2, c3 = st.columns(3)
-            if c1.button("⬅ Previous") and st.session_state.product_index > 0:
-                st.session_state.product_index -= 1
+            c1,c2,c3=st.columns(3)
+            if c1.button("⬅ Previous") and st.session_state.product_index>0:
+                st.session_state.product_index -=1
                 st.rerun()
-            if c2.button("Next ➡") and st.session_state.product_index < len(products)-1:
-                st.session_state.product_index += 1
+            if c2.button("Next ➡") and st.session_state.product_index < len(prods)-1:
+                st.session_state.product_index +=1
                 st.rerun()
             if c3.button("Preview"):
-                st.session_state.preview = True
+                st.session_state.preview=True
                 st.rerun()
 
-        # ===== Preview =====
+        # Preview
         if st.session_state.preview and not st.session_state.final_report:
             st.header("Preview")
             rows=[]
@@ -381,7 +377,7 @@ else:
             st.table(rows)
 
             if st.button("Final Submit"):
-                for pid, d in st.session_state.product_data.items():
+                for pid,d in st.session_state.product_data.items():
                     supabase.table("sales_stock_items").insert({
                         "statement_id": st.session_state.statement_id,
                         "product_id": pid,
@@ -398,16 +394,19 @@ else:
                     st.session_state.sel_year,
                     list(st.session_state.product_data.values())
                 )
-                st.success("Statement submitted successfully")
-                st.session_state.preview = False
+                st.session_state.preview=False
+                st.success("Submitted!")
 
-        # ===== Final report =====
+        # Final Report
         if st.session_state.final_report:
-            st.header("Send via WhatsApp")
+            st.header("Report & Export")
             st.text_area("Report", st.session_state.final_report, height=300)
-            phone = st.text_input("WhatsApp Number", "91")
+
+            # PDF
+            pdf = generate_pdf(st.session_state.final_report)
+            st.download_button("📄 Download PDF", pdf, "final_report.pdf")
+
+            # WhatsApp
+            phone = st.text_input("WhatsApp Number","91")
             encoded = urllib.parse.quote(st.session_state.final_report)
-            st.markdown(
-                f"[📲 Send WhatsApp](https://wa.me/{phone}?text={encoded})",
-                unsafe_allow_html=True
-            )
+            st.markdown(f"[📲 WhatsApp](https://wa.me/{phone}?text={encoded})", unsafe_allow_html=True)
