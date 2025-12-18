@@ -144,42 +144,75 @@ else:
         if st.button("Download Statements Summary CSV"):
             data = supabase.table("sales_stock_statements").select("*").execute().data
 
+            summary = []
             for row in data:
                 uid = row.get("user_id")
                 sid = row.get("stockist_id")
 
                 ures = supabase.table("users").select("username").eq("id", uid).execute()
-                if ures.data:
-                    row["username"] = ures.data[0]["username"]
-                else:
-                    row["username"] = "Unknown"
-
                 sres = supabase.table("stockists").select("name").eq("id", sid).execute()
-                if sres.data:
-                    row["stockist"] = sres.data[0]["name"]
-                else:
-                    row["stockist"] = "Unknown"
 
-            import pandas as pd
-            df = pd.DataFrame(data)
-            csv = df.to_csv(index=False)
-            st.download_button("Download Summary CSV", csv, "statements.csv", "text/csv")
+                summary.append({
+                    "statement_id": row.get("id"),
+                    "username": ures.data[0]["username"] if ures.data else "Unknown",
+                    "stockist": sres.data[0]["name"] if sres.data else "Unknown",
+                    "from_date": row.get("from_date", ""),
+                    "to_date": row.get("to_date", ""),
+                    "month": row.get("month", ""),
+                    "year": row.get("year", "")
+                })
+
+            df = pd.DataFrame(summary)
+            st.download_button(
+                "Download Summary CSV",
+                df.to_csv(index=False),
+                "statements_summary.csv",
+                "text/csv"
+            )
 
         # -------- ITEM DETAILS CSV ----------
         if st.button("Download Item Details CSV"):
-            data = supabase.table("sales_stock_items").select("*").execute().data
+            items = supabase.table("sales_stock_items").select("*").execute().data
 
-            for row in data:
-                pid = row.get("product_id")
-                pres = supabase.table("products").select("name").eq("id", pid).execute()
-                if pres.data:
-                    row["product"] = pres.data[0]["name"]
-                else:
-                    row["product"] = "Unknown"
+            detailed = []
+            for it in items:
+                stmt = supabase.table("sales_stock_statements") \
+                    .select("*").eq("id", it["statement_id"]).execute()
+                stmt_rec = stmt.data[0] if stmt.data else {}
 
-            df = pd.DataFrame(data)
-            csv = df.to_csv(index=False)
-            st.download_button("Download Detailed CSV", csv, "items.csv", "text/csv")
+                uid = stmt_rec.get("user_id")
+                sid = stmt_rec.get("stockist_id")
+
+                ures = supabase.table("users").select("username").eq("id", uid).execute()
+                sres = supabase.table("stockists").select("name").eq("id", sid).execute()
+
+                pname = supabase.table("products") \
+                    .select("name").eq("id", it["product_id"]).execute()
+                product_name = pname.data[0]["name"] if pname.data else "Unknown"
+
+                detailed.append({
+                    "statement_id": it.get("statement_id"),
+                    "username": ures.data[0]["username"] if ures.data else "Unknown",
+                    "stockist": sres.data[0]["name"] if sres.data else "Unknown",
+                    "from_date": stmt_rec.get("from_date", ""),
+                    "to_date": stmt_rec.get("to_date", ""),
+                    "month": stmt_rec.get("month", ""),
+                    "year": stmt_rec.get("year", ""),
+                    "product": product_name,
+                    "opening": it.get("opening"),
+                    "purchase": it.get("purchase"),
+                    "issue": it.get("issue"),
+                    "closing": it.get("closing"),
+                    "difference": it.get("diff_closing")
+                })
+
+            df = pd.DataFrame(detailed)
+            st.download_button(
+                "Download Detailed CSV",
+                df.to_csv(index=False),
+                "items_detailed.csv",
+                "text/csv"
+            )
 
         st.info("CSV export ready.")
 
