@@ -2,6 +2,8 @@ import streamlit as st
 from supabase import create_client
 from datetime import date
 import urllib.parse
+import pandas as pd
+from io import StringIO
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Sales & Stock App", layout="wide")
@@ -84,7 +86,8 @@ def build_report(stockist, month, year, items):
     ]
 
     for d in items:
-        order_qty = max(d["issue"]*1.5 - d["closing"], 0)
+        order_qty = max(int(d["issue"] * 1.5 - d["closing"]), 0)
+
         remarks=[]
         if d["issue"]==0 and d["closing"]>0:
             remarks.append("No issue but stock exists")
@@ -98,7 +101,7 @@ def build_report(stockist, month, year, items):
         lines.append(
             f"{d['name']} | O:{d['opening']} P:{d['purchase']} "
             f"I:{d['issue']} C:{d['closing']} D:{d['diff']} "
-            f"| Order:{round(order_qty,1)}"
+            f"| Order:{order_qty}"
         )
         if remarks:
             lines.append(" • " + ", ".join(remarks))
@@ -124,8 +127,42 @@ else:
     if st.button("Logout"):
         logout()
 
+    # ================= ADMIN DASHBOARD =================
+    if user["role"] == "admin":
+        st.header("Admin Dashboard")
+
+        # -------- CSV DOWNLOAD --------
+        st.subheader("⬇ Download CSV Data")
+
+        if st.button("Download Statements Summary CSV"):
+            data = supabase.table("sales_stock_statements").select("*").execute().data
+            for row in data:
+                uid = row["user_id"]
+                sid = row["stockist_id"]
+                uname = supabase.table("users").select("username").eq("id", uid).execute().data[0]["username"]
+                sname = supabase.table("stockists").select("name").eq("id", sid).execute().data[0]["name"]
+                row["username"] = uname
+                row["stockist"] = sname
+            
+            df = pd.DataFrame(data)
+            csv = df.to_csv(index=False)
+            st.download_button("Download CSV", csv, "statements.csv", "text/csv")
+
+        if st.button("Download Item Details CSV"):
+            data = supabase.table("sales_stock_items").select("*").execute().data
+            for row in data:
+                pid = row["product_id"]
+                pname = supabase.table("products").select("name").eq("id", pid).execute().data[0]["name"]
+                row["product"] = pname
+            
+            df = pd.DataFrame(data)
+            csv = df.to_csv(index=False)
+            st.download_button("Download Detailed CSV", csv, "items.csv", "text/csv")
+
+        st.info("CSV downloads ready.")
+
     # ================= USER DASHBOARD =================
-    if user["role"] == "user":
+    else:
         st.header("User Dashboard")
 
         # ========== RECENT SUBMISSIONS ==========
@@ -140,7 +177,6 @@ else:
         if rec:
             for r in rec:
 
-                # fetch stockist name
                 stock = supabase.table("stockists") \
                     .select("name").eq("id", r["stockist_id"]).execute().data[0]["name"]
 
@@ -159,11 +195,11 @@ else:
 
                         full.append({
                             "name": pname,
-                            "opening": it["opening"],
-                            "purchase": it["purchase"],
-                            "issue": it["issue"],
-                            "closing": it["closing"],
-                            "diff": it["diff_closing"],
+                            "opening": int(it["opening"]),
+                            "purchase": int(it["purchase"]),
+                            "issue": int(it["issue"]),
+                            "closing": int(it["closing"]),
+                            "diff": int(it["diff_closing"]),
                             "prev_issue": 0
                         })
 
@@ -244,10 +280,10 @@ else:
 
             st.subheader(f"Product: {p['name']}")
 
-            opening = st.number_input("Opening", value=float(last["closing"]), key=f"op_{p['id']}")
-            purchase = st.number_input("Purchase", value=0.0, key=f"pur_{p['id']}")
-            issue = st.number_input("Issue", value=0.0, key=f"iss_{p['id']}")
-            closing = st.number_input("Closing", value=float(opening), key=f"cl_{p['id']}")
+            opening = int(st.number_input("Opening", value=int(last["closing"]), step=1))
+            purchase = int(st.number_input("Purchase", value=0, step=1))
+            issue = int(st.number_input("Issue", value=0, step=1))
+            closing = int(st.number_input("Closing", value=opening, step=1))
 
             expected = opening + purchase - issue
             diff = expected - closing
@@ -259,7 +295,7 @@ else:
                 "issue": issue,
                 "closing": closing,
                 "diff": diff,
-                "prev_issue": last["issue"]
+                "prev_issue": int(last["issue"])
             }
 
             c1, c2, c3 = st.columns(3)
@@ -309,13 +345,13 @@ else:
                 st.success("Statement submitted successfully")
                 st.session_state.preview = False
 
-        # ========== FINAL REPORT + WHATSAPP ==========
+        # ========== FINAL REPORT ==========
         if st.session_state.final_report:
             st.header("Send via WhatsApp")
             st.text_area("Report", st.session_state.final_report, height=300)
             phone = st.text_input("WhatsApp Number", "91")
             encoded = urllib.parse.quote(st.session_state.final_report)
             st.markdown(
-                f"[📲 Send on WhatsApp](https://wa.me/{phone}?text={encoded})",
+                f"[📲 Send WhatsApp](https://wa.me/{phone}?text={encoded})",
                 unsafe_allow_html=True
             )
