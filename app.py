@@ -128,10 +128,10 @@ else:
     if user["role"] == "user":
         st.header("User Dashboard")
 
-        # ========== RECENT SUBMISSIONS SECTION ==========
+        # ========== RECENT SUBMISSIONS ==========
         st.subheader("🕘 Recent Submissions")
-
         uid = user["id"]
+
         rec = supabase.table("sales_stock_statements") \
             .select("*") \
             .eq("user_id", uid) \
@@ -139,11 +139,17 @@ else:
 
         if rec:
             for r in rec:
-                label = f"{r['month']} {r['year']} | Stockist {r['stockist_id']}"
+
+                # fetch stockist name
+                stock = supabase.table("stockists") \
+                    .select("name").eq("id", r["stockist_id"]).execute().data[0]["name"]
+
+                label = f"{r['month']} {r['year']} | {stock}"
+
                 if st.button(f"View Report: {label}", key=f"rec{r['id']}"):
 
                     items = supabase.table("sales_stock_items") \
-                        .select("*,product_id") \
+                        .select("*") \
                         .eq("statement_id", r["id"]).execute().data
 
                     full = []
@@ -161,7 +167,7 @@ else:
                             "prev_issue": 0
                         })
 
-                    rep = build_report("Unknown", r["month"], r["year"], full)
+                    rep = build_report(stock, r["month"], r["year"], full)
 
                     st.session_state.recent_view_report = rep
                     st.session_state.recent_view_title = label
@@ -170,7 +176,6 @@ else:
         if st.session_state.recent_view_report:
             st.subheader(f"Report — {st.session_state.recent_view_title}")
             st.text_area("Report", st.session_state.recent_view_report, height=300)
-
             phone = st.text_input("WhatsApp Number", "91")
             encoded = urllib.parse.quote(st.session_state.recent_view_report)
             st.markdown(
@@ -180,11 +185,137 @@ else:
 
         st.divider()
 
-        # ========== CREATE NEW STATEMENT BUTTON ==========
+        # ========== CREATE NEW STATEMENT ==========
         if st.button("➕ Create New Statement"):
             st.session_state.create_statement = True
+            st.session_state.statement_id = None
+            st.session_state.preview = False
+            st.session_state.final_report = ""
+            st.session_state.recent_view_report = ""
             st.rerun()
 
-        # (existing create, entry, preview, final submit flow remains unchanged)
-        # ...
-        # the rest of your previous working code continues below
+        # ========== STATEMENT HEADER ==========
+        if st.session_state.create_statement and not st.session_state.statement_id:
+            uid = user["id"]
+
+            allocs = supabase.table("user_stockists").select("stockist_id") \
+                .eq("user_id", uid).execute().data
+
+            if allocs:
+                stk_ids = [a["stockist_id"] for a in allocs]
+                stockists = supabase.table("stockists") \
+                    .select("id,name").in_("id", stk_ids).execute().data
+                s_map = {s["name"]: s["id"] for s in stockists}
+
+                sel_stockist = st.selectbox("Stockist", list(s_map.keys()))
+                year = st.selectbox("Year", [2023,2024,2025])
+                month = st.selectbox("Month", MONTHS)
+                fd = st.date_input("From Date", date.today())
+                td = st.date_input("To Date", date.today())
+
+                if st.button("Temporary Submit"):
+                    st.session_state.selected_stockist_id = s_map[sel_stockist]
+                    st.session_state.stockist_name = sel_stockist
+                    st.session_state.sel_month = month
+                    st.session_state.sel_year = year
+                    st.session_state.current_statement_from_date = fd.isoformat()
+
+                    res = supabase.table("sales_stock_statements").insert({
+                        "user_id":uid,
+                        "stockist_id":s_map[sel_stockist],
+                        "year":year,
+                        "month":month,
+                        "from_date":fd.isoformat(),
+                        "to_date":td.isoformat()
+                    }).execute()
+
+                    st.session_state.statement_id = res.data[0]["id"]
+                    st.session_state.product_index = 0
+                    st.session_state.product_data = {}
+                    st.success("Statement created")
+
+        # ========== PRODUCT ENTRY ==========
+        if st.session_state.statement_id and not st.session_state.preview and not st.session_state.final_report:
+            products = supabase.table("products").select("id,name") \
+                .order("name").execute().data
+
+            p = products[st.session_state.product_index]
+            last = last_month_data(p["id"])
+
+            st.subheader(f"Product: {p['name']}")
+
+            opening = st.number_input("Opening", value=float(last["closing"]), key=f"op_{p['id']}")
+            purchase = st.number_input("Purchase", value=0.0, key=f"pur_{p['id']}")
+            issue = st.number_input("Issue", value=0.0, key=f"iss_{p['id']}")
+            closing = st.number_input("Closing", value=float(opening), key=f"cl_{p['id']}")
+
+            expected = opening + purchase - issue
+            diff = expected - closing
+
+            st.session_state.product_data[p["id"]] = {
+                "name": p["name"],
+                "opening": opening,
+                "purchase": purchase,
+                "issue": issue,
+                "closing": closing,
+                "diff": diff,
+                "prev_issue": last["issue"]
+            }
+
+            c1, c2, c3 = st.columns(3)
+            if c1.button("⬅ Previous") and st.session_state.product_index > 0:
+                st.session_state.product_index -= 1
+                st.rerun()
+            if c2.button("Next ➡") and st.session_state.product_index < len(products)-1:
+                st.session_state.product_index += 1
+                st.rerun()
+            if c3.button("Preview"):
+                st.session_state.preview = True
+                st.rerun()
+
+        # ========== PREVIEW ==========
+        if st.session_state.preview and not st.session_state.final_report:
+            st.header("Preview")
+            rows=[]
+            for d in st.session_state.product_data.values():
+                rows.append({
+                    "Product": d["name"],
+                    "Opening": d["opening"],
+                    "Purchase": d["purchase"],
+                    "Issue": d["issue"],
+                    "Closing": d["closing"],
+                    "Difference": d["diff"]
+                })
+            st.table(rows)
+
+            if st.button("Final Submit"):
+                for pid, d in st.session_state.product_data.items():
+                    supabase.table("sales_stock_items").insert({
+                        "statement_id": st.session_state.statement_id,
+                        "product_id": pid,
+                        "opening": d["opening"],
+                        "purchase": d["purchase"],
+                        "issue": d["issue"],
+                        "closing": d["closing"],
+                        "diff_closing": d["diff"]
+                    }).execute()
+
+                st.session_state.final_report = build_report(
+                    st.session_state.stockist_name,
+                    st.session_state.sel_month,
+                    st.session_state.sel_year,
+                    list(st.session_state.product_data.values())
+                )
+                st.success("Statement submitted successfully")
+                st.session_state.preview = False
+
+        # ========== FINAL REPORT + WHATSAPP ==========
+        if st.session_state.final_report:
+            st.header("Send via WhatsApp")
+            st.text_area("Report", st.session_state.final_report, height=300)
+            phone = st.text_input("WhatsApp Number", "91")
+            encoded = urllib.parse.quote(st.session_state.final_report)
+            st.markdown(
+                f"[📲 Send on WhatsApp](https://wa.me/{phone}?text={encoded})",
+                unsafe_allow_html=True
+            )
