@@ -3,7 +3,6 @@ from supabase import create_client
 from datetime import date
 import urllib.parse
 import pandas as pd
-from io import StringIO
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Sales & Stock App", layout="wide")
@@ -36,12 +35,12 @@ for k,v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+
 # ================= HELPERS =================
 def login(username, password):
     res = supabase.table("users").select("*") \
         .eq("username", username.strip()) \
         .eq("password", password.strip()).execute()
-
     if res.data:
         st.session_state.logged_in = True
         st.session_state.user = res.data[0]
@@ -49,9 +48,11 @@ def login(username, password):
     else:
         st.error("Invalid credentials")
 
+
 def logout():
     st.session_state.clear()
     st.rerun()
+
 
 def get_last_statement(stockist_id, current_from_date):
     res = supabase.table("sales_stock_statements") \
@@ -61,6 +62,7 @@ def get_last_statement(stockist_id, current_from_date):
         .order("from_date", desc=True) \
         .limit(1).execute()
     return res.data[0]["id"] if res.data else None
+
 
 def last_month_data(product_id):
     stmt_id = get_last_statement(
@@ -76,6 +78,7 @@ def last_month_data(product_id):
         .eq("product_id", product_id).execute()
 
     return item.data[0] if item.data else {"closing":0,"diff_closing":0,"issue":0}
+
 
 def build_report(stockist, month, year, items):
     lines = [
@@ -108,8 +111,10 @@ def build_report(stockist, month, year, items):
 
     return "\n".join(lines)
 
+
 # ================= UI =================
 st.title("Sales & Stock Statement App")
+
 
 # ================= LOGIN =================
 if not st.session_state.logged_in:
@@ -119,6 +124,7 @@ if not st.session_state.logged_in:
     if st.button("Login"):
         login(u,p)
 
+
 # ================= DASHBOARD =================
 else:
     user = st.session_state.user
@@ -127,45 +133,62 @@ else:
     if st.button("Logout"):
         logout()
 
+
     # ================= ADMIN DASHBOARD =================
     if user["role"] == "admin":
         st.header("Admin Dashboard")
 
-        # -------- CSV DOWNLOAD --------
         st.subheader("⬇ Download CSV Data")
 
+        # -------- SUMMARY CSV ----------
         if st.button("Download Statements Summary CSV"):
             data = supabase.table("sales_stock_statements").select("*").execute().data
+
             for row in data:
-                uid = row["user_id"]
-                sid = row["stockist_id"]
-                uname = supabase.table("users").select("username").eq("id", uid).execute().data[0]["username"]
-                sname = supabase.table("stockists").select("name").eq("id", sid).execute().data[0]["name"]
-                row["username"] = uname
-                row["stockist"] = sname
-            
+                uid = row.get("user_id")
+                sid = row.get("stockist_id")
+
+                ures = supabase.table("users").select("username").eq("id", uid).execute()
+                if ures.data:
+                    row["username"] = ures.data[0]["username"]
+                else:
+                    row["username"] = "Unknown"
+
+                sres = supabase.table("stockists").select("name").eq("id", sid).execute()
+                if sres.data:
+                    row["stockist"] = sres.data[0]["name"]
+                else:
+                    row["stockist"] = "Unknown"
+
+            import pandas as pd
             df = pd.DataFrame(data)
             csv = df.to_csv(index=False)
-            st.download_button("Download CSV", csv, "statements.csv", "text/csv")
+            st.download_button("Download Summary CSV", csv, "statements.csv", "text/csv")
 
+        # -------- ITEM DETAILS CSV ----------
         if st.button("Download Item Details CSV"):
             data = supabase.table("sales_stock_items").select("*").execute().data
+
             for row in data:
-                pid = row["product_id"]
-                pname = supabase.table("products").select("name").eq("id", pid).execute().data[0]["name"]
-                row["product"] = pname
-            
+                pid = row.get("product_id")
+                pres = supabase.table("products").select("name").eq("id", pid).execute()
+                if pres.data:
+                    row["product"] = pres.data[0]["name"]
+                else:
+                    row["product"] = "Unknown"
+
             df = pd.DataFrame(data)
             csv = df.to_csv(index=False)
             st.download_button("Download Detailed CSV", csv, "items.csv", "text/csv")
 
-        st.info("CSV downloads ready.")
+        st.info("CSV export ready.")
+
 
     # ================= USER DASHBOARD =================
     else:
         st.header("User Dashboard")
 
-        # ========== RECENT SUBMISSIONS ==========
+        # ===== Recent submissions =====
         st.subheader("🕘 Recent Submissions")
         uid = user["id"]
 
@@ -176,14 +199,12 @@ else:
 
         if rec:
             for r in rec:
+                sres = supabase.table("stockists").select("name").eq("id", r["stockist_id"]).execute()
+                stock_name = sres.data[0]["name"] if sres.data else "Unknown"
 
-                stock = supabase.table("stockists") \
-                    .select("name").eq("id", r["stockist_id"]).execute().data[0]["name"]
-
-                label = f"{r['month']} {r['year']} | {stock}"
+                label = f"{r['month']} {r['year']} | {stock_name}"
 
                 if st.button(f"View Report: {label}", key=f"rec{r['id']}"):
-
                     items = supabase.table("sales_stock_items") \
                         .select("*") \
                         .eq("statement_id", r["id"]).execute().data
@@ -191,10 +212,11 @@ else:
                     full = []
                     for it in items:
                         pname = supabase.table("products") \
-                            .select("name").eq("id", it["product_id"]).execute().data[0]["name"]
+                            .select("name").eq("id", it["product_id"]).execute()
+                        product_name = pname.data[0]["name"] if pname.data else "Unknown"
 
                         full.append({
-                            "name": pname,
+                            "name": product_name,
                             "opening": int(it["opening"]),
                             "purchase": int(it["purchase"]),
                             "issue": int(it["issue"]),
@@ -203,7 +225,7 @@ else:
                             "prev_issue": 0
                         })
 
-                    rep = build_report(stock, r["month"], r["year"], full)
+                    rep = build_report(stock_name, r["month"], r["year"], full)
 
                     st.session_state.recent_view_report = rep
                     st.session_state.recent_view_title = label
@@ -212,6 +234,7 @@ else:
         if st.session_state.recent_view_report:
             st.subheader(f"Report — {st.session_state.recent_view_title}")
             st.text_area("Report", st.session_state.recent_view_report, height=300)
+
             phone = st.text_input("WhatsApp Number", "91")
             encoded = urllib.parse.quote(st.session_state.recent_view_report)
             st.markdown(
@@ -221,7 +244,7 @@ else:
 
         st.divider()
 
-        # ========== CREATE NEW STATEMENT ==========
+        # ===== Create new statement =====
         if st.button("➕ Create New Statement"):
             st.session_state.create_statement = True
             st.session_state.statement_id = None
@@ -230,7 +253,7 @@ else:
             st.session_state.recent_view_report = ""
             st.rerun()
 
-        # ========== STATEMENT HEADER ==========
+        # ===== Statement header =====
         if st.session_state.create_statement and not st.session_state.statement_id:
             uid = user["id"]
 
@@ -270,7 +293,7 @@ else:
                     st.session_state.product_data = {}
                     st.success("Statement created")
 
-        # ========== PRODUCT ENTRY ==========
+        # ===== Product entry =====
         if st.session_state.statement_id and not st.session_state.preview and not st.session_state.final_report:
             products = supabase.table("products").select("id,name") \
                 .order("name").execute().data
@@ -309,7 +332,7 @@ else:
                 st.session_state.preview = True
                 st.rerun()
 
-        # ========== PREVIEW ==========
+        # ===== Preview =====
         if st.session_state.preview and not st.session_state.final_report:
             st.header("Preview")
             rows=[]
@@ -345,7 +368,7 @@ else:
                 st.success("Statement submitted successfully")
                 st.session_state.preview = False
 
-        # ========== FINAL REPORT ==========
+        # ===== Final report =====
         if st.session_state.final_report:
             st.header("Send via WhatsApp")
             st.text_area("Report", st.session_state.final_report, height=300)
