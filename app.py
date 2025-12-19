@@ -180,14 +180,12 @@ if role == "admin" and st.session_state.nav == "users":
                 st.session_state.edit_user = u["id"]
             if col[2].button("Delete", key=f"del_user{u['id']}"):
 
-                # detach statements
                 supabase.table("sales_stock_statements")\
                     .update({"user_id": None}).eq("user_id", u["id"]).execute()
 
-                # delete allocations
-                supabase.table("user_stockists").delete().eq("user_id", u["id"]).execute()
+                supabase.table("user_stockists")\
+                    .delete().eq("user_id", u["id"]).execute()
 
-                # delete user
                 supabase.table("users").delete().eq("id", u["id"]).execute()
 
                 st.success("User deleted — statements retained.")
@@ -219,10 +217,8 @@ if role == "admin" and st.session_state.nav == "products":
 
     products = supabase.table("products").select("*").execute().data
 
-    # add
     with st.expander("➕ Add Product"):
         pname = st.text_input("Product Name")
-
         peak = st.multiselect("Peak Months", MONTH_ORDER.keys())
         high = st.multiselect("High Months", MONTH_ORDER.keys())
         low = st.multiselect("Low Months", MONTH_ORDER.keys())
@@ -234,12 +230,11 @@ if role == "admin" and st.session_state.nav == "products":
                 "season_peak_months": peak,
                 "season_high_months": high,
                 "season_low_months": low,
-                "season_lowest_months": lowest,
+                "season_lowest_months": lowest
             }).execute()
             st.success("Product added!")
             st.rerun()
 
-    # edit / delete
     with st.expander("✏️ Edit / Delete Products"):
         for p in products:
             col = st.columns(5)
@@ -255,7 +250,8 @@ if role == "admin" and st.session_state.nav == "products":
             pid = st.session_state.edit_product
             prod = next(p for p in products if p["id"] == pid)
 
-            new_name = st.text_input("Product Name", prod["name"])
+            newname = st.text_input("Product Name", prod["name"])
+
             peak = st.multiselect("Peak Months", MONTH_ORDER.keys(), prod["season_peak_months"] or [])
             high = st.multiselect("High Months", MONTH_ORDER.keys(), prod["season_high_months"] or [])
             low = st.multiselect("Low Months", MONTH_ORDER.keys(), prod["season_low_months"] or [])
@@ -263,7 +259,7 @@ if role == "admin" and st.session_state.nav == "products":
 
             if st.button("Update Product"):
                 supabase.table("products").update({
-                    "name": new_name,
+                    "name": newname,
                     "season_peak_months": peak,
                     "season_high_months": high,
                     "season_low_months": low,
@@ -296,12 +292,11 @@ if role == "admin" and st.session_state.nav == "stockists":
                 st.session_state.edit_stock = s["id"]
             if col[2].button("Delete", key=f"del_stock{s['id']}"):
 
-                # detach statements
                 supabase.table("sales_stock_statements")\
                     .update({"stockist_id": None}).eq("stockist_id", s["id"]).execute()
 
-                # delete allocations
-                supabase.table("user_stockists").delete().eq("stockist_id", s["id"]).execute()
+                supabase.table("user_stockists")\
+                    .delete().eq("stockist_id", s["id"]).execute()
 
                 supabase.table("stockists").delete().eq("id", s["id"]).execute()
 
@@ -361,11 +356,12 @@ if role != "admin" and st.session_state.nav == "home":
     st.header(f"Welcome {st.session_state.user['username']}")
     st.write("Use the sidebar to begin.")
 
+
 # ========== CREATE STATEMENT STEP 1 ==========
+
 if role != "admin" and st.session_state.nav == "create":
     st.header("➕ Create Sales & Stock Statement — Step 1")
 
-    # stockists allocated
     allocs = supabase.table("user_stockists").select("*")\
         .eq("user_id", st.session_state.user["id"]).execute().data
 
@@ -400,7 +396,6 @@ if role != "admin" and st.session_state.nav == "create":
         st.session_state.month = month
         st.session_state.selected_stockist = stockmap[sname]
 
-        # reset product nav
         st.session_state.product_index = 0
         st.session_state.products_cache = supabase.table("products").select("*").execute().data
         st.session_state.product_data = {}
@@ -409,6 +404,7 @@ if role != "admin" and st.session_state.nav == "create":
 
 
 # ========== PRODUCT ENTRY ==========
+
 if role != "admin" and st.session_state.nav == "entry":
     st.header("Enter Product Details")
 
@@ -422,16 +418,15 @@ if role != "admin" and st.session_state.nav == "entry":
     prod = products[idx]
     st.subheader(prod["name"])
 
-    # fetch last entry if exists
     prev = supabase.table("sales_stock_items").select("*")\
         .eq("product_id", prod["id"])\
-        .eq("statement_id", st.session_state.statement_id)\
-        .execute().data
+        .eq("statement_id", st.session_state.statement_id).execute().data
 
     old = prev[0] if prev else None
 
-    # previous month closing — for display only
-    past_items = supabase.table("sales_stock_items").select("*").eq("product_id", prod["id"]).execute().data
+    past_items = supabase.table("sales_stock_items").select("*")\
+        .eq("product_id", prod["id"]).execute().data
+
     last_close = past_items[-1]["closing"] if past_items else 0
     st.info(f"Last Month Closing: {last_close}")
 
@@ -440,11 +435,9 @@ if role != "admin" and st.session_state.nav == "entry":
     issue = st.number_input("Issue", value=0 if not old else old["issue"])
     closing = st.number_input("Closing", value=0 if not old else old["closing"])
 
-    # correct difference
     diff = opening + purchase - issue - closing
     st.write(f"Difference: {diff}")
 
-    # store temporary
     st.session_state.product_data[prod["id"]] = {
         "opening": opening,
         "purchase": purchase,
@@ -464,6 +457,7 @@ if role != "admin" and st.session_state.nav == "entry":
 
 
 # ========== PREVIEW ==========
+
 if role != "admin" and st.session_state.nav == "preview":
     st.header("Preview Before Final Submit")
 
@@ -499,13 +493,13 @@ if role != "admin" and st.session_state.nav == "preview":
 
 
 # ========== RECENT SUBMISSIONS ==========
+
 if role != "admin" and st.session_state.nav == "recent":
     st.header("Recent Submissions")
 
     stmts = supabase.table("sales_stock_statements")\
         .select("*")\
-        .eq("user_id", st.session_state.user["id"])\
-        .execute().data
+        .eq("user_id", st.session_state.user["id"]).execute().data
 
     for s in stmts[::-1]:
         col = st.columns(2)
@@ -516,7 +510,8 @@ if role != "admin" and st.session_state.nav == "recent":
             st.rerun()
 
 
-# ========== REPORTS & PDF ==========
+# ========== REPORTS ==========
+
 if role != "admin" and st.session_state.nav == "reports":
     st.header("Reports")
 
@@ -543,28 +538,28 @@ if role != "admin" and st.session_state.nav == "reports":
 
 
 # ================= ADMIN EXPORT ==========
+
 if role == "admin" and st.session_state.nav == "export":
     st.header("📂 Export Statements")
 
-    stmts = supabase.table("sales_stock_statements").select("*").execute().data
+    items = supabase.table("sales_stock_items").select("*").execute().data
+    df = pd.DataFrame(items)
 
     if st.button("Download All to CSV"):
-        items = supabase.table("sales_stock_items").select("*").execute().data
-        df = pd.DataFrame(items)
         st.download_button("Download CSV", df.to_csv(index=False), "all_items.csv")
 
 
-# ================= ADMIN ANALYTICS ==========
+# ================= ANALYTICS DASHBOARD ==========
+
 if role == "admin" and st.session_state.nav == "analytics":
     st.header("📊 Territory Analytics")
 
     items = supabase.table("sales_stock_items").select("*").execute().data
+    prods = supabase.table("products").select("*").execute().data
 
     product_totals = {}
     for it in items:
         product_totals[it["product_id"]] = product_totals.get(it["product_id"], 0) + it["issue"]
-
-    prods = supabase.table("products").select("*").execute().data
 
     names = [p["name"] for p in prods]
     issues = [product_totals.get(p["id"], 0) for p in prods]
@@ -575,6 +570,7 @@ if role == "admin" and st.session_state.nav == "analytics":
 
 
 # ================= PRODUCT TREND ==========
+
 if role == "admin" and st.session_state.nav == "trend":
     st.header("📈 Product Trend")
 
@@ -583,11 +579,13 @@ if role == "admin" and st.session_state.nav == "trend":
 
     prod = next(p for p in prods if p["name"] == pname)
 
-    items = supabase.table("sales_stock_items").select("*").eq("product_id", prod["id"]).execute().data
+    items = supabase.table("sales_stock_items").select("*")\
+        .eq("product_id", prod["id"]).execute().data
 
     monthly = {}
     for it in items:
-        stmt = supabase.table("sales_stock_statements").select("*").eq("id", it["statement_id"]).execute().data[0]
+        stmt = supabase.table("sales_stock_statements").select("*")\
+            .eq("id", it["statement_id"]).execute().data[0]
         month = stmt["month"]
         monthly[month] = monthly.get(month, 0) + it["issue"]
 
@@ -600,6 +598,7 @@ if role == "admin" and st.session_state.nav == "trend":
 
 
 # ================= AI SUGGESTIONS ==========
+
 if st.session_state.nav == "ai":
     st.header("🤖 AI Suggestions")
 
@@ -616,7 +615,7 @@ if st.session_state.nav == "ai":
 
     for p in prods:
         hist = [it["issue"] for it in items if it["product_id"] == p["id"]]
-        avg = sum(hist[-6:])/min(6, len(hist)) if hist else 0
+        avg = sum(hist[-6:]) / min(6, len(hist)) if hist else 0
 
         if p["season_peak_months"] and month in p["season_peak_months"]:
             f = 1.8
@@ -648,19 +647,18 @@ if st.session_state.nav == "ai":
 
 
 # ================= SUMMARY MATRICES ==========
+
 if role == "admin" and st.session_state.nav == "matrices":
     st.header("📋 Summary Matrices")
 
-    # MATRIX TAB 1
+    # ===== Matrix 1 =====
     st.subheader("Matrix 1 — Month & Year → Product Summary")
 
-    year = st.selectbox("Select Year", [date.today().year, date.today().year-1], key="mat1y")
-    month = st.selectbox("Select Month", list(MONTH_ORDER.keys()), key="mat1m")
+    year = st.selectbox("Select Year", [date.today().year, date.today().year-1], key="m1y")
+    month = st.selectbox("Select Month", list(MONTH_ORDER.keys()), key="m1m")
 
     stmts = supabase.table("sales_stock_statements")\
-        .select("*")\
-        .eq("year", year)\
-        .eq("month", month).execute().data
+        .select("*").eq("year", year).eq("month", month).execute().data
 
     stmt_ids = [s["id"] for s in stmts]
 
@@ -669,28 +667,27 @@ if role == "admin" and st.session_state.nav == "matrices":
 
     rows = []
     for p in prods:
-        filtered = [it for it in items if it["statement_id"] in stmt_ids and it["product_id"] == p["id"]]
-        if filtered:
-            op = sum(it["opening"] for it in filtered)
-            pu = sum(it["purchase"] for it in filtered)
-            is_ = sum(it["issue"] for it in filtered)
-            cl = sum(it["closing"] for it in filtered)
-            diff = sum(it["difference"] for it in filtered)
+        f = [it for it in items if it["statement_id"] in stmt_ids and it["product_id"] == p["id"]]
+        if f:
+            op = sum(it["opening"] for it in f)
+            pu = sum(it["purchase"] for it in f)
+            is_ = sum(it["issue"] for it in f)
+            cl = sum(it["closing"] for it in f)
+            diff = sum(it.get("difference", 0) for it in f)
             order = is_ * 1.5 - cl
             rows.append([p["name"], op, pu, is_, cl, diff, order])
 
     df = pd.DataFrame(rows, columns=["Product","Opening","Purchase","Issue","Closing","Difference","Order"])
     st.dataframe(df)
 
-    # MATRIX TAB 2
+    # ===== Matrix 2 =====
     st.subheader("Matrix 2 — Product & Year → Monthly Summary")
 
-    pname = st.selectbox("Select Product", [p["name"] for p in prods], key="mat2p")
-    year2 = st.selectbox("Select Year", [date.today().year, date.today().year-1], key="mat2y")
+    pname = st.selectbox("Select Product", [p["name"] for p in prods], key="m2p")
+    year2 = st.selectbox("Select Year", [date.today().year, date.today().year-1], key="m2y")
 
     prod = next(p for p in prods if p["name"] == pname)
 
-    # month columns fixed 12 months
     mcols = list(MONTH_ORDER.keys())
 
     mat = {
@@ -703,27 +700,27 @@ if role == "admin" and st.session_state.nav == "matrices":
     }
 
     stmts2 = supabase.table("sales_stock_statements")\
-        .select("*")\
-        .eq("year", year2).execute().data
+        .select("*").eq("year", year2).execute().data
 
     items2 = supabase.table("sales_stock_items").select("*").execute().data
 
     for i, m in enumerate(mcols):
-        stmt = [s["id"] for s in stmts2 if s["month"] == m]
-        filtered = [it for it in items2 if it["product_id"] == prod["id"] and it["statement_id"] in stmt]
+        sids = [s["id"] for s in stmts2 if s["month"] == m]
+        f = [it for it in items2 if it["product_id"] == prod["id"] and it["statement_id"] in sids]
 
-        if filtered:
-            mat["Opening"][i] = sum(it["opening"] for it in filtered)
-            mat["Purchase"][i] = sum(it["purchase"] for it in filtered)
-            mat["Issue"][i] = sum(it["issue"] for it in filtered)
-            mat["Closing"][i] = sum(it["closing"] for it in filtered)
-            mat["Difference"][i] = sum(it["difference"] for it in filtered)
+        if f:
+            mat["Opening"][i] = sum(it["opening"] for it in f)
+            mat["Purchase"][i] = sum(it["purchase"] for it in f)
+            mat["Issue"][i] = sum(it["issue"] for it in f)
+            mat["Closing"][i] = sum(it["closing"] for it in f)
+            mat["Difference"][i] = sum(it.get("difference", 0) for it in f)
             mat["Order"][i] = mat["Issue"][i] * 1.5 - mat["Closing"][i]
 
-    df2 = pd.DataFrame(mat, index=mcols).T
+    df2 = pd.DataFrame(mat, index=["Opening","Purchase","Issue","Closing","Difference","Order"], columns=mcols)
     st.dataframe(df2)
 
 
-# ================= LOGOUT FOOTER =================
+# ================= FOOTER =================
+
 st.write("---")
 st.write("© Ivy Pharmaceuticals 2025 — All Rights Reserved.")
