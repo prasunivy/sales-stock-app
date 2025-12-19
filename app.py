@@ -18,7 +18,7 @@ MONTH_ORDER = {
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12
 }
 
-# ================= SESSION =================
+# ================= SESSION DEFAULTS =================
 session_defaults = {
     "logged_in": False,
     "user": None,
@@ -65,7 +65,7 @@ def generate_pdf(text):
     c = canvas.Canvas(buffer, pagesize=letter)
     y = 750
     for line in text.split("\n"):
-        c.drawString(40,y,line)
+        c.drawString(40, y, line)
         y -= 15
         if y <= 40:
             c.showPage()
@@ -75,7 +75,7 @@ def generate_pdf(text):
     return buffer
 
 
-# ================= UI START =================
+# ================= UI TITLE =================
 st.title("Ivy Pharmaceuticals — Sales & Stock App")
 
 # ================= LOGIN =================
@@ -143,15 +143,7 @@ if st.sidebar.button("🚪 Logout"):
     logout()
 
 
-# ================= ADMIN SCREENS =================
-
-# HOME
-if role == "admin" and st.session_state.nav == "home":
-    st.header("Welcome Admin")
-    st.write("Use the sidebar to navigate.")
-
-
-# ========== MANAGE USERS ==========
+# ================= ADMIN — USERS =================
 if role == "admin" and st.session_state.nav == "users":
     st.header("👤 Manage Users")
 
@@ -180,23 +172,25 @@ if role == "admin" and st.session_state.nav == "users":
                 st.session_state.edit_user = u["id"]
             if col[2].button("Delete", key=f"del_user{u['id']}"):
 
+                # keep statements but remove user link
                 supabase.table("sales_stock_statements")\
-                    .update({"user_id": None}).eq("user_id", u["id"]).execute()
+                        .update({"user_id": None}).eq("user_id", u["id"]).execute()
 
+                # remove allocations
                 supabase.table("user_stockists")\
-                    .delete().eq("user_id", u["id"]).execute()
+                        .delete().eq("user_id", u["id"]).execute()
 
                 supabase.table("users").delete().eq("id", u["id"]).execute()
 
                 st.success("User deleted — statements retained.")
                 st.rerun()
 
-        # edit form
         if "edit_user" in st.session_state:
             uid = st.session_state.edit_user
             user = next(u for u in users if u["id"] == uid)
-            newname = st.text_input("Username", user["username"])
-            newpass = st.text_input("Password", user["password"])
+
+            newname = st.text_input("New Username", user["username"])
+            newpass = st.text_input("New Password", user["password"])
             newrole = st.selectbox("Role", ["user","admin"], index=0 if user["role"]=="user" else 1)
 
             if st.button("Update User"):
@@ -211,7 +205,7 @@ if role == "admin" and st.session_state.nav == "users":
                 st.rerun()
 
 
-# ========== MANAGE PRODUCTS ==========
+# ================= ADMIN — PRODUCTS =================
 if role == "admin" and st.session_state.nav == "products":
     st.header("📦 Manage Products")
 
@@ -271,7 +265,7 @@ if role == "admin" and st.session_state.nav == "products":
                 st.rerun()
 
 
-# ========== MANAGE STOCKISTS ==========
+# ================= ADMIN — STOCKISTS =================
 if role == "admin" and st.session_state.nav == "stockists":
     st.header("🏪 Manage Stockists")
 
@@ -303,19 +297,20 @@ if role == "admin" and st.session_state.nav == "stockists":
                 st.success("Stockist deleted")
                 st.rerun()
 
-        if "edit_stock" in st.session_state:
-            sid = st.session_state.edit_stock
-            stock = next(s for s in stockists if s["id"] == sid)
-            newname = st.text_input("Stockist Name", stock["name"])
 
-            if st.button("Update Stockist"):
-                supabase.table("stockists").update({"name": newname}).eq("id", sid).execute()
-                st.success("Updated")
-                del st.session_state.edit_stock
-                st.rerun()
+    if "edit_stock" in st.session_state:
+        sid = st.session_state.edit_stock
+        stock = next(s for s in stockists if s["id"] == sid)
+        newname = st.text_input("Stockist Name", stock["name"])
+
+        if st.button("Update Stockist"):
+            supabase.table("stockists").update({"name": newname}).eq("id", sid).execute()
+            st.success("Updated")
+            del st.session_state.edit_stock
+            st.rerun()
 
 
-# ========== ALLOCATE STOCKISTS ==========
+# ================= ADMIN — ALLOCATE STOCKISTS =================
 if role == "admin" and st.session_state.nav == "allocate":
     st.header("🔗 Allocate Stockists")
 
@@ -358,7 +353,6 @@ if role != "admin" and st.session_state.nav == "home":
 
 
 # ========== CREATE STATEMENT STEP 1 ==========
-
 if role != "admin" and st.session_state.nav == "create":
     st.header("➕ Create Sales & Stock Statement — Step 1")
 
@@ -385,14 +379,14 @@ if role != "admin" and st.session_state.nav == "create":
         stmt = supabase.table("sales_stock_statements").insert({
             "user_id": st.session_state.user["id"],
             "stockist_id": stockmap[sname],
-            "year": year,
+            "year": str(year),   # store as string for safety
             "month": month,
             "from_date": fdate.isoformat(),
             "to_date": tdate.isoformat()
         }).execute()
 
         st.session_state.statement_id = stmt.data[0]["id"]
-        st.session_state.year = year
+        st.session_state.year = str(year)
         st.session_state.month = month
         st.session_state.selected_stockist = stockmap[sname]
 
@@ -404,7 +398,6 @@ if role != "admin" and st.session_state.nav == "create":
 
 
 # ========== PRODUCT ENTRY ==========
-
 if role != "admin" and st.session_state.nav == "entry":
     st.header("Enter Product Details")
 
@@ -428,6 +421,7 @@ if role != "admin" and st.session_state.nav == "entry":
         .eq("product_id", prod["id"]).execute().data
 
     last_close = past_items[-1]["closing"] if past_items else 0
+
     st.info(f"Last Month Closing: {last_close}")
 
     opening = st.number_input("Opening", value= last_close if not old else old["opening"])
@@ -456,8 +450,7 @@ if role != "admin" and st.session_state.nav == "entry":
         st.rerun()
 
 
-# ========== PREVIEW ==========
-
+# ========== PREVIEW BEFORE FINAL SUBMIT ==========
 if role != "admin" and st.session_state.nav == "preview":
     st.header("Preview Before Final Submit")
 
@@ -467,10 +460,7 @@ if role != "admin" and st.session_state.nav == "preview":
 
     for p in products:
         if p["id"] in data:
-            rows.append({
-                "Product": p["name"],
-                **data[p["id"]]
-            })
+            rows.append({"Product": p["name"], **data[p["id"]]})
 
     df = pd.DataFrame(rows)
     st.dataframe(df)
@@ -493,7 +483,6 @@ if role != "admin" and st.session_state.nav == "preview":
 
 
 # ========== RECENT SUBMISSIONS ==========
-
 if role != "admin" and st.session_state.nav == "recent":
     st.header("Recent Submissions")
 
@@ -511,7 +500,6 @@ if role != "admin" and st.session_state.nav == "recent":
 
 
 # ========== REPORTS ==========
-
 if role != "admin" and st.session_state.nav == "reports":
     st.header("Reports")
 
@@ -537,40 +525,38 @@ if role != "admin" and st.session_state.nav == "reports":
         st.download_button("Download PDF", data=pdf, file_name="report.pdf")
 
 
-# ================= ADMIN EXPORT ==========
+# ================= ADMIN — EXPORT ==========
 
 if role == "admin" and st.session_state.nav == "export":
     st.header("📂 Export Statements")
 
     items = supabase.table("sales_stock_items").select("*").execute().data
-    df = pd.DataFrame(items)
 
     if st.button("Download All to CSV"):
+        df = pd.DataFrame(items)
         st.download_button("Download CSV", df.to_csv(index=False), "all_items.csv")
 
 
-# ================= ANALYTICS DASHBOARD ==========
-
+# ================= ADMIN — ANALYTICS ==========
 if role == "admin" and st.session_state.nav == "analytics":
     st.header("📊 Territory Analytics")
 
     items = supabase.table("sales_stock_items").select("*").execute().data
     prods = supabase.table("products").select("*").execute().data
 
-    product_totals = {}
+    totals = {}
     for it in items:
-        product_totals[it["product_id"]] = product_totals.get(it["product_id"], 0) + it["issue"]
+        totals[it["product_id"]] = totals.get(it["product_id"], 0) + it["issue"]
 
     names = [p["name"] for p in prods]
-    issues = [product_totals.get(p["id"], 0) for p in prods]
+    vals = [totals.get(p["id"], 0) for p in prods]
 
     fig, ax = plt.subplots()
-    ax.bar(names, issues)
+    ax.bar(names, vals)
     st.pyplot(fig)
 
 
-# ================= PRODUCT TREND ==========
-
+# ================= ADMIN — PRODUCT TREND ==========
 if role == "admin" and st.session_state.nav == "trend":
     st.header("📈 Product Trend")
 
@@ -583,22 +569,19 @@ if role == "admin" and st.session_state.nav == "trend":
         .eq("product_id", prod["id"]).execute().data
 
     monthly = {}
+
     for it in items:
         stmt = supabase.table("sales_stock_statements").select("*")\
             .eq("id", it["statement_id"]).execute().data[0]
         month = stmt["month"]
         monthly[month] = monthly.get(month, 0) + it["issue"]
 
-    months = list(monthly.keys())
-    vals = list(monthly.values())
-
     fig, ax = plt.subplots()
-    ax.plot(months, vals)
+    ax.plot(list(monthly.keys()), list(monthly.values()))
     st.pyplot(fig)
 
 
 # ================= AI SUGGESTIONS ==========
-
 if st.session_state.nav == "ai":
     st.header("🤖 AI Suggestions")
 
@@ -647,18 +630,19 @@ if st.session_state.nav == "ai":
 
 
 # ================= SUMMARY MATRICES ==========
-
 if role == "admin" and st.session_state.nav == "matrices":
     st.header("📋 Summary Matrices")
 
     # ===== Matrix 1 =====
     st.subheader("Matrix 1 — Month & Year → Product Summary")
 
-    year = st.selectbox("Select Year", [date.today().year, date.today().year-1], key="m1y")
+    year = st.selectbox("Select Year", [str(date.today().year), str(date.today().year-1)], key="m1y")
     month = st.selectbox("Select Month", list(MONTH_ORDER.keys()), key="m1m")
 
     stmts = supabase.table("sales_stock_statements")\
-        .select("*").eq("year", year).eq("month", month).execute().data
+        .select("*").execute().data
+
+    stmts = [s for s in stmts if str(s["year"]) == str(year) and s["month"] == month]
 
     stmt_ids = [s["id"] for s in stmts]
 
@@ -680,14 +664,16 @@ if role == "admin" and st.session_state.nav == "matrices":
     df = pd.DataFrame(rows, columns=["Product","Opening","Purchase","Issue","Closing","Difference","Order"])
     st.dataframe(df)
 
+
     # ===== Matrix 2 =====
     st.subheader("Matrix 2 — Product & Year → Monthly Summary")
 
     pname = st.selectbox("Select Product", [p["name"] for p in prods], key="m2p")
-    year2 = st.selectbox("Select Year", [date.today().year, date.today().year-1], key="m2y")
+    year2 = st.selectbox("Select Year", [str(date.today().year), str(date.today().year-1)], key="m2y")
 
     prod = next(p for p in prods if p["name"] == pname)
 
+    # 12 fixed month columns
     mcols = list(MONTH_ORDER.keys())
 
     mat = {
@@ -699,9 +685,11 @@ if role == "admin" and st.session_state.nav == "matrices":
         "Order": [0]*12
     }
 
-    stmts2 = supabase.table("sales_stock_statements")\
-        .select("*").eq("year", year2).execute().data
+    # safe fetch of all statements
+    stmts2 = supabase.table("sales_stock_statements").select("*").execute().data
+    stmts2 = [s for s in stmts2 if str(s["year"]) == str(year2)]
 
+    # fetch all items (we filter afterward)
     items2 = supabase.table("sales_stock_items").select("*").execute().data
 
     for i, m in enumerate(mcols):
@@ -721,6 +709,5 @@ if role == "admin" and st.session_state.nav == "matrices":
 
 
 # ================= FOOTER =================
-
 st.write("---")
 st.write("© Ivy Pharmaceuticals 2025 — All Rights Reserved.")
