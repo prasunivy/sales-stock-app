@@ -26,8 +26,7 @@ defaults = {
     "draft": {}
 }
 for k, v in defaults.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
+    st.session_state.setdefault(k, v)
 
 # ================= AUTH =================
 def login(u, p):
@@ -188,7 +187,7 @@ if role == "user" and st.session_state.nav == "Create Statement":
         st.session_state.draft = {}
         st.rerun()
 
-# ================= PRODUCT ENTRY =================
+# ================= PRODUCT ENTRY (FIXED) =================
 if role == "user" and st.session_state.statement_id:
     products = st.session_state.products
     idx = st.session_state.product_index
@@ -213,6 +212,8 @@ if role == "user" and st.session_state.statement_id:
         st.stop()
 
     prod = products[idx]
+    pid = prod["id"]
+
     st.subheader(prod["name"])
 
     stmt = supabase.table("sales_stock_statements")\
@@ -221,18 +222,34 @@ if role == "user" and st.session_state.statement_id:
         .execute().data[0]
 
     last_close = get_last_closing(
-        prod["id"], stmt["stockist_id"], stmt["year"], stmt["month"]
+        pid, stmt["stockist_id"], stmt["year"], stmt["month"]
     )
 
-    opening = st.number_input("Opening", value=last_close)
-    purchase = st.number_input("Purchase", value=0)
-    issue = st.number_input("Issue", value=0)
-    closing = st.number_input("Closing", value=0)
+    opening = st.number_input(
+        "Opening",
+        value=last_close,
+        key=f"opening_{pid}"
+    )
+    purchase = st.number_input(
+        "Purchase",
+        value=0,
+        key=f"purchase_{pid}"
+    )
+    issue = st.number_input(
+        "Issue",
+        value=0,
+        key=f"issue_{pid}"
+    )
+    closing = st.number_input(
+        "Closing",
+        value=0,
+        key=f"closing_{pid}"
+    )
 
     diff = opening + purchase - issue - closing
     st.info(f"Difference: {diff}")
 
-    st.session_state.draft[prod["id"]] = {
+    st.session_state.draft[pid] = {
         "opening": opening,
         "purchase": purchase,
         "issue": issue,
@@ -262,12 +279,16 @@ if role == "admin" and st.session_state.nav == "Lock Control":
 
         if not s["locked"] and col[3].button("Lock", key=f"l{s['id']}"):
             supabase.table("sales_stock_statements")\
-                .update({"locked": True}).eq("id", s["id"]).execute()
+                .update({"locked": True})\
+                .eq("id", s["id"])\
+                .execute()
             st.rerun()
 
         if s["locked"] and col[3].button("Unlock", key=f"u{s['id']}"):
             supabase.table("sales_stock_statements")\
-                .update({"locked": False}).eq("id", s["id"]).execute()
+                .update({"locked": False})\
+                .eq("id", s["id"])\
+                .execute()
             st.rerun()
 
 st.write("---")
