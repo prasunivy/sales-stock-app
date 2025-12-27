@@ -5,7 +5,10 @@ import csv, io
 from fpdf import FPDF
 
 # ================= CONFIG =================
-st.set_page_config(page_title="Ivy Pharmaceuticals — Sales & Stock", layout="wide")
+st.set_page_config(
+    page_title="Ivy Pharmaceuticals — Sales & Stock",
+    layout="wide"
+)
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
@@ -15,14 +18,17 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 for k, v in {
     "logged_in": False,
     "user": None,
-    "nav": "Exception Dashboard",
+    "nav": "Exception Dashboard"
 }.items():
     st.session_state.setdefault(k, v)
 
 # ================= AUTH =================
 def login(u, p):
-    res = supabase.table("users").select("*") \
-        .eq("username", u.strip()).eq("password", p.strip()).execute().data
+    res = supabase.table("users") \
+        .select("*") \
+        .eq("username", u.strip()) \
+        .eq("password", p.strip()) \
+        .execute().data
     if res:
         st.session_state.logged_in = True
         st.session_state.user = res[0]
@@ -56,7 +62,7 @@ if st.sidebar.button("Logout"):
 # =========================================================
 # ============ ADMIN EXCEPTION DASHBOARD ==================
 # =========================================================
-if role == "admin":
+if role == "admin" and st.session_state.nav == "Exception Dashboard":
     st.header("🚨 Admin Exception Dashboard")
 
     users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
@@ -67,68 +73,150 @@ if role == "admin":
     items = supabase.table("sales_stock_items").select("*").execute().data
 
     today = datetime.utcnow()
-    stmt_rows, prod_rows, months = [], [], set()
 
+    stmt_rows = []
+    prod_rows = []
+    months = set()
+
+    # ---------------- PRODUCT LEVEL EXCEPTIONS ----------------
     for i in items:
         stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
         if not stmt:
             continue
 
-        month = f"{stmt['month']} {stmt['year']}"
-        months.add(month)
+        month_label = f"{stmt['month']} {stmt['year']}"
+        months.add(month_label)
 
-        if i["issue"] == 0 and i["closing"] > 0:
+        def add_prod(ex):
             prod_rows.append({
-                "Month": month,
-                "Product": products[i["product_id"]],
-                "Stockist": stockists[stmt["stockist_id"]],
+                "Month": month_label,
+                "Product": products.get(i["product_id"], "Unknown"),
+                "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
                 "Issue": i["issue"],
                 "Closing": i["closing"],
-                "Exception": "Zero Issue, Stock Present"
+                "Exception": ex
             })
 
-    # ---------------- STATEMENT FILTER ----------------
-    st.subheader("📄 Statement Exceptions")
-    if stmt_rows:
-        st.dataframe(stmt_rows)
+        if i["issue"] == 0 and i["closing"] > 0:
+            add_prod("Zero Issue, Stock Present")
 
-    # ---------------- PRODUCT FILTER ----------------
-    st.subheader("📦 Product Exceptions")
-    if prod_rows:
-        st.dataframe(prod_rows)
+        if i["issue"] > 0 and i["closing"] >= 2 * i["issue"]:
+            add_prod("Closing ≥ 2× Issue")
 
-        # ---------------- CSV ----------------
+        if i["difference"] != 0:
+            add_prod("Stock Mismatch")
+
+    # ---------------- STATEMENT LEVEL EXCEPTIONS ----------------
+    for s in stmts:
+        created = datetime.fromisoformat(s["created_at"].replace("Z", ""))
+        base = {
+            "User": users.get(s["user_id"], "Unknown"),
+            "Stockist": stockists.get(s["stockist_id"], "Unknown"),
+            "Month": f"{s['month']} {s['year']}"
+        }
+
+        if s["status"] == "draft" and today - created > timedelta(days=3):
+            stmt_rows.append({**base, "Exception": "Draft > 3 Days"})
+
+        if s["status"] == "final" and not s["locked"]:
+            stmt_rows.append({**base, "Exception": "Final but Not Locked"})
+
+        if any(p["Month"] == base["Month"] for p in prod_rows):
+            stmt_rows.append({**base, "Exception": "Product Exceptions"})
+
+    # ================= STATEMENT FILTER =================
+    st.subheader("📄 Statement-wise Exceptions")
+
+    stmt_filter = st.selectbox(
+        "Filter by Exception",
+        ["All", "Draft > 3 Days", "Final but Not Locked", "Product Exceptions"]
+    )
+
+    filtered_stmt = stmt_rows if stmt_filter == "All" else [
+        r for r in stmt_rows if r["Exception"] == stmt_filter
+    ]
+
+    if filtered_stmt:
+        st.dataframe(filtered_stmt, use_container_width=True)
+
         csv_buf = io.StringIO()
-        writer = csv.DictWriter(csv_buf, fieldnames=prod_rows[0].keys())
+        writer = csv.DictWriter(csv_buf, fieldnames=filtered_stmt[0].keys())
         writer.writeheader()
-        writer.writerows(prod_rows)
+        writer.writerows(filtered_stmt)
 
         st.download_button(
-            "⬇ Download CSV",
+            "⬇ Download Statement Exceptions (CSV)",
+            csv_buf.getvalue(),
+            "statement_exceptions.csv",
+            "text/csv"
+        )
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=10)
+        pdf.cell(0, 10, "STATEMENT EXCEPTION REPORT", ln=True)
+
+        for r in filtered_stmt:
+            for k, v in r.items():
+                pdf.cell(0, 8, f"{k}: {v}", ln=True)
+            pdf.cell(0, 8, "-" * 40, ln=True)
+
+        st.download_button(
+            "⬇ Download Statement Exceptions (PDF)",
+            pdf.output(dest="S").encode("latin-1"),
+            "statement_exceptions.pdf",
+            "application/pdf"
+        )
+    else:
+        st.info("No matching statement exceptions")
+
+    st.write("---")
+
+    # ================= PRODUCT FILTER =================
+    st.subheader("📦 Product-level Exceptions")
+
+    month_filter = st.selectbox(
+        "Select Month",
+        ["All"] + sorted(months, reverse=True)
+    )
+
+    filtered_prod = prod_rows if month_filter == "All" else [
+        p for p in prod_rows if p["Month"] == month_filter
+    ]
+
+    if filtered_prod:
+        st.dataframe(filtered_prod, use_container_width=True)
+
+        csv_buf = io.StringIO()
+        writer = csv.DictWriter(csv_buf, fieldnames=filtered_prod[0].keys())
+        writer.writeheader()
+        writer.writerows(filtered_prod)
+
+        st.download_button(
+            "⬇ Download Product Exceptions (CSV)",
             csv_buf.getvalue(),
             "product_exceptions.csv",
             "text/csv"
         )
 
-        # ---------------- REAL PDF ----------------
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=10)
         pdf.cell(0, 10, "PRODUCT EXCEPTION REPORT", ln=True)
 
-        for r in prod_rows:
+        for r in filtered_prod:
             for k, v in r.items():
                 pdf.cell(0, 8, f"{k}: {v}", ln=True)
             pdf.cell(0, 8, "-" * 40, ln=True)
 
-        pdf_bytes = pdf.output(dest="S").encode("latin-1")
-
         st.download_button(
-            "⬇ Download PDF",
-            pdf_bytes,
+            "⬇ Download Product Exceptions (PDF)",
+            pdf.output(dest="S").encode("latin-1"),
             "product_exceptions.pdf",
             "application/pdf"
         )
+    else:
+        st.info("No matching product exceptions")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
