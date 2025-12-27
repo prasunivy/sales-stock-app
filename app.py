@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase import create_client
-from datetime import date
+from datetime import date, datetime
 
 st.set_page_config(page_title="Ivy Pharmaceuticals — Sales & Stock", layout="wide")
 
@@ -90,6 +90,10 @@ for n in navs:
 if st.sidebar.button("Logout"):
     logout()
 
+# ================= USER FLOW (UNCHANGED) =================
+# (same as before — omitted here for brevity in explanation,
+# but INCLUDED fully below)
+
 # ================= USER — CREATE / RESUME =================
 if role == "user" and st.session_state.nav == "Create / Resume":
     st.header("Create or Resume Statement")
@@ -112,6 +116,7 @@ if role == "user" and st.session_state.nav == "Create / Resume":
                     break
             else:
                 st.session_state.product_index = len(st.session_state.products)
+
             st.rerun()
 
     st.subheader("Start New Statement")
@@ -210,7 +215,6 @@ if role == "user" and st.session_state.statement_id:
                 "difference": diff
             }, on_conflict="statement_id,product_id") \
             .execute()
-
         st.session_state.product_index += 1
         st.rerun()
 
@@ -218,19 +222,35 @@ if role == "user" and st.session_state.statement_id:
         st.session_state.product_index -= 1
         st.rerun()
 
-# ================= ADMIN LOCK =================
+# ================= ADMIN — LOCK CONTROL (ENHANCED) =================
 if role == "admin" and st.session_state.nav == "Lock Control":
     st.header("Lock / Unlock Statements")
 
+    users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
+    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
+
     stmts = supabase.table("sales_stock_statements").select("*").execute().data
+
     for s in stmts:
-        label = f"{s['year']} {s['month']} — {'Unlock' if s['locked'] else 'Lock'}"
-        if st.button(label, key=f"lock_{s['id']}"):
-            supabase.table("sales_stock_statements") \
-                .update({"locked": not s["locked"]}) \
-                .eq("id", s["id"]) \
-                .execute()
-            st.rerun()
+        with st.container(border=True):
+            st.write(f"**User:** {users.get(s['user_id'], 'Unknown')}")
+            st.write(f"**Stockist:** {stockists.get(s['stockist_id'], 'Unknown')}")
+            st.write(f"**Period:** {s['month']} {s['year']}")
+
+            created = datetime.fromisoformat(s["created_at"].replace("Z",""))
+            st.write(f"**Submitted:** {created.strftime('%d-%b-%Y %H:%M')}")
+
+            st.write(f"**Status:** {'Locked' if s['locked'] else 'Open'}")
+
+            if st.button(
+                "Unlock" if s["locked"] else "Lock",
+                key=f"lock_{s['id']}"
+            ):
+                supabase.table("sales_stock_statements") \
+                    .update({"locked": not s["locked"]}) \
+                    .eq("id", s["id"]) \
+                    .execute()
+                st.rerun()
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
