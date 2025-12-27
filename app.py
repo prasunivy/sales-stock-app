@@ -99,40 +99,29 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         closing = i["closing"]
         diff = i["difference"]
 
+        def add_prod(ex_type):
+            prod_rows.append({
+                "Statement ID": stmt["id"],
+                "Month": month_label,
+                "Product": products.get(i["product_id"], "Unknown"),
+                "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
+                "Issue": issue,
+                "Closing": closing,
+                "Exception": ex_type
+            })
+
         if issue == 0 and closing > 0:
-            prod_rows.append({
-                "Month": month_label,
-                "Product": products.get(i["product_id"], "Unknown"),
-                "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
-                "Issue": issue,
-                "Closing": closing,
-                "Exception": "Zero Issue, Stock Present"
-            })
-
+            add_prod("Zero Issue, Stock Present")
         if issue > 0 and closing >= 2 * issue:
-            prod_rows.append({
-                "Month": month_label,
-                "Product": products.get(i["product_id"], "Unknown"),
-                "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
-                "Issue": issue,
-                "Closing": closing,
-                "Exception": "Closing ≥ 2× Issue"
-            })
-
+            add_prod("Closing ≥ 2× Issue")
         if diff != 0:
-            prod_rows.append({
-                "Month": month_label,
-                "Product": products.get(i["product_id"], "Unknown"),
-                "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
-                "Issue": issue,
-                "Closing": closing,
-                "Exception": "Stock Mismatch"
-            })
+            add_prod("Stock Mismatch")
 
     # ---------------- STATEMENT LEVEL ----------------
     for s in stmts:
         created = datetime.fromisoformat(s["created_at"].replace("Z", ""))
         base = {
+            "Statement ID": s["id"],
             "User": users.get(s["user_id"], "Unknown"),
             "Stockist": stockists.get(s["stockist_id"], "Unknown"),
             "Month": f"{s['month']} {s['year']}"
@@ -144,51 +133,81 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         if s["status"] == "final" and not s["locked"]:
             stmt_rows.append({**base, "Exception": "Final but Not Locked"})
 
-        prod_ex_count = sum(1 for p in prod_rows if p["Month"] == base["Month"])
-        if prod_ex_count > 0:
+        if any(p["Statement ID"] == s["id"] for p in prod_rows):
             stmt_rows.append({**base, "Exception": "Product Exceptions"})
 
-    # ---------------- SUMMARY ----------------
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Statements", len(stmts))
-    c2.metric("Statement Exceptions", len(stmt_rows))
-    c3.metric("Product Exceptions", len(prod_rows))
-
-    st.write("---")
-
-    # ================= STATEMENT FILTER =================
+    # ---------------- STATEMENT TABLE ----------------
     st.subheader("📄 Statement-wise Exceptions")
-    stmt_filter = st.selectbox(
-        "Filter by Exception",
-        ["All", "Draft > 3 Days", "Final but Not Locked", "Product Exceptions"]
-    )
 
-    filtered_stmt = stmt_rows if stmt_filter == "All" else [
-        s for s in stmt_rows if s["Exception"] == stmt_filter
-    ]
-
-    if filtered_stmt:
-        st.dataframe(filtered_stmt, use_container_width=True)
-    else:
-        st.info("No matching statement exceptions")
+    for row in stmt_rows:
+        c1, c2, c3, c4, c5 = st.columns([2,2,2,3,1])
+        c1.write(row["User"])
+        c2.write(row["Stockist"])
+        c3.write(row["Month"])
+        c4.write(row["Exception"])
+        if c5.button("Open", key=f"open_stmt_{row['Statement ID']}"):
+            st.session_state.edit_statement_id = row["Statement ID"]
+            st.session_state.view_only = True
+            st.session_state.nav = "Lock Control"
+            st.rerun()
 
     st.write("---")
 
-    # ================= PRODUCT FILTER =================
+    # ---------------- PRODUCT TABLE ----------------
     st.subheader("📦 Product-level Exceptions")
-    month_filter = st.selectbox(
-        "Select Month",
-        ["All"] + sorted(available_months, reverse=True)
-    )
 
-    filtered_prod = prod_rows if month_filter == "All" else [
-        p for p in prod_rows if p["Month"] == month_filter
-    ]
+    for row in prod_rows:
+        c1, c2, c3, c4, c5, c6 = st.columns([2,2,2,2,2,1])
+        c1.write(row["Product"])
+        c2.write(row["Stockist"])
+        c3.write(row["Month"])
+        c4.write(row["Exception"])
+        c5.write(f"Issue:{row['Issue']} / Close:{row['Closing']}")
+        if c6.button("Open", key=f"open_prod_{row['Statement ID']}_{row['Product']}"):
+            st.session_state.edit_statement_id = row["Statement ID"]
+            st.session_state.view_only = True
+            st.session_state.nav = "Lock Control"
+            st.rerun()
 
-    if filtered_prod:
-        st.dataframe(filtered_prod, use_container_width=True)
-    else:
-        st.info("No matching product exceptions")
+# =========================================================
+# ================= ADMIN VIEW / EDIT =====================
+# =========================================================
+if role == "admin" and st.session_state.edit_statement_id:
+    stmt = supabase.table("sales_stock_statements") \
+        .select("*") \
+        .eq("id", st.session_state.edit_statement_id) \
+        .execute().data[0]
+
+    products = supabase.table("products").select("*").execute().data
+    items = supabase.table("sales_stock_items") \
+        .select("*") \
+        .eq("statement_id", stmt["id"]) \
+        .execute().data
+
+    item_map = {i["product_id"]: i for i in items}
+
+    st.header("🔍 Admin Statement Review")
+
+    st.write(f"**Period:** {stmt['month']} {stmt['year']}")
+    st.write(f"**Locked:** {'Yes' if stmt['locked'] else 'No'}")
+    st.write("---")
+
+    for p in products:
+        if p["id"] not in item_map:
+            continue
+        i = item_map[p["id"]]
+        st.subheader(p["name"])
+
+        st.write(f"Opening: {i['opening']}")
+        st.write(f"Purchase: {i['purchase']}")
+        st.write(f"Issue: {i['issue']}")
+        st.write(f"Closing: {i['closing']}")
+        st.write(f"Difference: {i['difference']}")
+        st.write("---")
+
+    if st.button("Back"):
+        st.session_state.edit_statement_id = None
+        st.rerun()
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
