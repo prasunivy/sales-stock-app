@@ -1,6 +1,8 @@
 import streamlit as st
 from supabase import create_client
 from datetime import datetime, timedelta
+import csv
+import io
 
 # ================= CONFIG =================
 st.set_page_config(
@@ -12,18 +14,12 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MONTHS = [
-    "January","February","March","April","May","June",
-    "July","August","September","October","November","December"
-]
-
 # ================= SESSION =================
 defaults = {
     "logged_in": False,
     "user": None,
     "nav": "Exception Dashboard",
-    "edit_statement_id": None,
-    "view_only": False
+    "edit_statement_id": None
 }
 for k, v in defaults.items():
     st.session_state.setdefault(k, v)
@@ -65,57 +61,8 @@ if role == "admin":
         st.session_state.nav = "Exception Dashboard"
         st.session_state.edit_statement_id = None
 
-    if st.sidebar.button("Lock Control"):
-        st.session_state.nav = "Lock Control"
-        st.session_state.edit_statement_id = None
-else:
-    st.sidebar.write("User flow unchanged")
-
 if st.sidebar.button("Logout"):
     logout()
-
-# =========================================================
-# ============ ADMIN STATEMENT VIEW (PRIORITY) ============
-# =========================================================
-if role == "admin" and st.session_state.edit_statement_id:
-    stmt = supabase.table("sales_stock_statements") \
-        .select("*") \
-        .eq("id", st.session_state.edit_statement_id) \
-        .execute().data[0]
-
-    products = supabase.table("products").select("*").execute().data
-    items = supabase.table("sales_stock_items") \
-        .select("*") \
-        .eq("statement_id", stmt["id"]) \
-        .execute().data
-
-    item_map = {i["product_id"]: i for i in items}
-
-    st.header("🔍 Admin Statement Review")
-
-    st.write(f"**Period:** {stmt['month']} {stmt['year']}")
-    st.write(f"**Status:** {'Locked' if stmt['locked'] else 'Open'}")
-    st.write("---")
-
-    for p in products:
-        if p["id"] not in item_map:
-            continue
-        i = item_map[p["id"]]
-
-        st.subheader(p["name"])
-        st.write(f"Opening: {i['opening']}")
-        st.write(f"Purchase: {i['purchase']}")
-        st.write(f"Issue: {i['issue']}")
-        st.write(f"Closing: {i['closing']}")
-        st.write(f"Difference: {i['difference']}")
-        st.write("---")
-
-    if st.button("⬅ Back to Dashboard"):
-        st.session_state.edit_statement_id = None
-        st.session_state.view_only = False
-        st.rerun()
-
-    st.stop()
 
 # =========================================================
 # ============ ADMIN EXCEPTION DASHBOARD ==================
@@ -147,7 +94,6 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
 
         def add_prod(ex):
             prod_rows.append({
-                "Statement ID": stmt["id"],
                 "Month": month_label,
                 "Product": products.get(i["product_id"], "Unknown"),
                 "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
@@ -165,9 +111,8 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
 
     # ---------- STATEMENT LEVEL ----------
     for s in stmts:
-        created = datetime.fromisoformat(s["created_at"].replace("Z", ""))
+        created = datetime.fromisoformat(s["created_at"].replace("Z",""))
         base = {
-            "Statement ID": s["id"],
             "User": users.get(s["user_id"], "Unknown"),
             "Stockist": stockists.get(s["stockist_id"], "Unknown"),
             "Month": f"{s['month']} {s['year']}"
@@ -179,10 +124,10 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         if s["status"] == "final" and not s["locked"]:
             stmt_rows.append({**base, "Exception": "Final but Not Locked"})
 
-        if any(p["Statement ID"] == s["id"] for p in prod_rows):
+        if any(p["Month"] == base["Month"] for p in prod_rows):
             stmt_rows.append({**base, "Exception": "Product Exceptions"})
 
-    # ---------- FILTERS ----------
+    # ================= STATEMENT FILTER =================
     st.subheader("📄 Statement-wise Exceptions")
     stmt_filter = st.selectbox(
         "Filter by Exception",
@@ -193,18 +138,39 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         r for r in stmt_rows if r["Exception"] == stmt_filter
     ]
 
-    for idx, r in enumerate(filtered_stmt):
-        c1, c2, c3, c4, c5 = st.columns([2,2,2,3,1])
-        c1.write(r["User"])
-        c2.write(r["Stockist"])
-        c3.write(r["Month"])
-        c4.write(r["Exception"])
-        if c5.button("Open", key=f"stmt_{r['Statement ID']}_{idx}"):
-            st.session_state.edit_statement_id = r["Statement ID"]
-            st.rerun()
+    if filtered_stmt:
+        st.dataframe(filtered_stmt, use_container_width=True)
+
+        # -------- CSV EXPORT --------
+        csv_buf = io.StringIO()
+        writer = csv.DictWriter(csv_buf, fieldnames=filtered_stmt[0].keys())
+        writer.writeheader()
+        writer.writerows(filtered_stmt)
+
+        st.download_button(
+            "⬇ Download Statement Exceptions (CSV)",
+            csv_buf.getvalue(),
+            file_name="statement_exceptions.csv",
+            mime="text/csv"
+        )
+
+        # -------- PDF EXPORT (TEXT) --------
+        pdf_text = "STATEMENT EXCEPTIONS REPORT\n\n"
+        for r in filtered_stmt:
+            for k, v in r.items():
+                pdf_text += f"{k}: {v}\n"
+            pdf_text += "-" * 40 + "\n"
+
+        st.download_button(
+            "⬇ Download Statement Exceptions (PDF)",
+            pdf_text,
+            file_name="statement_exceptions.pdf",
+            mime="application/pdf"
+        )
 
     st.write("---")
 
+    # ================= PRODUCT FILTER =================
     st.subheader("📦 Product-level Exceptions")
     month_filter = st.selectbox(
         "Select Month",
@@ -215,16 +181,33 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         p for p in prod_rows if p["Month"] == month_filter
     ]
 
-    for idx, r in enumerate(filtered_prod):
-        c1, c2, c3, c4, c5, c6 = st.columns([2,2,2,2,2,1])
-        c1.write(r["Product"])
-        c2.write(r["Stockist"])
-        c3.write(r["Month"])
-        c4.write(r["Exception"])
-        c5.write(f"Issue:{r['Issue']} / Close:{r['Closing']}")
-        if c6.button("Open", key=f"prod_{r['Statement ID']}_{idx}"):
-            st.session_state.edit_statement_id = r["Statement ID"]
-            st.rerun()
+    if filtered_prod:
+        st.dataframe(filtered_prod, use_container_width=True)
+
+        csv_buf = io.StringIO()
+        writer = csv.DictWriter(csv_buf, fieldnames=filtered_prod[0].keys())
+        writer.writeheader()
+        writer.writerows(filtered_prod)
+
+        st.download_button(
+            "⬇ Download Product Exceptions (CSV)",
+            csv_buf.getvalue(),
+            file_name="product_exceptions.csv",
+            mime="text/csv"
+        )
+
+        pdf_text = "PRODUCT EXCEPTIONS REPORT\n\n"
+        for r in filtered_prod:
+            for k, v in r.items():
+                pdf_text += f"{k}: {v}\n"
+            pdf_text += "-" * 40 + "\n"
+
+        st.download_button(
+            "⬇ Download Product Exceptions (PDF)",
+            pdf_text,
+            file_name="product_exceptions.pdf",
+            mime="application/pdf"
+        )
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
