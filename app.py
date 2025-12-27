@@ -2,7 +2,6 @@ import streamlit as st
 from supabase import create_client
 from datetime import date
 
-# ================= CONFIG =================
 st.set_page_config(page_title="Ivy Pharmaceuticals — Sales & Stock", layout="wide")
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -14,7 +13,7 @@ MONTHS = [
     "July","August","September","October","November","December"
 ]
 
-# ================= SESSION INIT =================
+# ================= SESSION =================
 for k, v in {
     "logged_in": False,
     "user": None,
@@ -84,12 +83,10 @@ role = st.session_state.user["role"]
 
 # ================= SIDEBAR =================
 st.sidebar.title("Menu")
-
 navs = ["Create / Resume"] if role == "user" else ["Lock Control"]
 for n in navs:
     if st.sidebar.button(n):
         st.session_state.nav = n
-
 if st.sidebar.button("Logout"):
     logout()
 
@@ -107,7 +104,6 @@ if role == "user" and st.session_state.nav == "Create / Resume":
         if st.button("Resume Draft"):
             st.session_state.statement_id = draft_stmt[0]["id"]
             st.session_state.products = supabase.table("products").select("*").execute().data
-
             filled = get_filled_products(st.session_state.statement_id)
 
             for i, p in enumerate(st.session_state.products):
@@ -116,7 +112,6 @@ if role == "user" and st.session_state.nav == "Create / Resume":
                     break
             else:
                 st.session_state.product_index = len(st.session_state.products)
-
             st.rerun()
 
     st.subheader("Start New Statement")
@@ -177,7 +172,6 @@ if role == "user" and st.session_state.statement_id:
 
     prod = products[idx]
     pid = prod["id"]
-
     st.subheader(prod["name"])
 
     existing = supabase.table("sales_stock_items") \
@@ -205,15 +199,18 @@ if role == "user" and st.session_state.statement_id:
     col1, col2 = st.columns(2)
 
     if col1.button("Save & Next"):
-        supabase.table("sales_stock_items").upsert({
-            "statement_id": st.session_state.statement_id,
-            "product_id": pid,
-            "opening": opening,
-            "purchase": purchase,
-            "issue": issue,
-            "closing": closing,
-            "difference": diff
-        }).execute()
+        supabase.table("sales_stock_items") \
+            .upsert({
+                "statement_id": st.session_state.statement_id,
+                "product_id": pid,
+                "opening": opening,
+                "purchase": purchase,
+                "issue": issue,
+                "closing": closing,
+                "difference": diff
+            }, on_conflict="statement_id,product_id") \
+            .execute()
+
         st.session_state.product_index += 1
         st.rerun()
 
@@ -221,7 +218,7 @@ if role == "user" and st.session_state.statement_id:
         st.session_state.product_index -= 1
         st.rerun()
 
-# ================= ADMIN — LOCK CONTROL =================
+# ================= ADMIN LOCK =================
 if role == "admin" and st.session_state.nav == "Lock Control":
     st.header("Lock / Unlock Statements")
 
