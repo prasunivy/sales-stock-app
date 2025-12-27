@@ -1,7 +1,6 @@
 import streamlit as st
 from supabase import create_client
 from datetime import date
-import pandas as pd
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Ivy Pharmaceuticals — Sales & Stock", layout="wide")
@@ -70,6 +69,23 @@ def get_last_closing(product_id, stockist_id, year, month):
 
     return item[0]["closing"] if item else 0
 
+def load_existing_items(statement_id):
+    rows = supabase.table("sales_stock_items")\
+        .select("*")\
+        .eq("statement_id", statement_id)\
+        .execute().data
+
+    draft = {}
+    for r in rows:
+        draft[r["product_id"]] = {
+            "opening": r["opening"],
+            "purchase": r["purchase"],
+            "issue": r["issue"],
+            "closing": r["closing"],
+            "difference": r["difference"]
+        }
+    return draft
+
 # ================= LOGIN =================
 st.title("Ivy Pharmaceuticals — Sales & Stock")
 
@@ -86,7 +102,7 @@ role = st.session_state.user["role"]
 st.sidebar.title("Navigation")
 
 if role == "admin":
-    navs = ["Users", "Stockists", "Allocate", "Lock Control"]
+    navs = ["Lock Control"]
 else:
     navs = ["Create / Resume Statement"]
 
@@ -101,19 +117,27 @@ if st.sidebar.button("Logout"):
 if role == "user" and st.session_state.nav == "Create / Resume Statement":
     st.header("Create or Resume Statement")
 
-    draft = supabase.table("sales_stock_statements")\
+    draft_stmt = supabase.table("sales_stock_statements")\
         .select("*")\
         .eq("user_id", st.session_state.user["id"])\
         .eq("status", "draft")\
         .execute().data
 
-    if draft:
-        st.info("You have an unfinished statement.")
+    if draft_stmt:
+        st.info("Unfinished statement found.")
         if st.button("Resume Draft"):
-            st.session_state.statement_id = draft[0]["id"]
+            st.session_state.statement_id = draft_stmt[0]["id"]
             st.session_state.products = supabase.table("products").select("*").execute().data
-            st.session_state.product_index = 0
-            st.session_state.draft = {}
+            st.session_state.draft = load_existing_items(st.session_state.statement_id)
+
+            # Resume at first unfilled product
+            for i, p in enumerate(st.session_state.products):
+                if p["id"] not in st.session_state.draft:
+                    st.session_state.product_index = i
+                    break
+            else:
+                st.session_state.product_index = len(st.session_state.products)
+
             st.rerun()
 
     st.subheader("Create New Statement")
@@ -128,11 +152,7 @@ if role == "user" and st.session_state.nav == "Create / Resume Statement":
         st.stop()
 
     stockists = supabase.table("stockists").select("*").execute().data
-    smap = {
-        s["name"]: s["id"]
-        for s in stockists
-        if s["id"] in [a["stockist_id"] for a in allocs]
-    }
+    smap = {s["name"]: s["id"] for s in stockists if s["id"] in [a["stockist_id"] for a in allocs]}
 
     sname = st.selectbox("Stockist", smap.keys())
     year = st.selectbox("Year", [date.today().year, date.today().year - 1])
@@ -171,32 +191,7 @@ if role == "user" and st.session_state.statement_id:
     idx = st.session_state.product_index
 
     if idx >= len(products):
-        if not st.session_state.confirm_submit:
-            if st.button("Final Submit"):
-                st.session_state.confirm_submit = True
-                st.rerun()
-        else:
-            st.warning("Are you sure you want to submit?")
-            if st.button("Yes, Submit"):
-                for pid, d in st.session_state.draft.items():
-                    supabase.table("sales_stock_items").upsert({
-                        "statement_id": st.session_state.statement_id,
-                        "product_id": pid,
-                        **d
-                    }).execute()
-
-                supabase.table("sales_stock_statements")\
-                    .update({"status": "final"})\
-                    .eq("id", st.session_state.statement_id)\
-                    .execute()
-
-                st.success("Statement submitted")
-                st.session_state.statement_id = None
-                st.session_state.confirm_submit = False
-                st.rerun()
-            if st.button("Cancel"):
-                st.session_state.confirm_submit = False
-                st.rerun()
+        st.success("All products completed.")
         st.stop()
 
     prod = products[idx]
@@ -204,14 +199,19 @@ if role == "user" and st.session_state.statement_id:
 
     st.subheader(prod["name"])
 
-    last_close = get_last_closing(
-        pid, stmt["stockist_id"], stmt["year"], stmt["month"]
-    )
+    existing = st.session_state.draft.get(pid)
 
-    opening = st.number_input("Opening", value=last_close, key=f"o_{pid}")
-    purchase = st.number_input("Purchase", value=0, key=f"p_{pid}")
-    issue = st.number_input("Issue", value=0, key=f"i_{pid}")
-    closing = st.number_input("Closing", value=0, key=f"c_{pid}")
+    if existing:
+        opening = st.number_input("Opening", value=existing["opening"], key=f"o_{pid}")
+        purchase = st.number_input("Purchase", value=existing["purchase"], key=f"p_{pid}")
+        issue = st.number_input("Issue", value=existing["issue"], key=f"i_{pid}")
+        closing = st.number_input("Closing", value=existing["closing"], key=f"c_{pid}")
+    else:
+        last_close = get_last_closing(pid, stmt["stockist_id"], stmt["year"], stmt["month"])
+        opening = st.number_input("Opening", value=last_close, key=f"o_{pid}")
+        purchase = st.number_input("Purchase", value=0, key=f"p_{pid}")
+        issue = st.number_input("Issue", value=0, key=f"i_{pid}")
+        closing = st.number_input("Closing", value=0, key=f"c_{pid}")
 
     diff = opening + purchase - issue - closing
     st.info(f"Difference: {diff}")
@@ -246,12 +246,16 @@ if role == "admin" and st.session_state.nav == "Lock Control":
 
         if not s["locked"] and col[3].button("Lock", key=f"l{s['id']}"):
             supabase.table("sales_stock_statements")\
-                .update({"locked": True}).eq("id", s["id"]).execute()
+                .update({"locked": True})\
+                .eq("id", s["id"])\
+                .execute()
             st.rerun()
 
         if s["locked"] and col[3].button("Unlock", key=f"u{s['id']}"):
             supabase.table("sales_stock_statements")\
-                .update({"locked": False}).eq("id", s["id"]).execute()
+                .update({"locked": False})\
+                .eq("id", s["id"])\
+                .execute()
             st.rerun()
 
 st.write("---")
