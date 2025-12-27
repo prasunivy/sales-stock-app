@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase import create_client
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Ivy Pharmaceuticals — Sales & Stock", layout="wide")
@@ -21,8 +21,7 @@ for k, v in {
     "nav": "home",
     "statement_id": None,
     "edit_statement_id": None,
-    "products": [],
-    "product_index": 0
+    "view_only": False
 }.items():
     st.session_state.setdefault(k, v)
 
@@ -40,30 +39,6 @@ def logout():
     st.session_state.clear()
     st.rerun()
 
-# ---------------- UTIL ----------------
-def get_last_closing(pid, stockist_id, year, month):
-    stmts = supabase.table("sales_stock_statements") \
-        .select("id,year,month") \
-        .eq("stockist_id", stockist_id) \
-        .execute().data
-
-    past = [
-        s for s in stmts
-        if (s["year"], MONTHS.index(s["month"])) < (year, MONTHS.index(month))
-    ]
-    if not past:
-        return 0
-
-    last_stmt = max(past, key=lambda x: (x["year"], MONTHS.index(x["month"])))
-
-    item = supabase.table("sales_stock_items") \
-        .select("closing") \
-        .eq("statement_id", last_stmt["id"]) \
-        .eq("product_id", pid) \
-        .execute().data
-
-    return item[0]["closing"] if item else 0
-
 # ---------------- LOGIN ----------------
 st.title("Ivy Pharmaceuticals — Sales & Stock")
 
@@ -78,10 +53,11 @@ role = st.session_state.user["role"]
 
 # ---------------- SIDEBAR ----------------
 st.sidebar.title("Menu")
-if role == "user":
-    navs = ["Create / Resume"]
+
+if role == "admin":
+    navs = ["Lock Control", "Exception Dashboard"]
 else:
-    navs = ["Lock Control"]
+    navs = ["Create / Resume"]
 
 for n in navs:
     if st.sidebar.button(n):
@@ -91,130 +67,111 @@ for n in navs:
 if st.sidebar.button("Logout"):
     logout()
 
-# ================= USER FLOW (UNCHANGED) =================
-# (Your existing user flow remains exactly as before)
-
-# ================= ADMIN — LOCK CONTROL =================
-if role == "admin" and st.session_state.nav == "Lock Control" and not st.session_state.edit_statement_id:
-    st.header("Admin — Lock Control")
+# =========================================================
+# ================= ADMIN EXCEPTION DASHBOARD ==============
+# =========================================================
+if role == "admin" and st.session_state.nav == "Exception Dashboard":
+    st.header("🚨 Admin Exception Dashboard")
 
     users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
     stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
+    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
 
-    stmts = supabase.table("sales_stock_statements") \
-        .select("*") \
-        .order("created_at", desc=True) \
-        .execute().data
+    stmts = supabase.table("sales_stock_statements").select("*").execute().data
+    items = supabase.table("sales_stock_items").select("*").execute().data
 
+    today = datetime.utcnow()
+    stmt_exceptions = []
+    product_exceptions = []
+
+    # -------- PRODUCT LEVEL EXCEPTIONS --------
+    for i in items:
+        stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
+        if not stmt:
+            continue
+
+        issue = i["issue"]
+        closing = i["closing"]
+        diff = i["difference"]
+
+        exception_types = []
+
+        if issue == 0 and closing > 0:
+            exception_types.append("Zero Issue, Stock Present")
+
+        if issue > 0 and closing >= 2 * issue:
+            exception_types.append("Closing ≥ 2× Issue")
+
+        if diff != 0:
+            exception_types.append("Stock Mismatch")
+
+        for ex in exception_types:
+            product_exceptions.append({
+                "Product": products.get(i["product_id"], "Unknown"),
+                "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
+                "Month": f"{stmt['month']} {stmt['year']}",
+                "Issue": issue,
+                "Closing": closing,
+                "Exception": ex
+            })
+
+    # -------- STATEMENT LEVEL EXCEPTIONS --------
     for s in stmts:
-        with st.container(border=True):
-            created = datetime.fromisoformat(s["created_at"].replace("Z",""))
+        created = datetime.fromisoformat(s["created_at"].replace("Z",""))
+        ex_count = sum(
+            1 for i in items if i["statement_id"] == s["id"]
+            and (
+                (i["issue"] == 0 and i["closing"] > 0)
+                or (i["issue"] > 0 and i["closing"] >= 2 * i["issue"])
+                or i["difference"] != 0
+            )
+        )
 
-            st.write(f"**User:** {users.get(s['user_id'], 'Unknown')}")
-            st.write(f"**Stockist:** {stockists.get(s['stockist_id'], 'Unknown')}")
-            st.write(f"**Period:** {s['month']} {s['year']}")
-            st.write(f"**Submitted:** {created.strftime('%d-%b-%Y %H:%M')}")
-            st.write(f"**Status:** {'Locked' if s['locked'] else 'Open'}")
+        if ex_count > 0:
+            stmt_exceptions.append({
+                "User": users.get(s["user_id"], "Unknown"),
+                "Stockist": stockists.get(s["stockist_id"], "Unknown"),
+                "Month": f"{s['month']} {s['year']}",
+                "Exceptions": ex_count
+            })
 
-            c1, c2, c3 = st.columns(3)
+        if s["status"] == "draft" and today - created > timedelta(days=3):
+            stmt_exceptions.append({
+                "User": users.get(s["user_id"], "Unknown"),
+                "Stockist": stockists.get(s["stockist_id"], "Unknown"),
+                "Month": f"{s['month']} {s['year']}",
+                "Exceptions": "Draft > 3 Days"
+            })
 
-            if c1.button("View", key=f"view_{s['id']}"):
-                st.session_state.edit_statement_id = s["id"]
-                st.session_state.view_only = True
-                st.rerun()
+        if s["status"] == "final" and not s["locked"]:
+            stmt_exceptions.append({
+                "User": users.get(s["user_id"], "Unknown"),
+                "Stockist": stockists.get(s["stockist_id"], "Unknown"),
+                "Month": f"{s['month']} {s['year']}",
+                "Exceptions": "Final but Not Locked"
+            })
 
-            if not s["locked"] and c2.button("Edit", key=f"edit_{s['id']}"):
-                st.session_state.edit_statement_id = s["id"]
-                st.session_state.view_only = False
-                st.rerun()
-
-            if c3.button("Unlock" if s["locked"] else "Lock", key=f"lock_{s['id']}"):
-                supabase.table("sales_stock_statements") \
-                    .update({"locked": not s["locked"]}) \
-                    .eq("id", s["id"]) \
-                    .execute()
-                st.rerun()
-
-# ================= ADMIN — EDIT / VIEW =================
-if role == "admin" and st.session_state.edit_statement_id:
-    stmt = supabase.table("sales_stock_statements") \
-        .select("*") \
-        .eq("id", st.session_state.edit_statement_id) \
-        .execute().data[0]
-
-    products = supabase.table("products").select("*").execute().data
-    items = supabase.table("sales_stock_items") \
-        .select("*") \
-        .eq("statement_id", stmt["id"]) \
-        .execute().data
-
-    item_map = {i["product_id"]: i for i in items}
-
-    st.header("Admin Review / Edit Statement")
-
-    st.write(f"**Month:** {stmt['month']} {stmt['year']}")
-    st.write(f"**Locked:** {'Yes' if stmt['locked'] else 'No'}")
+    # -------- SUMMARY --------
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Statements", len(stmts))
+    c2.metric("Statements with Exceptions", len(stmt_exceptions))
+    c3.metric("Product Exceptions", len(product_exceptions))
 
     st.write("---")
 
-    updated_rows = []
+    st.subheader("📄 Statement-wise Exceptions")
+    if stmt_exceptions:
+        st.dataframe(stmt_exceptions, use_container_width=True)
+    else:
+        st.success("No statement-level exceptions found")
 
-    for p in products:
-        if p["id"] not in item_map:
-            continue
+    st.write("---")
 
-        i = item_map[p["id"]]
-
-        st.subheader(p["name"])
-
-        opening = i["opening"]
-        purchase = i["purchase"]
-        issue = i["issue"]
-        closing = i["closing"]
-
-        st.write(f"Opening: {opening}")
-
-        if st.session_state.view_only or stmt["locked"]:
-            st.write(f"Purchase: {purchase}")
-            st.write(f"Issue: {issue}")
-            st.write(f"Closing: {closing}")
-        else:
-            purchase = st.number_input(
-                "Purchase", value=purchase, key=f"ap_{p['id']}"
-            )
-            issue = st.number_input(
-                "Issue", value=issue, key=f"ai_{p['id']}"
-            )
-            closing = st.number_input(
-                "Closing", value=closing, key=f"ac_{p['id']}"
-            )
-
-        diff = opening + purchase - issue - closing
-        st.info(f"Difference: {diff}")
-
-        updated_rows.append({
-            "statement_id": stmt["id"],
-            "product_id": p["id"],
-            "opening": opening,
-            "purchase": purchase,
-            "issue": issue,
-            "closing": closing,
-            "difference": diff
-        })
-
-        st.write("---")
-
-    if not stmt["locked"] and not st.session_state.view_only:
-        if st.button("Save Changes"):
-            for r in updated_rows:
-                supabase.table("sales_stock_items") \
-                    .upsert(r, on_conflict="statement_id,product_id") \
-                    .execute()
-            st.success("Changes saved")
-
-    if st.button("Back to Lock Control"):
-        st.session_state.edit_statement_id = None
-        st.rerun()
+    st.subheader("📦 Product-level Exceptions")
+    if product_exceptions:
+        st.dataframe(product_exceptions, use_container_width=True)
+    else:
+        st.success("No product-level exceptions found")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
