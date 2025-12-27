@@ -32,7 +32,8 @@ def safe_pdf_text(text):
 for k, v in {
     "logged_in": False,
     "user": None,
-    "nav": "Exception Dashboard"
+    "nav": "Exception Dashboard",
+    "refresh": 0
 }.items():
     st.session_state.setdefault(k, v)
 
@@ -70,8 +71,45 @@ st.sidebar.title("Menu")
 if role == "admin":
     if st.sidebar.button("Exception Dashboard"):
         st.session_state.nav = "Exception Dashboard"
+    if st.sidebar.button("Lock Control"):
+        st.session_state.nav = "Lock Control"
 if st.sidebar.button("Logout"):
     logout()
+
+# =========================================================
+# ================= LOCK CONTROL (FIXED) ==================
+# =========================================================
+if role == "admin" and st.session_state.nav == "Lock Control":
+    st.header("🔐 Lock Control")
+
+    users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
+    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
+
+    stmts = supabase.table("sales_stock_statements") \
+        .select("*") \
+        .order("created_at", desc=True) \
+        .execute().data
+
+    for s in stmts:
+        with st.container(border=True):
+            st.write(f"**User:** {users.get(s['user_id'], 'Unknown')}")
+            st.write(f"**Stockist:** {stockists.get(s['stockist_id'], 'Unknown')}")
+            st.write(f"**Period:** {s['month']} {s['year']}")
+            st.write(f"**Status:** {'Locked' if s['locked'] else 'Open'}")
+
+            if st.button(
+                "Unlock" if s["locked"] else "Lock",
+                key=f"lock_{s['id']}_{st.session_state.refresh}"
+            ):
+                supabase.table("sales_stock_statements") \
+                    .update({"locked": not s["locked"]}) \
+                    .eq("id", s["id"]) \
+                    .execute()
+
+                # Force clean refresh
+                st.session_state.refresh += 1
+                st.success("Lock status updated")
+                st.rerun()
 
 # =========================================================
 # ============ ADMIN EXCEPTION DASHBOARD ==================
@@ -92,7 +130,6 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
     prod_rows = []
     months = set()
 
-    # ---------------- PRODUCT LEVEL ----------------
     for i in items:
         stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
         if not stmt:
@@ -113,14 +150,11 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
 
         if i["issue"] == 0 and i["closing"] > 0:
             add_prod("Zero Issue, Stock Present")
-
         if i["issue"] > 0 and i["closing"] >= 2 * i["issue"]:
             add_prod("Closing >= 2x Issue")
-
         if i["difference"] != 0:
             add_prod("Stock Mismatch")
 
-    # ---------------- STATEMENT LEVEL ----------------
     for s in stmts:
         created = datetime.fromisoformat(s["created_at"].replace("Z", ""))
         base = {
@@ -138,95 +172,11 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         if any(p["Month"] == base["Month"] for p in prod_rows):
             stmt_rows.append({**base, "Exception": "Product Exceptions"})
 
-    # ================= STATEMENT FILTER =================
     st.subheader("📄 Statement-wise Exceptions")
-    stmt_filter = st.selectbox(
-        "Filter by Exception",
-        ["All", "Draft > 3 Days", "Final but Not Locked", "Product Exceptions"]
-    )
+    st.dataframe(stmt_rows, use_container_width=True)
 
-    filtered_stmt = stmt_rows if stmt_filter == "All" else [
-        r for r in stmt_rows if r["Exception"] == stmt_filter
-    ]
-
-    if filtered_stmt:
-        st.dataframe(filtered_stmt, use_container_width=True)
-
-        # CSV
-        csv_buf = io.StringIO()
-        writer = csv.DictWriter(csv_buf, fieldnames=filtered_stmt[0].keys())
-        writer.writeheader()
-        writer.writerows(filtered_stmt)
-
-        st.download_button(
-            "⬇ Download Statement Exceptions (CSV)",
-            csv_buf.getvalue(),
-            "statement_exceptions.csv",
-            "text/csv"
-        )
-
-        # PDF
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=10)
-        pdf.cell(0, 10, "STATEMENT EXCEPTION REPORT", ln=True)
-
-        for r in filtered_stmt:
-            for k, v in r.items():
-                pdf.cell(0, 8, f"{safe_pdf_text(k)}: {safe_pdf_text(v)}", ln=True)
-            pdf.cell(0, 8, "-" * 40, ln=True)
-
-        st.download_button(
-            "⬇ Download Statement Exceptions (PDF)",
-            pdf.output(dest="S").encode("latin-1"),
-            "statement_exceptions.pdf",
-            "application/pdf"
-        )
-
-    st.write("---")
-
-    # ================= PRODUCT FILTER =================
     st.subheader("📦 Product-level Exceptions")
-    month_filter = st.selectbox(
-        "Select Month",
-        ["All"] + sorted(months, reverse=True)
-    )
-
-    filtered_prod = prod_rows if month_filter == "All" else [
-        p for p in prod_rows if p["Month"] == month_filter
-    ]
-
-    if filtered_prod:
-        st.dataframe(filtered_prod, use_container_width=True)
-
-        csv_buf = io.StringIO()
-        writer = csv.DictWriter(csv_buf, fieldnames=filtered_prod[0].keys())
-        writer.writeheader()
-        writer.writerows(filtered_prod)
-
-        st.download_button(
-            "⬇ Download Product Exceptions (CSV)",
-            csv_buf.getvalue(),
-            "product_exceptions.csv",
-            "text/csv"
-        )
-
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=10)
-        pdf.cell(0, 10, "PRODUCT EXCEPTION REPORT", ln=True)
-
-        for r in filtered_prod:
-            for k, v in r.items():
-                pdf.cell(0, 8, f"{safe_pdf_text(k)}: {safe_pdf_text(v)}", ln=True)
-            pdf.cell(0, 8, "-" * 40, ln=True)
-
-        st.download_button(
-            "⬇ Download Product Exceptions (PDF)",
-            pdf.output(dest="S").encode("latin-1"),
-            "product_exceptions.pdf",
-            "application/pdf"
-        )
+    st.dataframe(prod_rows, use_container_width=True)
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
