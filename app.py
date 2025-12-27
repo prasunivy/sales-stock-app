@@ -14,6 +14,20 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ================= HELPERS =================
+def safe_pdf_text(text):
+    if text is None:
+        return ""
+    return (
+        str(text)
+        .replace("≥", ">=")
+        .replace("×", "x")
+        .replace("–", "-")
+        .replace("—", "-")
+        .encode("latin-1", "ignore")
+        .decode("latin-1")
+    )
+
 # ================= SESSION =================
 for k, v in {
     "logged_in": False,
@@ -78,7 +92,7 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
     prod_rows = []
     months = set()
 
-    # ---------------- PRODUCT LEVEL EXCEPTIONS ----------------
+    # ---------------- PRODUCT LEVEL ----------------
     for i in items:
         stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
         if not stmt:
@@ -101,12 +115,12 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
             add_prod("Zero Issue, Stock Present")
 
         if i["issue"] > 0 and i["closing"] >= 2 * i["issue"]:
-            add_prod("Closing ≥ 2× Issue")
+            add_prod("Closing >= 2x Issue")
 
         if i["difference"] != 0:
             add_prod("Stock Mismatch")
 
-    # ---------------- STATEMENT LEVEL EXCEPTIONS ----------------
+    # ---------------- STATEMENT LEVEL ----------------
     for s in stmts:
         created = datetime.fromisoformat(s["created_at"].replace("Z", ""))
         base = {
@@ -126,7 +140,6 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
 
     # ================= STATEMENT FILTER =================
     st.subheader("📄 Statement-wise Exceptions")
-
     stmt_filter = st.selectbox(
         "Filter by Exception",
         ["All", "Draft > 3 Days", "Final but Not Locked", "Product Exceptions"]
@@ -139,6 +152,7 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
     if filtered_stmt:
         st.dataframe(filtered_stmt, use_container_width=True)
 
+        # CSV
         csv_buf = io.StringIO()
         writer = csv.DictWriter(csv_buf, fieldnames=filtered_stmt[0].keys())
         writer.writeheader()
@@ -151,6 +165,7 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
             "text/csv"
         )
 
+        # PDF
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=10)
@@ -158,7 +173,7 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
 
         for r in filtered_stmt:
             for k, v in r.items():
-                pdf.cell(0, 8, f"{k}: {v}", ln=True)
+                pdf.cell(0, 8, f"{safe_pdf_text(k)}: {safe_pdf_text(v)}", ln=True)
             pdf.cell(0, 8, "-" * 40, ln=True)
 
         st.download_button(
@@ -167,14 +182,11 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
             "statement_exceptions.pdf",
             "application/pdf"
         )
-    else:
-        st.info("No matching statement exceptions")
 
     st.write("---")
 
     # ================= PRODUCT FILTER =================
     st.subheader("📦 Product-level Exceptions")
-
     month_filter = st.selectbox(
         "Select Month",
         ["All"] + sorted(months, reverse=True)
@@ -206,7 +218,7 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
 
         for r in filtered_prod:
             for k, v in r.items():
-                pdf.cell(0, 8, f"{k}: {v}", ln=True)
+                pdf.cell(0, 8, f"{safe_pdf_text(k)}: {safe_pdf_text(v)}", ln=True)
             pdf.cell(0, 8, "-" * 40, ln=True)
 
         st.download_button(
@@ -215,8 +227,6 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
             "product_exceptions.pdf",
             "application/pdf"
         )
-    else:
-        st.info("No matching product exceptions")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
