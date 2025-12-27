@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase import create_client
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Ivy Pharmaceuticals — Sales & Stock", layout="wide")
@@ -19,7 +19,6 @@ for k, v in {
     "logged_in": False,
     "user": None,
     "nav": "home",
-    "statement_id": None,
     "edit_statement_id": None,
     "view_only": False
 }.items():
@@ -55,7 +54,7 @@ role = st.session_state.user["role"]
 st.sidebar.title("Menu")
 
 if role == "admin":
-    navs = ["Lock Control", "Exception Dashboard"]
+    navs = ["Exception Dashboard", "Lock Control"]
 else:
     navs = ["Create / Resume"]
 
@@ -84,14 +83,16 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
 
     stmt_rows = []
     prod_rows = []
+    available_months = set()
 
-    # -------- PRODUCT LEVEL --------
+    # ---------------- PRODUCT LEVEL ----------------
     for i in items:
         stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
         if not stmt:
             continue
 
         month_label = f"{stmt['month']} {stmt['year']}"
+        available_months.add(month_label)
 
         issue = i["issue"]
         closing = i["closing"]
@@ -115,7 +116,7 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         if diff != 0:
             add_prod("Stock Mismatch")
 
-    # -------- STATEMENT LEVEL --------
+    # ---------------- STATEMENT LEVEL ----------------
     for s in stmts:
         created = datetime.fromisoformat(s["created_at"].replace("Z",""))
         base = {
@@ -134,10 +135,19 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         if any(p["Statement ID"] == s["id"] for p in prod_rows):
             stmt_rows.append({**base, "Exception": "Product Exceptions"})
 
-    # -------- STATEMENT TABLE --------
+    # ================= STATEMENT FILTER =================
     st.subheader("📄 Statement-wise Exceptions")
 
-    for idx, row in enumerate(stmt_rows):
+    stmt_filter = st.selectbox(
+        "Filter by Exception",
+        ["All", "Draft > 3 Days", "Final but Not Locked", "Product Exceptions"]
+    )
+
+    filtered_stmt = stmt_rows if stmt_filter == "All" else [
+        s for s in stmt_rows if s["Exception"] == stmt_filter
+    ]
+
+    for idx, row in enumerate(filtered_stmt):
         c1, c2, c3, c4, c5 = st.columns([2,2,2,3,1])
         c1.write(row["User"])
         c2.write(row["Stockist"])
@@ -151,10 +161,19 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
 
     st.write("---")
 
-    # -------- PRODUCT TABLE --------
+    # ================= PRODUCT FILTER =================
     st.subheader("📦 Product-level Exceptions")
 
-    for idx, row in enumerate(prod_rows):
+    month_filter = st.selectbox(
+        "Select Month",
+        ["All"] + sorted(available_months, reverse=True)
+    )
+
+    filtered_prod = prod_rows if month_filter == "All" else [
+        p for p in prod_rows if p["Month"] == month_filter
+    ]
+
+    for idx, row in enumerate(filtered_prod):
         c1, c2, c3, c4, c5, c6 = st.columns([2,2,2,2,2,1])
         c1.write(row["Product"])
         c2.write(row["Stockist"])
@@ -166,44 +185,6 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
             st.session_state.view_only = True
             st.session_state.nav = "Lock Control"
             st.rerun()
-
-# =========================================================
-# ================= ADMIN VIEW =============================
-# =========================================================
-if role == "admin" and st.session_state.edit_statement_id:
-    stmt = supabase.table("sales_stock_statements") \
-        .select("*") \
-        .eq("id", st.session_state.edit_statement_id) \
-        .execute().data[0]
-
-    products = supabase.table("products").select("*").execute().data
-    items = supabase.table("sales_stock_items") \
-        .select("*") \
-        .eq("statement_id", stmt["id"]) \
-        .execute().data
-
-    item_map = {i["product_id"]: i for i in items}
-
-    st.header("🔍 Admin Statement Review")
-    st.write(f"**Period:** {stmt['month']} {stmt['year']}")
-    st.write(f"**Locked:** {'Yes' if stmt['locked'] else 'No'}")
-    st.write("---")
-
-    for p in products:
-        if p["id"] not in item_map:
-            continue
-        i = item_map[p["id"]]
-        st.subheader(p["name"])
-        st.write(f"Opening: {i['opening']}")
-        st.write(f"Purchase: {i['purchase']}")
-        st.write(f"Issue: {i['issue']}")
-        st.write(f"Closing: {i['closing']}")
-        st.write(f"Difference: {i['difference']}")
-        st.write("---")
-
-    if st.button("Back"):
-        st.session_state.edit_statement_id = None
-        st.rerun()
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
