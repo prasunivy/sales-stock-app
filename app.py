@@ -81,97 +81,114 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
     items = supabase.table("sales_stock_items").select("*").execute().data
 
     today = datetime.utcnow()
-    stmt_exceptions = []
-    product_exceptions = []
 
-    # -------- PRODUCT LEVEL EXCEPTIONS --------
+    stmt_rows = []
+    prod_rows = []
+    available_months = set()
+
+    # ---------------- PRODUCT LEVEL ----------------
     for i in items:
         stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
         if not stmt:
             continue
 
+        month_label = f"{stmt['month']} {stmt['year']}"
+        available_months.add(month_label)
+
         issue = i["issue"]
         closing = i["closing"]
         diff = i["difference"]
 
-        exception_types = []
-
         if issue == 0 and closing > 0:
-            exception_types.append("Zero Issue, Stock Present")
-
-        if issue > 0 and closing >= 2 * issue:
-            exception_types.append("Closing ≥ 2× Issue")
-
-        if diff != 0:
-            exception_types.append("Stock Mismatch")
-
-        for ex in exception_types:
-            product_exceptions.append({
+            prod_rows.append({
+                "Month": month_label,
                 "Product": products.get(i["product_id"], "Unknown"),
                 "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
-                "Month": f"{stmt['month']} {stmt['year']}",
                 "Issue": issue,
                 "Closing": closing,
-                "Exception": ex
+                "Exception": "Zero Issue, Stock Present"
             })
 
-    # -------- STATEMENT LEVEL EXCEPTIONS --------
+        if issue > 0 and closing >= 2 * issue:
+            prod_rows.append({
+                "Month": month_label,
+                "Product": products.get(i["product_id"], "Unknown"),
+                "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
+                "Issue": issue,
+                "Closing": closing,
+                "Exception": "Closing ≥ 2× Issue"
+            })
+
+        if diff != 0:
+            prod_rows.append({
+                "Month": month_label,
+                "Product": products.get(i["product_id"], "Unknown"),
+                "Stockist": stockists.get(stmt["stockist_id"], "Unknown"),
+                "Issue": issue,
+                "Closing": closing,
+                "Exception": "Stock Mismatch"
+            })
+
+    # ---------------- STATEMENT LEVEL ----------------
     for s in stmts:
-        created = datetime.fromisoformat(s["created_at"].replace("Z",""))
-        ex_count = sum(
-            1 for i in items if i["statement_id"] == s["id"]
-            and (
-                (i["issue"] == 0 and i["closing"] > 0)
-                or (i["issue"] > 0 and i["closing"] >= 2 * i["issue"])
-                or i["difference"] != 0
-            )
-        )
-
-        if ex_count > 0:
-            stmt_exceptions.append({
-                "User": users.get(s["user_id"], "Unknown"),
-                "Stockist": stockists.get(s["stockist_id"], "Unknown"),
-                "Month": f"{s['month']} {s['year']}",
-                "Exceptions": ex_count
-            })
+        created = datetime.fromisoformat(s["created_at"].replace("Z", ""))
+        base = {
+            "User": users.get(s["user_id"], "Unknown"),
+            "Stockist": stockists.get(s["stockist_id"], "Unknown"),
+            "Month": f"{s['month']} {s['year']}"
+        }
 
         if s["status"] == "draft" and today - created > timedelta(days=3):
-            stmt_exceptions.append({
-                "User": users.get(s["user_id"], "Unknown"),
-                "Stockist": stockists.get(s["stockist_id"], "Unknown"),
-                "Month": f"{s['month']} {s['year']}",
-                "Exceptions": "Draft > 3 Days"
-            })
+            stmt_rows.append({**base, "Exception": "Draft > 3 Days"})
 
         if s["status"] == "final" and not s["locked"]:
-            stmt_exceptions.append({
-                "User": users.get(s["user_id"], "Unknown"),
-                "Stockist": stockists.get(s["stockist_id"], "Unknown"),
-                "Month": f"{s['month']} {s['year']}",
-                "Exceptions": "Final but Not Locked"
-            })
+            stmt_rows.append({**base, "Exception": "Final but Not Locked"})
 
-    # -------- SUMMARY --------
+        prod_ex_count = sum(1 for p in prod_rows if p["Month"] == base["Month"])
+        if prod_ex_count > 0:
+            stmt_rows.append({**base, "Exception": "Product Exceptions"})
+
+    # ---------------- SUMMARY ----------------
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Statements", len(stmts))
-    c2.metric("Statements with Exceptions", len(stmt_exceptions))
-    c3.metric("Product Exceptions", len(product_exceptions))
+    c2.metric("Statement Exceptions", len(stmt_rows))
+    c3.metric("Product Exceptions", len(prod_rows))
 
     st.write("---")
 
+    # ================= STATEMENT FILTER =================
     st.subheader("📄 Statement-wise Exceptions")
-    if stmt_exceptions:
-        st.dataframe(stmt_exceptions, use_container_width=True)
+    stmt_filter = st.selectbox(
+        "Filter by Exception",
+        ["All", "Draft > 3 Days", "Final but Not Locked", "Product Exceptions"]
+    )
+
+    filtered_stmt = stmt_rows if stmt_filter == "All" else [
+        s for s in stmt_rows if s["Exception"] == stmt_filter
+    ]
+
+    if filtered_stmt:
+        st.dataframe(filtered_stmt, use_container_width=True)
     else:
-        st.success("No statement-level exceptions found")
+        st.info("No matching statement exceptions")
 
     st.write("---")
 
+    # ================= PRODUCT FILTER =================
     st.subheader("📦 Product-level Exceptions")
-    if product_exceptions:
-        st.dataframe(product_exceptions, use_container_width=True)
+    month_filter = st.selectbox(
+        "Select Month",
+        ["All"] + sorted(available_months, reverse=True)
+    )
+
+    filtered_prod = prod_rows if month_filter == "All" else [
+        p for p in prod_rows if p["Month"] == month_filter
+    ]
+
+    if filtered_prod:
+        st.dataframe(filtered_prod, use_container_width=True)
     else:
-        st.success("No product-level exceptions found")
+        st.info("No matching product exceptions")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
