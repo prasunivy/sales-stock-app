@@ -1,7 +1,6 @@
 import streamlit as st
 from supabase import create_client
-from datetime import datetime, timedelta
-from fpdf import FPDF
+from datetime import datetime
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Ivy Pharmaceuticals — Sales & Stock", layout="wide")
@@ -56,41 +55,8 @@ st.sidebar.title("Menu")
 if role == "admin":
     if st.sidebar.button("Exception Dashboard"):
         st.session_state.nav = "Exception Dashboard"
-    if st.sidebar.button("Lock Control"):
-        st.session_state.nav = "Lock Control"
 if st.sidebar.button("Logout"):
     logout()
-
-# =========================================================
-# ================= ADMIN EDIT / VIEW =====================
-# =========================================================
-if role == "admin" and st.session_state.edit_statement_id:
-    stmt = supabase.table("sales_stock_statements") \
-        .select("*").eq("id", st.session_state.edit_statement_id).execute().data[0]
-
-    items = supabase.table("sales_stock_items") \
-        .select("*").eq("statement_id", stmt["id"]).execute().data
-
-    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
-
-    st.header("📄 Statement Detail")
-    st.write(f"**Period:** {stmt['month']} {stmt['year']}")
-    st.write(f"**Status:** {'Locked (Read-only)' if stmt['locked'] else 'Open (Editable)'}")
-    st.write("---")
-
-    for i in items:
-        st.subheader(products.get(i["product_id"], "Unknown"))
-        st.write(f"Opening: {i['opening']}")
-        st.write(f"Purchase: {i['purchase']}")
-        st.write(f"Issue: {i['issue']}")
-        st.write(f"Closing: {i['closing']}")
-        st.write(f"Difference: {i['difference']}")
-
-    if st.button("⬅ Back to Dashboard"):
-        st.session_state.edit_statement_id = None
-        st.rerun()
-
-    st.stop()
 
 # =========================================================
 # ============ EXCEPTION DASHBOARD ========================
@@ -98,20 +64,32 @@ if role == "admin" and st.session_state.edit_statement_id:
 if role == "admin" and st.session_state.nav == "Exception Dashboard":
     st.header("🚨 Exception Dashboard")
 
-    users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
     stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
     products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
 
     stmts = supabase.table("sales_stock_statements").select("*").execute().data
     items = supabase.table("sales_stock_items").select("*").execute().data
-    today = datetime.utcnow()
 
-    # ================= PRODUCT-LEVEL =================
+    # ---------- Build month list ----------
+    months = sorted(
+        {f"{s['month']} {s['year']}" for s in stmts},
+        reverse=True
+    )
+
+    selected_month = st.selectbox(
+        "Filter Product Exceptions by Month",
+        ["All"] + months
+    )
+
     st.subheader("📦 Product-level Exceptions")
 
     for i in items:
         stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
         if not stmt:
+            continue
+
+        month_label = f"{stmt['month']} {stmt['year']}"
+        if selected_month != "All" and month_label != selected_month:
             continue
 
         severity = None
@@ -132,10 +110,11 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
                 st.markdown(f"### {SEVERITY_BADGE[severity]}")
                 st.write(f"**Product:** {products.get(i['product_id'], 'Unknown')}")
                 st.write(f"**Stockist:** {stockists.get(stmt['stockist_id'], 'Unknown')}")
-                st.write(f"**Month:** {stmt['month']} {stmt['year']}")
+                st.write(f"**Month:** {month_label}")
                 st.write(f"**Issue:** {i['issue']}")
                 st.write(f"**Closing:** {i['closing']}")
                 st.write(f"**Reason:** {reason}")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
+
