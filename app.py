@@ -62,7 +62,66 @@ if st.sidebar.button("Logout"):
     logout()
 
 # =========================================================
-# ================= LOCK CONTROL (RESTORED) ===============
+# ================= STATEMENT VIEW / EDIT =================
+# =========================================================
+if role == "admin" and st.session_state.edit_statement_id:
+    stmt = supabase.table("sales_stock_statements") \
+        .select("*").eq("id", st.session_state.edit_statement_id).execute().data[0]
+
+    items = supabase.table("sales_stock_items") \
+        .select("*").eq("statement_id", stmt["id"]).execute().data
+
+    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
+
+    st.header("📄 Statement Detail")
+    st.write(f"**Period:** {stmt['month']} {stmt['year']}")
+    st.write(f"**Status:** {'Locked (Read-only)' if stmt['locked'] else 'Open (Editable)'}")
+    st.write("---")
+
+    updated = []
+
+    for i in items:
+        st.subheader(products.get(i["product_id"], "Unknown"))
+        opening = i["opening"]
+
+        purchase = st.number_input(
+            "Purchase", value=i["purchase"],
+            key=f"p_{i['id']}", disabled=stmt["locked"]
+        )
+        issue = st.number_input(
+            "Issue", value=i["issue"],
+            key=f"i_{i['id']}", disabled=stmt["locked"]
+        )
+        closing = st.number_input(
+            "Closing", value=i["closing"],
+            key=f"c_{i['id']}", disabled=stmt["locked"]
+        )
+
+        diff = opening + purchase - issue - closing
+        st.write(f"Difference: {diff}")
+
+        updated.append((i["id"], purchase, issue, closing, diff))
+
+    if not stmt["locked"] and st.button("Save Changes"):
+        for uid, p, iss, c, d in updated:
+            supabase.table("sales_stock_items").update({
+                "purchase": p,
+                "issue": iss,
+                "closing": c,
+                "difference": d
+            }).eq("id", uid).execute()
+        st.success("Changes saved")
+        st.session_state.edit_statement_id = None
+        st.rerun()
+
+    if st.button("⬅ Back to Dashboard"):
+        st.session_state.edit_statement_id = None
+        st.rerun()
+
+    st.stop()
+
+# =========================================================
+# ================= LOCK CONTROL ==========================
 # =========================================================
 if role == "admin" and st.session_state.nav == "Lock Control":
     st.header("🔐 Lock Control")
@@ -71,9 +130,7 @@ if role == "admin" and st.session_state.nav == "Lock Control":
     stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
 
     stmts = supabase.table("sales_stock_statements") \
-        .select("*") \
-        .order("created_at", desc=True) \
-        .execute().data
+        .select("*").order("created_at", desc=True).execute().data
 
     for s in stmts:
         with st.container(border=True):
@@ -84,32 +141,18 @@ if role == "admin" and st.session_state.nav == "Lock Control":
 
             c1, c2, c3 = st.columns(3)
 
-            # ---------- Edit ----------
             with c1:
-                if st.button(
-                    "Edit",
-                    key=f"edit_{s['id']}_{st.session_state.refresh}",
-                    disabled=s["locked"]
-                ):
+                if st.button("Edit", key=f"edit_{s['id']}_{st.session_state.refresh}", disabled=s["locked"]):
                     st.session_state.edit_statement_id = s["id"]
                     st.rerun()
 
-            # ---------- Delete ----------
             with c2:
-                if st.button(
-                    "Delete",
-                    key=f"del_{s['id']}_{st.session_state.refresh}",
-                    disabled=s["locked"]
-                ):
-                    supabase.table("sales_stock_items") \
-                        .delete().eq("statement_id", s["id"]).execute()
-                    supabase.table("sales_stock_statements") \
-                        .delete().eq("id", s["id"]).execute()
+                if st.button("Delete", key=f"del_{s['id']}_{st.session_state.refresh}", disabled=s["locked"]):
+                    supabase.table("sales_stock_items").delete().eq("statement_id", s["id"]).execute()
+                    supabase.table("sales_stock_statements").delete().eq("id", s["id"]).execute()
                     st.session_state.refresh += 1
-                    st.success("Statement deleted")
                     st.rerun()
 
-            # ---------- Lock / Unlock ----------
             with c3:
                 if st.button(
                     "Unlock" if s["locked"] else "Lock",
@@ -165,5 +208,13 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
                 st.write(f"**Closing:** {i['closing']}")
                 st.write(f"**Reason:** {reason}")
 
+                if st.button(
+                    "Open Statement",
+                    key=f"open_prod_stmt_{i['id']}"
+                ):
+                    st.session_state.edit_statement_id = stmt["id"]
+                    st.rerun()
+
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
+
