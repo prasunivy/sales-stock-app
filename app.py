@@ -9,11 +9,20 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+SEVERITY_BADGE = {
+    "High": "🔴 HIGH",
+    "Medium": "🟠 MEDIUM",
+    "Low": "🟡 LOW",
+    "Neutral": "🟢 NEUTRAL"
+}
+
 # ================= SESSION =================
 for k, v in {
     "logged_in": False,
     "user": None,
-    "nav": "AI Seasonal Insights",
+    "nav": "Exception Dashboard",
+    "edit_statement_id": None,
+    "refresh": 0
 }.items():
     st.session_state.setdefault(k, v)
 
@@ -45,87 +54,104 @@ role = st.session_state.user["role"]
 
 # ================= SIDEBAR =================
 st.sidebar.title("Menu")
+
 if role == "admin":
-    if st.sidebar.button("AI Seasonal Insights"):
+    if st.sidebar.button("📊 Exception Dashboard"):
+        st.session_state.nav = "Exception Dashboard"
+    if st.sidebar.button("🔐 Lock Control"):
+        st.session_state.nav = "Lock Control"
+    if st.sidebar.button("🤖 AI Seasonal Insights"):
         st.session_state.nav = "AI Seasonal Insights"
+
 if st.sidebar.button("Logout"):
     logout()
 
 # =========================================================
-# ============ AI SEASONAL INSIGHTS DASHBOARD =============
+# ================= AI SEASONAL INSIGHTS ==================
 # =========================================================
 if role == "admin" and st.session_state.nav == "AI Seasonal Insights":
-    st.header("📊 AI Seasonal Trend Insights")
+    st.header("🤖 AI Seasonal Trend Insights")
 
     products = supabase.table("products").select("*").execute().data
     stmts = supabase.table("sales_stock_statements").select("*").execute().data
     items = supabase.table("sales_stock_items").select("*").execute().data
-    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
+
+    if not stmts:
+        st.info("No statements available yet.")
+        st.stop()
 
     months = sorted({f"{s['month']} {s['year']}" for s in stmts}, reverse=True)
     sel_month = st.selectbox("Select Month", months)
 
+    month_name = sel_month.split()[0]
+
+    shown = False
+
     for prod in products:
-        pname = prod["name"]
         pid = prod["id"]
+        pname = prod["name"]
 
-        # Determine season
-        month_name = sel_month.split()[0]
+        peak = prod.get("peak_season_months") or []
+        high = prod.get("high_season_months") or []
+        low = prod.get("low_season_months") or []
+        off = prod.get("off_season_months") or []
 
-        if month_name in (prod.get("peak_season_months") or []):
+        if month_name in peak:
             season = "Peak"
-        elif month_name in (prod.get("high_season_months") or []):
+        elif month_name in high:
             season = "High"
-        elif month_name in (prod.get("low_season_months") or []):
+        elif month_name in low:
             season = "Low"
-        elif month_name in (prod.get("off_season_months") or []):
+        elif month_name in off:
             season = "Off"
         else:
             season = "Neutral"
 
-        # Fetch movement
-        related_items = [
-            i for i in items
-            if i["product_id"] == pid
-            and f"{next(s['month'] for s in stmts if s['id']==i['statement_id'])} "
-            f"{next(s['year'] for s in stmts if s['id']==i['statement_id'])}" == sel_month
-        ]
+        related_items = []
+        for i in items:
+            if i["product_id"] != pid:
+                continue
+            stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
+            if not stmt:
+                continue
+            if f"{stmt['month']} {stmt['year']}" == sel_month:
+                related_items.append(i)
 
         if not related_items:
             continue
 
+        shown = True
         total_issue = sum(i["issue"] for i in related_items)
         total_closing = sum(i["closing"] for i in related_items)
 
-        # AI Insight Logic
         if season == "Peak" and total_issue == 0:
-            severity = "🔴"
-            insight = "Underperforming in peak season"
-            reason = "Peak demand month but no movement recorded"
+            sev, msg = "High", "Underperforming in peak season"
         elif season == "Off" and total_closing > 0:
-            severity = "🟠"
-            insight = "Stock buildup outside season"
-            reason = "Off season but stock remains high"
+            sev, msg = "Medium", "Stock buildup outside season"
         elif season == "Off":
-            severity = "🟡"
-            insight = "Seasonal slowdown is normal"
-            reason = "Low movement expected in off season"
-        elif season in ["High", "Peak"]:
-            severity = "🟢"
-            insight = "Seasonal demand behaving as expected"
-            reason = "Movement aligns with season"
+            sev, msg = "Low", "Seasonal slowdown is normal"
         else:
-            continue
+            sev, msg = "Neutral", "No abnormal seasonal behavior"
 
         with st.container(border=True):
-            st.markdown(f"### {severity} {pname}")
+            st.markdown(f"### {SEVERITY_BADGE[sev]} {pname}")
             st.write(f"**Month:** {sel_month}")
             st.write(f"**Season Context:** {season}")
-            st.write(f"**Issue:** {total_issue}")
-            st.write(f"**Closing:** {total_closing}")
-            st.write(f"**Insight:** {insight}")
-            with st.expander("Why?"):
-                st.write(reason)
+            st.write(f"**Total Issue:** {total_issue}")
+            st.write(f"**Total Closing:** {total_closing}")
+            st.write(f"**Insight:** {msg}")
+
+    if not shown:
+        st.info("No product data found for the selected month.")
+
+# =========================================================
+# ================= PLACEHOLDER DASHBOARDS ================
+# =========================================================
+if role == "admin" and st.session_state.nav == "Exception Dashboard":
+    st.info("Exception Dashboard (already implemented earlier)")
+
+if role == "admin" and st.session_state.nav == "Lock Control":
+    st.info("Lock Control (already implemented earlier)")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
