@@ -20,7 +20,8 @@ for k, v in {
     "logged_in": False,
     "user": None,
     "nav": "Exception Dashboard",
-    "edit_statement_id": None
+    "edit_statement_id": None,
+    "refresh": 0
 }.items():
     st.session_state.setdefault(k, v)
 
@@ -55,8 +56,70 @@ st.sidebar.title("Menu")
 if role == "admin":
     if st.sidebar.button("Exception Dashboard"):
         st.session_state.nav = "Exception Dashboard"
+    if st.sidebar.button("Lock Control"):
+        st.session_state.nav = "Lock Control"
 if st.sidebar.button("Logout"):
     logout()
+
+# =========================================================
+# ================= LOCK CONTROL (RESTORED) ===============
+# =========================================================
+if role == "admin" and st.session_state.nav == "Lock Control":
+    st.header("🔐 Lock Control")
+
+    users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
+    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
+
+    stmts = supabase.table("sales_stock_statements") \
+        .select("*") \
+        .order("created_at", desc=True) \
+        .execute().data
+
+    for s in stmts:
+        with st.container(border=True):
+            st.write(f"**User:** {users.get(s['user_id'], 'Unknown')}")
+            st.write(f"**Stockist:** {stockists.get(s['stockist_id'], 'Unknown')}")
+            st.write(f"**Period:** {s['month']} {s['year']}")
+            st.write(f"**Status:** {'Locked' if s['locked'] else 'Open'}")
+
+            c1, c2, c3 = st.columns(3)
+
+            # ---------- Edit ----------
+            with c1:
+                if st.button(
+                    "Edit",
+                    key=f"edit_{s['id']}_{st.session_state.refresh}",
+                    disabled=s["locked"]
+                ):
+                    st.session_state.edit_statement_id = s["id"]
+                    st.rerun()
+
+            # ---------- Delete ----------
+            with c2:
+                if st.button(
+                    "Delete",
+                    key=f"del_{s['id']}_{st.session_state.refresh}",
+                    disabled=s["locked"]
+                ):
+                    supabase.table("sales_stock_items") \
+                        .delete().eq("statement_id", s["id"]).execute()
+                    supabase.table("sales_stock_statements") \
+                        .delete().eq("id", s["id"]).execute()
+                    st.session_state.refresh += 1
+                    st.success("Statement deleted")
+                    st.rerun()
+
+            # ---------- Lock / Unlock ----------
+            with c3:
+                if st.button(
+                    "Unlock" if s["locked"] else "Lock",
+                    key=f"lock_{s['id']}_{st.session_state.refresh}"
+                ):
+                    supabase.table("sales_stock_statements") \
+                        .update({"locked": not s["locked"]}) \
+                        .eq("id", s["id"]).execute()
+                    st.session_state.refresh += 1
+                    st.rerun()
 
 # =========================================================
 # ============ EXCEPTION DASHBOARD ========================
@@ -70,16 +133,8 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
     stmts = supabase.table("sales_stock_statements").select("*").execute().data
     items = supabase.table("sales_stock_items").select("*").execute().data
 
-    # ---------- Build month list ----------
-    months = sorted(
-        {f"{s['month']} {s['year']}" for s in stmts},
-        reverse=True
-    )
-
-    selected_month = st.selectbox(
-        "Filter Product Exceptions by Month",
-        ["All"] + months
-    )
+    months = sorted({f"{s['month']} {s['year']}" for s in stmts}, reverse=True)
+    selected_month = st.selectbox("Filter Product Exceptions by Month", ["All"] + months)
 
     st.subheader("📦 Product-level Exceptions")
 
@@ -88,33 +143,27 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         if not stmt:
             continue
 
-        month_label = f"{stmt['month']} {stmt['year']}"
-        if selected_month != "All" and month_label != selected_month:
+        label = f"{stmt['month']} {stmt['year']}"
+        if selected_month != "All" and label != selected_month:
             continue
 
-        severity = None
-        reason = None
-
+        severity, reason = None, None
         if i["difference"] != 0:
-            severity = "High"
-            reason = "Stock Mismatch"
+            severity, reason = "High", "Stock Mismatch"
         elif i["issue"] == 0 and i["closing"] > 0:
-            severity = "Medium"
-            reason = "Zero Issue, Stock Present"
+            severity, reason = "Medium", "Zero Issue, Stock Present"
         elif i["issue"] > 0 and i["closing"] >= 2 * i["issue"]:
-            severity = "Low"
-            reason = "Closing ≥ 2× Issue"
+            severity, reason = "Low", "Closing ≥ 2× Issue"
 
         if severity:
             with st.container(border=True):
                 st.markdown(f"### {SEVERITY_BADGE[severity]}")
                 st.write(f"**Product:** {products.get(i['product_id'], 'Unknown')}")
                 st.write(f"**Stockist:** {stockists.get(stmt['stockist_id'], 'Unknown')}")
-                st.write(f"**Month:** {month_label}")
+                st.write(f"**Month:** {label}")
                 st.write(f"**Issue:** {i['issue']}")
                 st.write(f"**Closing:** {i['closing']}")
                 st.write(f"**Reason:** {reason}")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
-
