@@ -14,6 +14,7 @@ SEVERITY_BADGE = {
     "Medium": "🟠 MEDIUM",
     "Low": "🟡 LOW"
 }
+SEVERITY_RANK = {"High": 1, "Medium": 2, "Low": 3}
 
 # ================= SESSION =================
 for k, v in {
@@ -179,7 +180,9 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
     months = sorted({f"{s['month']} {s['year']}" for s in stmts}, reverse=True)
     selected_month = st.selectbox("Filter Product Exceptions by Month", ["All"] + months)
 
-    st.subheader("📦 Product-level Exceptions")
+    sort_by_severity = st.toggle("Sort by Severity (High → Low)", value=True)
+
+    exceptions = []
 
     for i in items:
         stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
@@ -199,22 +202,35 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
             severity, reason = "Low", "Closing ≥ 2× Issue"
 
         if severity:
-            with st.container(border=True):
-                st.markdown(f"### {SEVERITY_BADGE[severity]}")
-                st.write(f"**Product:** {products.get(i['product_id'], 'Unknown')}")
-                st.write(f"**Stockist:** {stockists.get(stmt['stockist_id'], 'Unknown')}")
-                st.write(f"**Month:** {label}")
-                st.write(f"**Issue:** {i['issue']}")
-                st.write(f"**Closing:** {i['closing']}")
-                st.write(f"**Reason:** {reason}")
+            exceptions.append({
+                "severity": severity,
+                "rank": SEVERITY_RANK[severity],
+                "item": i,
+                "stmt": stmt,
+                "reason": reason
+            })
 
-                if st.button(
-                    "Open Statement",
-                    key=f"open_prod_stmt_{i['id']}"
-                ):
-                    st.session_state.edit_statement_id = stmt["id"]
-                    st.rerun()
+    if sort_by_severity:
+        exceptions.sort(key=lambda x: x["rank"])
+
+    st.subheader("📦 Product-level Exceptions")
+
+    for ex in exceptions:
+        i = ex["item"]
+        stmt = ex["stmt"]
+
+        with st.container(border=True):
+            st.markdown(f"### {SEVERITY_BADGE[ex['severity']]}")
+            st.write(f"**Product:** {products.get(i['product_id'], 'Unknown')}")
+            st.write(f"**Stockist:** {stockists.get(stmt['stockist_id'], 'Unknown')}")
+            st.write(f"**Month:** {stmt['month']} {stmt['year']}")
+            st.write(f"**Issue:** {i['issue']}")
+            st.write(f"**Closing:** {i['closing']}")
+            st.write(f"**Reason:** {ex['reason']}")
+
+            if st.button("Open Statement", key=f"open_prod_stmt_{i['id']}"):
+                st.session_state.edit_statement_id = stmt["id"]
+                st.rerun()
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
-
