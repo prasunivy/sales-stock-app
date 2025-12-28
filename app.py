@@ -93,7 +93,7 @@ if role == "admin" and st.session_state.edit_statement_id:
 
     st.header("📄 Statement Detail")
     st.write(f"**Period:** {stmt['month']} {stmt['year']}")
-    st.write(f"**Status:** {'Locked' if stmt['locked'] else 'Open'}")
+    st.write(f"**Status:** {'Locked (Read-only)' if stmt['locked'] else 'Open (Editable)'}")
     st.write("---")
 
     updated = []
@@ -102,9 +102,15 @@ if role == "admin" and st.session_state.edit_statement_id:
         st.subheader(products.get(i["product_id"], "Unknown"))
 
         opening = i["opening"]
-        purchase = st.number_input("Purchase", value=i["purchase"], key=f"p_{i['id']}", disabled=stmt["locked"])
-        issue = st.number_input("Issue", value=i["issue"], key=f"i_{i['id']}", disabled=stmt["locked"])
-        closing = st.number_input("Closing", value=i["closing"], key=f"c_{i['id']}", disabled=stmt["locked"])
+        purchase = st.number_input(
+            "Purchase", value=i["purchase"], key=f"p_{i['id']}", disabled=stmt["locked"]
+        )
+        issue = st.number_input(
+            "Issue", value=i["issue"], key=f"i_{i['id']}", disabled=stmt["locked"]
+        )
+        closing = st.number_input(
+            "Closing", value=i["closing"], key=f"c_{i['id']}", disabled=stmt["locked"]
+        )
 
         diff = opening + purchase - issue - closing
         st.write(f"Difference: {diff}")
@@ -176,17 +182,15 @@ if role == "admin" and st.session_state.nav == "Lock Control":
                     st.rerun()
 
 # =========================================================
-# ============ EXCEPTION DASHBOARD (CLICK-THROUGH) ========
+# ============ EXCEPTION DASHBOARD (FIXED) ================
 # =========================================================
 if role == "admin" and st.session_state.nav == "Exception Dashboard":
-    st.header("🚨 Exception Dashboard (Click to Open)")
+    st.header("🚨 Exception Dashboard (Locked Visible)")
 
     users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
     stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
-    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
 
     stmts = supabase.table("sales_stock_statements").select("*").execute().data
-    items = supabase.table("sales_stock_items").select("*").execute().data
 
     today = datetime.utcnow()
     stmt_rows = []
@@ -195,8 +199,8 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
         created = datetime.fromisoformat(s["created_at"].replace("Z", ""))
         if s["status"] == "draft" and today - created > timedelta(days=3):
             stmt_rows.append(s)
-        elif s["status"] == "final" and not s["locked"]:
-            stmt_rows.append(s)
+        elif s["status"] == "final":
+            stmt_rows.append(s)  # ← KEY FIX: include locked & unlocked
 
     st.subheader("📄 Statement Exceptions")
 
@@ -205,7 +209,7 @@ if role == "admin" and st.session_state.nav == "Exception Dashboard":
             st.write(f"**User:** {users.get(s['user_id'], 'Unknown')}")
             st.write(f"**Stockist:** {stockists.get(s['stockist_id'], 'Unknown')}")
             st.write(f"**Period:** {s['month']} {s['year']}")
-            st.write(f"**Status:** {'Locked' if s['locked'] else 'Open'}")
+            st.write(f"**Status:** {'Locked (Read-only)' if s['locked'] else 'Open (Editable)'}")
 
             if st.button(f"Open Statement", key=f"open_{s['id']}"):
                 st.session_state.edit_statement_id = s["id"]
