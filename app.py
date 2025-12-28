@@ -12,6 +12,11 @@ SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 SEVERITY_RANK = {"High": 1, "Medium": 2, "Low": 3}
+SEVERITY_BADGE = {
+    "High": "🔴 HIGH",
+    "Medium": "🟠 MEDIUM",
+    "Low": "🟡 LOW"
+}
 
 # ================= HELPERS =================
 def safe_pdf_text(text):
@@ -65,13 +70,11 @@ role = st.session_state.user["role"]
 
 # ================= SIDEBAR =================
 st.sidebar.title("Menu")
-
 if role == "admin":
     if st.sidebar.button("Exception Dashboard"):
         st.session_state.nav = "Exception Dashboard"
     if st.sidebar.button("Lock Control"):
         st.session_state.nav = "Lock Control"
-
 if st.sidebar.button("Logout"):
     logout()
 
@@ -100,21 +103,12 @@ if role == "admin" and st.session_state.edit_statement_id:
 
     for i in items:
         st.subheader(products.get(i["product_id"], "Unknown"))
-
         opening = i["opening"]
-        purchase = st.number_input(
-            "Purchase", value=i["purchase"], key=f"p_{i['id']}", disabled=stmt["locked"]
-        )
-        issue = st.number_input(
-            "Issue", value=i["issue"], key=f"i_{i['id']}", disabled=stmt["locked"]
-        )
-        closing = st.number_input(
-            "Closing", value=i["closing"], key=f"c_{i['id']}", disabled=stmt["locked"]
-        )
-
+        purchase = st.number_input("Purchase", value=i["purchase"], key=f"p_{i['id']}", disabled=stmt["locked"])
+        issue = st.number_input("Issue", value=i["issue"], key=f"i_{i['id']}", disabled=stmt["locked"])
+        closing = st.number_input("Closing", value=i["closing"], key=f"c_{i['id']}", disabled=stmt["locked"])
         diff = opening + purchase - issue - closing
         st.write(f"Difference: {diff}")
-
         updated.append((i["id"], purchase, issue, closing, diff))
 
     if not stmt["locked"] and st.button("Save Changes"):
@@ -125,7 +119,6 @@ if role == "admin" and st.session_state.edit_statement_id:
                 "closing": c,
                 "difference": d
             }).eq("id", uid).execute()
-
         st.success("Changes saved")
         st.session_state.edit_statement_id = None
         st.rerun()
@@ -146,9 +139,7 @@ if role == "admin" and st.session_state.nav == "Lock Control":
     stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
 
     stmts = supabase.table("sales_stock_statements") \
-        .select("*") \
-        .order("created_at", desc=True) \
-        .execute().data
+        .select("*").order("created_at", desc=True).execute().data
 
     for s in stmts:
         with st.container(border=True):
@@ -158,62 +149,55 @@ if role == "admin" and st.session_state.nav == "Lock Control":
             st.write(f"**Status:** {'Locked' if s['locked'] else 'Open'}")
 
             c1, c2, c3 = st.columns(3)
-
             with c1:
-                if st.button("Edit", key=f"edit_{s['id']}_{st.session_state.refresh}", disabled=s["locked"]):
-                    st.session_state.edit_statement_id = s["id"]
-                    st.rerun()
-
+                st.button("Edit", key=f"edit_{s['id']}", disabled=s["locked"])
             with c2:
-                if st.button("Delete", key=f"del_{s['id']}_{st.session_state.refresh}", disabled=s["locked"]):
-                    supabase.table("sales_stock_items").delete().eq("statement_id", s["id"]).execute()
-                    supabase.table("sales_stock_statements").delete().eq("id", s["id"]).execute()
-                    st.session_state.refresh += 1
-                    st.success("Statement deleted")
-                    st.rerun()
-
+                st.button("Delete", key=f"del_{s['id']}", disabled=s["locked"])
             with c3:
-                if st.button("Unlock" if s["locked"] else "Lock", key=f"lock_{s['id']}_{st.session_state.refresh}"):
-                    supabase.table("sales_stock_statements") \
-                        .update({"locked": not s["locked"]}) \
-                        .eq("id", s["id"]) \
-                        .execute()
-                    st.session_state.refresh += 1
-                    st.rerun()
+                st.button("Unlock" if s["locked"] else "Lock", key=f"lock_{s['id']}")
 
 # =========================================================
-# ============ EXCEPTION DASHBOARD (FIXED) ================
+# ============ EXCEPTION DASHBOARD (BADGES) ===============
 # =========================================================
 if role == "admin" and st.session_state.nav == "Exception Dashboard":
-    st.header("🚨 Exception Dashboard (Locked Visible)")
+    st.header("🚨 Exception Dashboard")
 
     users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
     stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
 
     stmts = supabase.table("sales_stock_statements").select("*").execute().data
-
     today = datetime.utcnow()
-    stmt_rows = []
-
-    for s in stmts:
-        created = datetime.fromisoformat(s["created_at"].replace("Z", ""))
-        if s["status"] == "draft" and today - created > timedelta(days=3):
-            stmt_rows.append(s)
-        elif s["status"] == "final":
-            stmt_rows.append(s)  # ← KEY FIX: include locked & unlocked
 
     st.subheader("📄 Statement Exceptions")
 
-    for s in stmt_rows:
-        with st.container(border=True):
-            st.write(f"**User:** {users.get(s['user_id'], 'Unknown')}")
-            st.write(f"**Stockist:** {stockists.get(s['stockist_id'], 'Unknown')}")
-            st.write(f"**Period:** {s['month']} {s['year']}")
-            st.write(f"**Status:** {'Locked (Read-only)' if s['locked'] else 'Open (Editable)'}")
+    for s in stmts:
+        created = datetime.fromisoformat(s["created_at"].replace("Z", ""))
 
-            if st.button(f"Open Statement", key=f"open_{s['id']}"):
-                st.session_state.edit_statement_id = s["id"]
-                st.rerun()
+        severity = None
+        reason = None
+
+        if s["status"] == "draft" and today - created > timedelta(days=3):
+            severity = "High"
+            reason = "Draft > 3 Days"
+        elif s["status"] == "final" and not s["locked"]:
+            severity = "Medium"
+            reason = "Final but Not Locked"
+        elif s["status"] == "final" and s["locked"]:
+            severity = "Low"
+            reason = "Locked Final (Review)"
+
+        if severity:
+            with st.container(border=True):
+                st.markdown(f"### {SEVERITY_BADGE[severity]}")
+                st.write(f"**User:** {users.get(s['user_id'], 'Unknown')}")
+                st.write(f"**Stockist:** {stockists.get(s['stockist_id'], 'Unknown')}")
+                st.write(f"**Period:** {s['month']} {s['year']}")
+                st.write(f"**Reason:** {reason}")
+                st.write(f"**Status:** {'Locked' if s['locked'] else 'Open'}")
+
+                if st.button("Open Statement", key=f"open_{s['id']}"):
+                    st.session_state.edit_statement_id = s["id"]
+                    st.rerun()
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
