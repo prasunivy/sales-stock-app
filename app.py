@@ -9,20 +9,11 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-SEVERITY_BADGE = {
-    "High": "🔴 HIGH",
-    "Medium": "🟠 MEDIUM",
-    "Low": "🟡 LOW"
-}
-SEVERITY_RANK = {"High": 1, "Medium": 2, "Low": 3}
-
 # ================= SESSION =================
 for k, v in {
     "logged_in": False,
     "user": None,
-    "nav": "Exception Dashboard",
-    "edit_statement_id": None,
-    "refresh": 0
+    "nav": "AI Seasonal Insights",
 }.items():
     st.session_state.setdefault(k, v)
 
@@ -55,182 +46,86 @@ role = st.session_state.user["role"]
 # ================= SIDEBAR =================
 st.sidebar.title("Menu")
 if role == "admin":
-    if st.sidebar.button("Exception Dashboard"):
-        st.session_state.nav = "Exception Dashboard"
-    if st.sidebar.button("Lock Control"):
-        st.session_state.nav = "Lock Control"
+    if st.sidebar.button("AI Seasonal Insights"):
+        st.session_state.nav = "AI Seasonal Insights"
 if st.sidebar.button("Logout"):
     logout()
 
 # =========================================================
-# ================= STATEMENT VIEW / EDIT =================
+# ============ AI SEASONAL INSIGHTS DASHBOARD =============
 # =========================================================
-if role == "admin" and st.session_state.edit_statement_id:
-    stmt = supabase.table("sales_stock_statements") \
-        .select("*").eq("id", st.session_state.edit_statement_id).execute().data[0]
+if role == "admin" and st.session_state.nav == "AI Seasonal Insights":
+    st.header("📊 AI Seasonal Trend Insights")
 
-    items = supabase.table("sales_stock_items") \
-        .select("*").eq("statement_id", stmt["id"]).execute().data
-
-    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
-
-    st.header("📄 Statement Detail")
-    st.write(f"**Period:** {stmt['month']} {stmt['year']}")
-    st.write(f"**Status:** {'Locked (Read-only)' if stmt['locked'] else 'Open (Editable)'}")
-    st.write("---")
-
-    updated = []
-
-    for i in items:
-        st.subheader(products.get(i["product_id"], "Unknown"))
-        opening = i["opening"]
-
-        purchase = st.number_input(
-            "Purchase", value=i["purchase"],
-            key=f"p_{i['id']}", disabled=stmt["locked"]
-        )
-        issue = st.number_input(
-            "Issue", value=i["issue"],
-            key=f"i_{i['id']}", disabled=stmt["locked"]
-        )
-        closing = st.number_input(
-            "Closing", value=i["closing"],
-            key=f"c_{i['id']}", disabled=stmt["locked"]
-        )
-
-        diff = opening + purchase - issue - closing
-        st.write(f"Difference: {diff}")
-
-        updated.append((i["id"], purchase, issue, closing, diff))
-
-    if not stmt["locked"] and st.button("Save Changes"):
-        for uid, p, iss, c, d in updated:
-            supabase.table("sales_stock_items").update({
-                "purchase": p,
-                "issue": iss,
-                "closing": c,
-                "difference": d
-            }).eq("id", uid).execute()
-        st.success("Changes saved")
-        st.session_state.edit_statement_id = None
-        st.rerun()
-
-    if st.button("⬅ Back to Dashboard"):
-        st.session_state.edit_statement_id = None
-        st.rerun()
-
-    st.stop()
-
-# =========================================================
-# ================= LOCK CONTROL ==========================
-# =========================================================
-if role == "admin" and st.session_state.nav == "Lock Control":
-    st.header("🔐 Lock Control")
-
-    users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
-    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
-
-    stmts = supabase.table("sales_stock_statements") \
-        .select("*").order("created_at", desc=True).execute().data
-
-    for s in stmts:
-        with st.container(border=True):
-            st.write(f"**User:** {users.get(s['user_id'], 'Unknown')}")
-            st.write(f"**Stockist:** {stockists.get(s['stockist_id'], 'Unknown')}")
-            st.write(f"**Period:** {s['month']} {s['year']}")
-            st.write(f"**Status:** {'Locked' if s['locked'] else 'Open'}")
-
-            c1, c2, c3 = st.columns(3)
-
-            with c1:
-                if st.button("Edit", key=f"edit_{s['id']}_{st.session_state.refresh}", disabled=s["locked"]):
-                    st.session_state.edit_statement_id = s["id"]
-                    st.rerun()
-
-            with c2:
-                if st.button("Delete", key=f"del_{s['id']}_{st.session_state.refresh}", disabled=s["locked"]):
-                    supabase.table("sales_stock_items").delete().eq("statement_id", s["id"]).execute()
-                    supabase.table("sales_stock_statements").delete().eq("id", s["id"]).execute()
-                    st.session_state.refresh += 1
-                    st.rerun()
-
-            with c3:
-                if st.button(
-                    "Unlock" if s["locked"] else "Lock",
-                    key=f"lock_{s['id']}_{st.session_state.refresh}"
-                ):
-                    supabase.table("sales_stock_statements") \
-                        .update({"locked": not s["locked"]}) \
-                        .eq("id", s["id"]).execute()
-                    st.session_state.refresh += 1
-                    st.rerun()
-
-# =========================================================
-# ============ EXCEPTION DASHBOARD ========================
-# =========================================================
-if role == "admin" and st.session_state.nav == "Exception Dashboard":
-    st.header("🚨 Exception Dashboard")
-
-    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
-    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
-
+    products = supabase.table("products").select("*").execute().data
     stmts = supabase.table("sales_stock_statements").select("*").execute().data
     items = supabase.table("sales_stock_items").select("*").execute().data
+    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
 
     months = sorted({f"{s['month']} {s['year']}" for s in stmts}, reverse=True)
-    selected_month = st.selectbox("Filter Product Exceptions by Month", ["All"] + months)
+    sel_month = st.selectbox("Select Month", months)
 
-    sort_by_severity = st.toggle("Sort by Severity (High → Low)", value=True)
+    for prod in products:
+        pname = prod["name"]
+        pid = prod["id"]
 
-    exceptions = []
+        # Determine season
+        month_name = sel_month.split()[0]
 
-    for i in items:
-        stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
-        if not stmt:
+        if month_name in (prod.get("peak_season_months") or []):
+            season = "Peak"
+        elif month_name in (prod.get("high_season_months") or []):
+            season = "High"
+        elif month_name in (prod.get("low_season_months") or []):
+            season = "Low"
+        elif month_name in (prod.get("off_season_months") or []):
+            season = "Off"
+        else:
+            season = "Neutral"
+
+        # Fetch movement
+        related_items = [
+            i for i in items
+            if i["product_id"] == pid
+            and f"{next(s['month'] for s in stmts if s['id']==i['statement_id'])} "
+            f"{next(s['year'] for s in stmts if s['id']==i['statement_id'])}" == sel_month
+        ]
+
+        if not related_items:
             continue
 
-        label = f"{stmt['month']} {stmt['year']}"
-        if selected_month != "All" and label != selected_month:
+        total_issue = sum(i["issue"] for i in related_items)
+        total_closing = sum(i["closing"] for i in related_items)
+
+        # AI Insight Logic
+        if season == "Peak" and total_issue == 0:
+            severity = "🔴"
+            insight = "Underperforming in peak season"
+            reason = "Peak demand month but no movement recorded"
+        elif season == "Off" and total_closing > 0:
+            severity = "🟠"
+            insight = "Stock buildup outside season"
+            reason = "Off season but stock remains high"
+        elif season == "Off":
+            severity = "🟡"
+            insight = "Seasonal slowdown is normal"
+            reason = "Low movement expected in off season"
+        elif season in ["High", "Peak"]:
+            severity = "🟢"
+            insight = "Seasonal demand behaving as expected"
+            reason = "Movement aligns with season"
+        else:
             continue
-
-        severity, reason = None, None
-        if i["difference"] != 0:
-            severity, reason = "High", "Stock Mismatch"
-        elif i["issue"] == 0 and i["closing"] > 0:
-            severity, reason = "Medium", "Zero Issue, Stock Present"
-        elif i["issue"] > 0 and i["closing"] >= 2 * i["issue"]:
-            severity, reason = "Low", "Closing ≥ 2× Issue"
-
-        if severity:
-            exceptions.append({
-                "severity": severity,
-                "rank": SEVERITY_RANK[severity],
-                "item": i,
-                "stmt": stmt,
-                "reason": reason
-            })
-
-    if sort_by_severity:
-        exceptions.sort(key=lambda x: x["rank"])
-
-    st.subheader("📦 Product-level Exceptions")
-
-    for ex in exceptions:
-        i = ex["item"]
-        stmt = ex["stmt"]
 
         with st.container(border=True):
-            st.markdown(f"### {SEVERITY_BADGE[ex['severity']]}")
-            st.write(f"**Product:** {products.get(i['product_id'], 'Unknown')}")
-            st.write(f"**Stockist:** {stockists.get(stmt['stockist_id'], 'Unknown')}")
-            st.write(f"**Month:** {stmt['month']} {stmt['year']}")
-            st.write(f"**Issue:** {i['issue']}")
-            st.write(f"**Closing:** {i['closing']}")
-            st.write(f"**Reason:** {ex['reason']}")
-
-            if st.button("Open Statement", key=f"open_prod_stmt_{i['id']}"):
-                st.session_state.edit_statement_id = stmt["id"]
-                st.rerun()
+            st.markdown(f"### {severity} {pname}")
+            st.write(f"**Month:** {sel_month}")
+            st.write(f"**Season Context:** {season}")
+            st.write(f"**Issue:** {total_issue}")
+            st.write(f"**Closing:** {total_closing}")
+            st.write(f"**Insight:** {insight}")
+            with st.expander("Why?"):
+                st.write(reason)
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
