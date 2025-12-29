@@ -19,34 +19,33 @@ MONTH_ORDER = [
     "July","August","September","October","November","December"
 ]
 
-SEVERITY = {
-    "High": "🔴 HIGH",
-    "Medium": "🟠 MEDIUM",
-    "Low": "🟡 LOW"
-}
-
 # ================= SESSION =================
-for k, v in {
-    "logged_in": False,
-    "user": None,
-    "nav": "Home",
-    "statement_id": None,
-    "product_index": 0,
-    "view_stmt_id": None,
-    "edit_stmt_id": None,
-}.items():
-    st.session_state.setdefault(k, v)
+for k in [
+    "logged_in", "user", "nav",
+    "statement_id", "product_index"
+]:
+    st.session_state.setdefault(k, None)
 
 # ================= HELPERS =================
+def safe_select(table, **filters):
+    try:
+        q = supabase.table(table).select("*")
+        for k, v in filters.items():
+            q = q.eq(k, v)
+        return q.execute().data or []
+    except Exception:
+        return []
+
 def login(username, password):
-    res = supabase.table("users") \
-        .select("*") \
-        .eq("username", username.strip()) \
-        .eq("password", password.strip()) \
-        .execute().data
+    res = safe_select(
+        "users",
+        username=username.strip(),
+        password=password.strip()
+    )
     if res:
         st.session_state.logged_in = True
         st.session_state.user = res[0]
+        st.session_state.nav = "Home"
         st.rerun()
     st.error("Invalid credentials")
 
@@ -87,21 +86,19 @@ if not st.session_state.logged_in:
         login(u, p)
     st.stop()
 
-role = st.session_state.user["role"]
-uid = st.session_state.user["id"]
+user = st.session_state.user
+role = user["role"]
+uid = user["id"]
 
 # ================= SIDEBAR =================
 st.sidebar.title("Menu")
 
 if role == "admin":
-    if st.sidebar.button("📝 Data Entry"):
-        st.session_state.nav = "Home"
-    if st.sidebar.button("📊 Exception Dashboard"):
-        st.session_state.nav = "Exceptions"
-    if st.sidebar.button("🔐 Lock Control"):
-        st.session_state.nav = "Lock"
-    if st.sidebar.button("📈 Matrix Dashboards"):
-        st.session_state.nav = "Matrix"
+    if st.sidebar.button("👤 Users"): st.session_state.nav = "Users"
+    if st.sidebar.button("📦 Products"): st.session_state.nav = "Products"
+    if st.sidebar.button("🏪 Stockists"): st.session_state.nav = "Stockists"
+    if st.sidebar.button("🔗 Allocate Stockists"): st.session_state.nav = "Allocate"
+    if st.sidebar.button("📈 Matrix Dashboards"): st.session_state.nav = "Matrix"
 
 if role == "user":
     if st.sidebar.button("📝 New Statement"):
@@ -111,22 +108,78 @@ if st.sidebar.button("Logout"):
     logout()
 
 # =========================================================
-# ================= USER — DATA ENTRY =====================
+# ================= ADMIN — USERS =========================
+# =========================================================
+if role == "admin" and st.session_state.nav == "Users":
+    st.header("👤 Manage Users")
+    uname = st.text_input("Username")
+    pwd = st.text_input("Password")
+    r = st.selectbox("Role", ["user", "admin"])
+    if st.button("Add User"):
+        supabase.table("users").insert({
+            "username": uname, "password": pwd, "role": r
+        }).execute()
+        st.success("User added")
+
+    for u in safe_select("users"):
+        st.write(f"{u['username']} ({u['role']})")
+
+# =========================================================
+# ================= ADMIN — PRODUCTS ======================
+# =========================================================
+if role == "admin" and st.session_state.nav == "Products":
+    st.header("📦 Products")
+    p = st.text_input("Product name")
+    if st.button("Add Product"):
+        supabase.table("products").insert({"name": p}).execute()
+        st.success("Added")
+
+    for p in safe_select("products"):
+        st.write(p["name"])
+
+# =========================================================
+# ================= ADMIN — STOCKISTS =====================
+# =========================================================
+if role == "admin" and st.session_state.nav == "Stockists":
+    st.header("🏪 Stockists")
+    s = st.text_input("Stockist name")
+    if st.button("Add Stockist"):
+        supabase.table("stockists").insert({"name": s}).execute()
+        st.success("Added")
+
+    for s in safe_select("stockists"):
+        st.write(s["name"])
+
+# =========================================================
+# ============ ADMIN — ALLOCATE STOCKISTS =================
+# =========================================================
+if role == "admin" and st.session_state.nav == "Allocate":
+    users = safe_select("users")
+    stockists = safe_select("stockists")
+
+    u = st.selectbox("User", users, format_func=lambda x: x["username"])
+    s = st.selectbox("Stockist", stockists, format_func=lambda x: x["name"])
+
+    if st.button("Allocate"):
+        supabase.table("user_stockist").insert({
+            "user_id": u["id"],
+            "stockist_id": s["id"]
+        }).execute()
+        st.success("Allocated")
+
+# =========================================================
+# ================= USER — NEW STATEMENT ==================
 # =========================================================
 if role == "user" and st.session_state.nav == "New Statement":
-    st.header("📝 New Sales & Stock Statement")
+    st.header("📝 New Statement")
 
-    mappings = supabase.table("user_stockist") \
-        .select("stockist_id") \
-        .eq("user_id", uid) \
-        .execute().data
-
+    mappings = safe_select("user_stockist", user_id=uid)
     if not mappings:
         st.warning("No stockist allocated. Contact admin.")
         st.stop()
 
     stockist_ids = [m["stockist_id"] for m in mappings]
-    stockists = supabase.table("stockists").select("*").in_("id", stockist_ids).execute().data
+    stockists = [s for s in safe_select("stockists") if s["id"] in stockist_ids]
 
     sel_stockist = st.selectbox("Stockist", stockists, format_func=lambda x: x["name"])
     month = st.selectbox("Month", MONTH_ORDER)
@@ -141,16 +194,28 @@ if role == "user" and st.session_state.nav == "New Statement":
             "status": "draft",
             "locked": False
         }).execute()
+
         st.session_state.statement_id = res.data[0]["id"]
         st.session_state.product_index = 0
         st.rerun()
 
-# ================= PRODUCT ENTRY =================
+# =========================================================
+# ================= PRODUCT ENTRY =========================
+# =========================================================
 if role == "user" and st.session_state.statement_id:
-    products = supabase.table("products").select("*").order("name").execute().data
-    prod = products[st.session_state.product_index]
+    products = safe_select("products")
+    idx = st.session_state.product_index
 
-    st.subheader(f"📦 {prod['name']}")
+    if idx >= len(products):
+        supabase.table("sales_stock_statements") \
+            .update({"status": "final"}) \
+            .eq("id", st.session_state.statement_id).execute()
+        st.success("Statement submitted")
+        st.session_state.statement_id = None
+        st.stop()
+
+    prod = products[idx]
+    st.subheader(prod["name"])
 
     opening = st.number_input("Opening", 0, step=1)
     purchase = st.number_input("Purchase", 0, step=1)
@@ -170,46 +235,40 @@ if role == "user" and st.session_state.statement_id:
             "closing": closing,
             "difference": diff
         }).execute()
-
         st.session_state.product_index += 1
-        if st.session_state.product_index >= len(products):
-            supabase.table("sales_stock_statements") \
-                .update({"status": "final"}) \
-                .eq("id", st.session_state.statement_id).execute()
-            st.success("Statement submitted")
-            st.session_state.statement_id = None
         st.rerun()
 
 # =========================================================
-# ================= ADMIN — MATRIX DASHBOARDS =============
+# ================= ADMIN — MATRIX ========================
 # =========================================================
 if role == "admin" and st.session_state.nav == "Matrix":
-    st.header("📈 Matrix Dashboards")
+    st.header("📈 Matrix Dashboard")
 
-    stmts = supabase.table("sales_stock_statements").select("*").execute().data
-    items = supabase.table("sales_stock_items").select("*").execute().data
-    products = supabase.table("products").select("*").execute().data
+    stmts = safe_select("sales_stock_statements")
+    items = safe_select("sales_stock_items")
+    products = safe_select("products")
 
-    # -------- Matrix 1 --------
-    st.subheader("📊 Month × Product")
+    if not stmts:
+        st.info("No data yet.")
+        st.stop()
 
-    year_sel = st.selectbox("Year", sorted({s["year"] for s in stmts}, reverse=True))
-    month_sel = st.selectbox("Month", MONTH_ORDER)
+    year = st.selectbox("Year", sorted({s["year"] for s in stmts}, reverse=True))
+    month = st.selectbox("Month", MONTH_ORDER)
 
-    matrix1 = []
+    rows = []
     for p in products:
         p_items = [
             i for i in items
             if i["product_id"] == p["id"]
             and any(
                 s["id"] == i["statement_id"]
-                and s["year"] == year_sel
-                and s["month"] == month_sel
+                and s["year"] == year
+                and s["month"] == month
                 for s in stmts
             )
         ]
         if p_items:
-            matrix1.append({
+            rows.append({
                 "Product": p["name"],
                 "Opening": sum(i["opening"] for i in p_items),
                 "Purchase": sum(i["purchase"] for i in p_items),
@@ -218,67 +277,16 @@ if role == "admin" and st.session_state.nav == "Matrix":
                 "Difference": sum(i["difference"] for i in p_items)
             })
 
-    if matrix1:
-        df1 = pd.DataFrame(matrix1)
-        st.dataframe(df1, use_container_width=True)
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.download_button("⬇️ CSV", df1.to_csv(index=False),
-                               f"matrix1_{month_sel}_{year_sel}.csv")
-        with c2:
-            st.download_button("⬇️ PDF",
-                               generate_pdf("Matrix 1 — Month × Product",
-                                            f"{month_sel} {year_sel}", df1),
-                               f"matrix1_{month_sel}_{year_sel}.pdf")
+    if rows:
+        df = pd.DataFrame(rows)
+        st.dataframe(df)
+        st.download_button("⬇️ CSV", df.to_csv(index=False),
+                           f"matrix_{month}_{year}.csv")
+        st.download_button("⬇️ PDF",
+                           generate_pdf("Matrix", f"{month} {year}", df),
+                           f"matrix_{month}_{year}.pdf")
     else:
-        st.info("No data available.")
-
-    st.divider()
-
-    # -------- Matrix 2 --------
-    st.subheader("📈 Product × Month")
-
-    prod_sel = st.selectbox("Product", products, format_func=lambda x: x["name"])
-    year_sel2 = st.selectbox("Year ", sorted({s["year"] for s in stmts}, reverse=True))
-
-    matrix2 = []
-    for m in MONTH_ORDER:
-        m_items = [
-            i for i in items
-            if i["product_id"] == prod_sel["id"]
-            and any(
-                s["id"] == i["statement_id"]
-                and s["year"] == year_sel2
-                and s["month"] == m
-                for s in stmts
-            )
-        ]
-        if m_items:
-            matrix2.append({
-                "Month": m,
-                "Opening": sum(i["opening"] for i in m_items),
-                "Purchase": sum(i["purchase"] for i in m_items),
-                "Issue": sum(i["issue"] for i in m_items),
-                "Closing": sum(i["closing"] for i in m_items),
-                "Difference": sum(i["difference"] for i in m_items)
-            })
-
-    if matrix2:
-        df2 = pd.DataFrame(matrix2)
-        st.dataframe(df2, use_container_width=True)
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.download_button("⬇️ CSV", df2.to_csv(index=False),
-                               f"matrix2_{prod_sel['name']}_{year_sel2}.csv")
-        with c2:
-            st.download_button("⬇️ PDF",
-                               generate_pdf("Matrix 2 — Product × Month",
-                                            f"{prod_sel['name']} ({year_sel2})", df2),
-                               f"matrix2_{prod_sel['name']}_{year_sel2}.pdf")
-    else:
-        st.info("No data available.")
+        st.info("No data for selected period.")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
