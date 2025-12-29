@@ -3,7 +3,10 @@ from supabase import create_client
 from datetime import datetime
 
 # ================= CONFIG =================
-st.set_page_config(page_title="Ivy Pharmaceuticals — Data Entry", layout="wide")
+st.set_page_config(
+    page_title="Ivy Pharmaceuticals — Sales & Stock Entry",
+    layout="wide"
+)
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
@@ -20,9 +23,12 @@ for k, v in {
     st.session_state.setdefault(k, v)
 
 # ================= AUTH =================
-def login(u, p):
-    res = supabase.table("users").select("*") \
-        .eq("username", u.strip()).eq("password", p.strip()).execute().data
+def login(username, password):
+    res = supabase.table("users") \
+        .select("*") \
+        .eq("username", username.strip()) \
+        .eq("password", password.strip()) \
+        .execute().data
     if res:
         st.session_state.logged_in = True
         st.session_state.user = res[0]
@@ -50,19 +56,19 @@ uid = st.session_state.user["id"]
 st.sidebar.title("Menu")
 
 if role == "admin":
-    if st.sidebar.button("Users"):
+    if st.sidebar.button("👤 Users"):
         st.session_state.nav = "Users"
-    if st.sidebar.button("Products"):
+    if st.sidebar.button("📦 Products"):
         st.session_state.nav = "Products"
-    if st.sidebar.button("Stockists"):
+    if st.sidebar.button("🏪 Stockists"):
         st.session_state.nav = "Stockists"
-    if st.sidebar.button("Allocate Stockists"):
+    if st.sidebar.button("🔗 Allocate Stockists"):
         st.session_state.nav = "Allocate"
-    if st.sidebar.button("View Statements"):
+    if st.sidebar.button("📄 View Statements"):
         st.session_state.nav = "View Statements"
 
 if role == "user":
-    if st.sidebar.button("New Statement"):
+    if st.sidebar.button("📝 New Statement"):
         st.session_state.nav = "New Statement"
 
 if st.sidebar.button("Logout"):
@@ -88,7 +94,7 @@ if role == "admin" and st.session_state.nav == "Users":
 
     st.subheader("Existing Users")
     for u in supabase.table("users").select("*").execute().data:
-        st.write(f"{u['username']} ({u['role']})")
+        st.write(f"- {u['username']} ({u['role']})")
 
 # =========================================================
 # ================= ADMIN — PRODUCTS ======================
@@ -101,8 +107,9 @@ if role == "admin" and st.session_state.nav == "Products":
         supabase.table("products").insert({"name": pname}).execute()
         st.success("Product added")
 
-    for p in supabase.table("products").select("*").execute().data:
-        st.write(p["name"])
+    st.subheader("Existing Products")
+    for p in supabase.table("products").select("*").order("name").execute().data:
+        st.write(f"- {p['name']}")
 
 # =========================================================
 # ================= ADMIN — STOCKISTS =====================
@@ -115,27 +122,36 @@ if role == "admin" and st.session_state.nav == "Stockists":
         supabase.table("stockists").insert({"name": sname}).execute()
         st.success("Stockist added")
 
-    for s in supabase.table("stockists").select("*").execute().data:
-        st.write(s["name"])
+    st.subheader("Existing Stockists")
+    for s in supabase.table("stockists").select("*").order("name").execute().data:
+        st.write(f"- {s['name']}")
 
 # =========================================================
 # ============ ADMIN — ALLOCATE STOCKISTS =================
 # =========================================================
 if role == "admin" and st.session_state.nav == "Allocate":
-    st.header("🔗 Allocate Stockists")
+    st.header("🔗 Allocate Stockists to Users")
 
     users = supabase.table("users").select("*").execute().data
     stockists = supabase.table("stockists").select("*").execute().data
 
-    u = st.selectbox("User", users, format_func=lambda x: x["username"])
-    s = st.selectbox("Stockist", stockists, format_func=lambda x: x["name"])
+    sel_user = st.selectbox(
+        "Select User",
+        users,
+        format_func=lambda x: x["username"]
+    )
+    sel_stockist = st.selectbox(
+        "Select Stockist",
+        stockists,
+        format_func=lambda x: x["name"]
+    )
 
     if st.button("Allocate"):
-        supabase.table("user_stockist_map").insert({
-            "user_id": u["id"],
-            "stockist_id": s["id"]
+        supabase.table("user_stockist").insert({
+            "user_id": sel_user["id"],
+            "stockist_id": sel_stockist["id"]
         }).execute()
-        st.success("Allocated")
+        st.success("Stockist allocated to user")
 
 # =========================================================
 # ================= USER — NEW STATEMENT ==================
@@ -143,38 +159,45 @@ if role == "admin" and st.session_state.nav == "Allocate":
 if role == "user" and st.session_state.nav == "New Statement":
     st.header("📝 New Sales & Stock Statement")
 
-    stockists = supabase.table("user_stockist_map") \
+    mappings = supabase.table("user_stockist") \
         .select("stockist_id") \
-        .eq("user_id", uid).execute().data
+        .eq("user_id", uid) \
+        .execute().data
 
-    stockist_ids = [s["stockist_id"] for s in stockists]
-    stockist_map = {
-        s["id"]: s["name"]
-        for s in supabase.table("stockists").select("*").execute().data
-        if s["id"] in stockist_ids
-    }
+    if not mappings:
+        st.warning("No stockist allocated. Contact admin.")
+        st.stop()
+
+    stockist_ids = [m["stockist_id"] for m in mappings]
+
+    stockists = supabase.table("stockists") \
+        .select("*") \
+        .in_("id", stockist_ids) \
+        .execute().data
 
     sel_stockist = st.selectbox(
         "Stockist",
-        list(stockist_map.keys()),
-        format_func=lambda x: stockist_map[x]
+        stockists,
+        format_func=lambda x: x["name"]
     )
 
-    month = st.selectbox("Month", [
-        "January","February","March","April","May","June",
-        "July","August","September","October","November","December"
-    ])
+    month = st.selectbox(
+        "Month",
+        ["January","February","March","April","May","June",
+         "July","August","September","October","November","December"]
+    )
     year = st.number_input("Year", value=datetime.now().year)
 
     if st.button("Create Statement"):
         res = supabase.table("sales_stock_statements").insert({
             "user_id": uid,
-            "stockist_id": sel_stockist,
+            "stockist_id": sel_stockist["id"],
             "month": month,
-            "year": year,
+            "year": int(year),
             "status": "draft",
             "locked": False
         }).execute()
+
         st.session_state.statement_id = res.data[0]["id"]
         st.session_state.product_index = 0
         st.rerun()
@@ -184,17 +207,27 @@ if role == "user" and st.session_state.nav == "New Statement":
 # =========================================================
 if role == "user" and st.session_state.statement_id:
     products = supabase.table("products").select("*").order("name").execute().data
+
+    if st.session_state.product_index >= len(products):
+        st.success("All products entered. Statement submitted.")
+        supabase.table("sales_stock_statements") \
+            .update({"status": "final"}) \
+            .eq("id", st.session_state.statement_id) \
+            .execute()
+        st.session_state.statement_id = None
+        st.stop()
+
     prod = products[st.session_state.product_index]
 
     st.header(f"📦 {prod['name']}")
 
-    opening = st.number_input("Opening", value=0)
-    purchase = st.number_input("Purchase", value=0)
-    issue = st.number_input("Issue", value=0)
-    closing = st.number_input("Closing", value=0)
+    opening = st.number_input("Opening", value=0, step=1)
+    purchase = st.number_input("Purchase", value=0, step=1)
+    issue = st.number_input("Issue", value=0, step=1)
+    closing = st.number_input("Closing", value=0, step=1)
 
-    diff = opening + purchase - issue - closing
-    st.write(f"Difference: {diff}")
+    difference = opening + purchase - issue - closing
+    st.write(f"**Difference:** {difference}")
 
     if st.button("Save & Next"):
         supabase.table("sales_stock_items").insert({
@@ -204,15 +237,8 @@ if role == "user" and st.session_state.statement_id:
             "purchase": purchase,
             "issue": issue,
             "closing": closing,
-            "difference": diff
+            "difference": difference
         }).execute()
 
-        if st.session_state.product_index < len(products) - 1:
-            st.session_state.product_index += 1
-            st.rerun()
-        else:
-            supabase.table("sales_stock_statements") \
-                .update({"status": "final"}) \
-                .eq("id", st.session_state.statement_id).execute()
-            st.success("Statement submitted")
-            st.session_state.statement_id = None
+        st.session_state.product_index += 1
+        st.rerun()
