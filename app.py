@@ -44,8 +44,7 @@ def login(u,p):
     st.error("Invalid credentials")
 
 def logout():
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
+    st.session_state.clear()
     st.rerun()
 
 # ================= LOGIN =================
@@ -66,17 +65,101 @@ uid = user["id"]
 st.sidebar.title("Menu")
 
 if role=="admin":
-    for m in ["Users","Products","Stockists","Allocate","Matrix","Advanced KPI"]:
-        if st.sidebar.button(m):
-            st.session_state.nav = m
+    if st.sidebar.button("Users"): st.session_state.nav = "Users"
+    if st.sidebar.button("Products"): st.session_state.nav = "Products"
+    if st.sidebar.button("Stockists"): st.session_state.nav = "Stockists"
+    if st.sidebar.button("Allocate"): st.session_state.nav = "Allocate"
+    if st.sidebar.button("Matrix"): st.session_state.nav = "Matrix"
+    if st.sidebar.button("Advanced KPI"): st.session_state.nav = "Advanced KPI"
 
 if role=="user":
-    for m in ["My Statements","New Statement"]:
-        if st.sidebar.button(m):
-            st.session_state.nav = m
+    if st.sidebar.button("My Statements"): st.session_state.nav = "My Statements"
+    if st.sidebar.button("New Statement"): st.session_state.nav = "New Statement"
 
 if st.sidebar.button("Logout"):
     logout()
+
+# =========================================================
+# ================= ADMIN — USERS =========================
+# =========================================================
+if role=="admin" and st.session_state.nav=="Users":
+    st.header("👤 Users")
+
+    with st.form("add_user"):
+        uname = st.text_input("Username")
+        pwd = st.text_input("Password")
+        r = st.selectbox("Role", ["user","admin"])
+        if st.form_submit_button("Add User", use_container_width=True):
+            supabase.table("users").insert({
+                "username":uname,"password":pwd,"role":r
+            }).execute()
+            st.rerun()
+
+    for u in safe_select("users"):
+        c1,c2,c3 = st.columns([4,3,2])
+        c1.write(u["username"])
+        c2.write(u["role"])
+        if c3.button("🗑 Delete", key=f"du{u['id']}"):
+            supabase.table("users").delete().eq("id", u["id"]).execute()
+            st.rerun()
+
+# =========================================================
+# ================= ADMIN — PRODUCTS ======================
+# =========================================================
+if role=="admin" and st.session_state.nav=="Products":
+    st.header("📦 Products")
+
+    with st.form("add_product"):
+        name = st.text_input("Product Name")
+        peak = st.number_input("Peak",0)
+        high = st.number_input("High",0)
+        low = st.number_input("Low",0)
+        lowest = st.number_input("Lowest",0)
+        if st.form_submit_button("Add Product", use_container_width=True):
+            supabase.table("products").insert({
+                "name":name,"peak":peak,"high":high,"low":low,"lowest":lowest
+            }).execute()
+            st.rerun()
+
+    for p in safe_select("products"):
+        st.write(
+            f"{p['name']} | P:{p.get('peak')} H:{p.get('high')} "
+            f"L:{p.get('low')} LL:{p.get('lowest')}"
+        )
+
+# =========================================================
+# ================= ADMIN — STOCKISTS =====================
+# =========================================================
+if role=="admin" and st.session_state.nav=="Stockists":
+    st.header("🏪 Stockists")
+
+    with st.form("add_stockist"):
+        sname = st.text_input("Stockist Name")
+        if st.form_submit_button("Add Stockist", use_container_width=True):
+            supabase.table("stockists").insert({"name":sname}).execute()
+            st.rerun()
+
+    for s in safe_select("stockists"):
+        st.write(s["name"])
+
+# =========================================================
+# ================= ADMIN — ALLOCATE ======================
+# =========================================================
+if role=="admin" and st.session_state.nav=="Allocate":
+    st.header("🔗 Allocate Stockists")
+
+    users = safe_select("users")
+    stockists = safe_select("stockists")
+
+    with st.form("allocate_stockist"):
+        u = st.selectbox("User", users, format_func=lambda x:x["username"])
+        s = st.selectbox("Stockist", stockists, format_func=lambda x:x["name"])
+        if st.form_submit_button("Allocate", use_container_width=True):
+            supabase.table("user_stockist").insert({
+                "user_id":u["id"],
+                "stockist_id":s["id"]
+            }).execute()
+            st.success("Allocated")
 
 # =========================================================
 # ================= USER — MY STATEMENTS ==================
@@ -86,12 +169,12 @@ if role=="user" and st.session_state.nav=="My Statements":
 
     stmts = safe_select("sales_stock_statements", user_id=uid)
     stockists = safe_select("stockists")
-    smap = {s["id"]: s["name"] for s in stockists}
+    smap = {s["id"]:s["name"] for s in stockists}
 
     for s in stmts:
         c1,c2,c3,c4 = st.columns([3,3,3,2])
         c1.write(f"{s['month']} {s['year']}")
-        c2.write(smap.get(s["stockist_id"], "—"))
+        c2.write(smap.get(s["stockist_id"],"—"))
         c3.write(s["status"])
         if c4.button("✏️ Edit", key=f"es{s['id']}"):
             st.session_state.edit_statement = s["id"]
@@ -110,7 +193,7 @@ if role=="user" and st.session_state.nav=="Edit Statement":
 
     for item in items:
         p = next(x for x in products if x["id"] == item["product_id"])
-        with st.form(f"f{item['id']}"):
+        with st.form(f"edit_{item['id']}"):
             st.subheader(p["name"])
             o = st.number_input("Opening", value=item["opening"])
             pu = st.number_input("Purchase", value=item["purchase"])
@@ -143,30 +226,31 @@ if role=="user" and st.session_state.nav=="New Statement":
     stockist_ids = [m["stockist_id"] for m in mappings]
     stockists = [s for s in safe_select("stockists") if s["id"] in stockist_ids]
 
-    stck = st.selectbox("Stockist", stockists, format_func=lambda x:x["name"])
-    month = st.selectbox("Month", MONTH_ORDER)
-    year = st.number_input("Year", value=datetime.now().year)
-
-    if st.button("Create Statement", use_container_width=True):
-        res = supabase.table("sales_stock_statements").insert({
-            "user_id":uid,"stockist_id":stck["id"],
-            "month":month,"year":int(year),
-            "status":"draft","locked":False
-        }).execute()
-        st.session_state.statement_id = res.data[0]["id"]
-        st.session_state.product_index = 0
-        st.rerun()
+    with st.form("create_statement"):
+        stck = st.selectbox("Stockist", stockists, format_func=lambda x:x["name"])
+        month = st.selectbox("Month", MONTH_ORDER)
+        year = st.number_input("Year", value=datetime.now().year)
+        if st.form_submit_button("Create Statement", use_container_width=True):
+            res = supabase.table("sales_stock_statements").insert({
+                "user_id":uid,
+                "stockist_id":stck["id"],
+                "month":month,
+                "year":int(year),
+                "status":"draft",
+                "locked":False
+            }).execute()
+            st.session_state.statement_id = res.data[0]["id"]
+            st.session_state.product_index = 0
+            st.rerun()
 
 # =========================================================
-# ================= PRODUCT ENTRY (SORTED A–Z) ============
+# ================= PRODUCT ENTRY (A–Z) ===================
 # =========================================================
 if role=="user" and st.session_state.statement_id:
-    # 🔥 SORT PRODUCTS IN ASCENDING ORDER
     products = sorted(
         safe_select("products"),
-        key=lambda x: (x.get("name") or "").lower()
+        key=lambda x:(x.get("name") or "").lower()
     )
-
     idx = st.session_state.product_index
 
     if idx >= len(products):
@@ -178,7 +262,8 @@ if role=="user" and st.session_state.statement_id:
         st.stop()
 
     p = products[idx]
-    with st.form("entry"):
+
+    with st.form("product_entry"):
         st.subheader(p["name"])
         o = st.number_input("Opening",0)
         pu = st.number_input("Purchase",0)
@@ -196,95 +281,6 @@ if role=="user" and st.session_state.statement_id:
             }).execute()
             st.session_state.product_index += 1
             st.rerun()
-
-# =========================================================
-# ================= ADMIN — MATRIX ========================
-# =========================================================
-if role=="admin" and st.session_state.nav=="Matrix":
-    st.header("📊 Matrix Dashboard")
-
-    stmts = safe_select("sales_stock_statements")
-    items = safe_select("sales_stock_items")
-    products = safe_select("products")
-    stockists = safe_select("stockists")
-    users = safe_select("users")
-
-    tab1, tab2 = st.tabs([
-        "📦 Stock Matrix",
-        "📈 Product Issue Matrix (User-wise)"
-    ])
-
-    # ---------- TAB 1 ----------
-    with tab1:
-        year = st.selectbox("Year", sorted({s["year"] for s in stmts}, reverse=True))
-        month = st.selectbox("Month", MONTH_ORDER)
-        view = st.radio("View", ["Overall","Stockist-wise"], horizontal=True)
-
-        stmt_ids = {s["id"] for s in stmts if s["year"]==year and s["month"]==month}
-
-        rows=[]
-        if view=="Overall":
-            for p in products:
-                pi=[i for i in items if i["product_id"]==p["id"] and i["statement_id"] in stmt_ids]
-                if pi:
-                    rows.append({
-                        "Product":p["name"],
-                        "Opening":sum(i["opening"] for i in pi),
-                        "Purchase":sum(i["purchase"] for i in pi),
-                        "Issue":sum(i["issue"] for i in pi),
-                        "Closing":sum(i["closing"] for i in pi),
-                        "Difference":sum(i["difference"] for i in pi)
-                    })
-        else:
-            for s in stockists:
-                s_ids={x["id"] for x in stmts if x["stockist_id"]==s["id"] and x["id"] in stmt_ids}
-                for p in products:
-                    pi=[i for i in items if i["product_id"]==p["id"] and i["statement_id"] in s_ids]
-                    if pi:
-                        rows.append({
-                            "Stockist":s["name"],
-                            "Product":p["name"],
-                            "Opening":sum(i["opening"] for i in pi),
-                            "Purchase":sum(i["purchase"] for i in pi),
-                            "Issue":sum(i["issue"] for i in pi),
-                            "Closing":sum(i["closing"] for i in pi),
-                            "Difference":sum(i["difference"] for i in pi)
-                        })
-
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
-
-    # ---------- TAB 2 ----------
-    with tab2:
-        sel_user = st.selectbox(
-            "Select User",
-            [u for u in users if u["role"]=="user"],
-            format_func=lambda x:x["username"]
-        )
-
-        user_stmt_ids = {s["id"] for s in stmts if s["user_id"]==sel_user["id"]}
-
-        rows=[]
-        for p in products:
-            row={"Product":p["name"]}
-            total=0
-            for m in MONTH_ORDER:
-                qty=sum(
-                    i["issue"] for i in items
-                    if i["product_id"]==p["id"]
-                    and i["statement_id"] in user_stmt_ids
-                    and any(s["id"]==i["statement_id"] and s["month"]==m for s in stmts)
-                )
-                row[m]=qty
-                total+=qty
-            if total>0:
-                row["Total"]=total
-                rows.append(row)
-
-        df=pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True)
-        st.download_button("⬇️ Download CSV",
-                           df.to_csv(index=False),
-                           f"product_issue_matrix_{sel_user['username']}.csv")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
