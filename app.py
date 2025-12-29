@@ -25,7 +25,8 @@ for k, v in {
     "nav": "Home",
     "statement_id": None,
     "product_index": 0,
-    "view_stmt_id": None
+    "view_stmt_id": None,
+    "edit_stmt_id": None,
 }.items():
     st.session_state.setdefault(k, v)
 
@@ -80,11 +81,102 @@ if st.sidebar.button("Logout"):
     logout()
 
 # =========================================================
-# ================= USER — DATA ENTRY =====================
+# ================= ADMIN — LOCK CONTROL ==================
 # =========================================================
-if role == "user":
-    # (unchanged data-entry logic — omitted here for brevity)
-    st.info("User data-entry is unchanged and continues to work.")
+if role == "admin" and st.session_state.nav == "Lock":
+    st.header("🔐 Lock Control")
+
+    stmts = supabase.table("sales_stock_statements") \
+        .select("*") \
+        .order("created_at", desc=True) \
+        .execute().data
+
+    users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
+    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
+
+    for s in stmts:
+        with st.container(border=True):
+            st.write(f"**User:** {users.get(s['user_id'])}")
+            st.write(f"**Stockist:** {stockists.get(s['stockist_id'])}")
+            st.write(f"**Period:** {s['month']} {s['year']}")
+            st.write(f"**Status:** {s['status']} | **Locked:** {s['locked']}")
+
+            c1, c2, c3 = st.columns(3)
+
+            with c1:
+                if st.button("Edit", key=f"edit_{s['id']}", disabled=s["locked"]):
+                    st.session_state.edit_stmt_id = s["id"]
+                    st.rerun()
+
+            with c2:
+                if st.button(
+                    "Lock" if not s["locked"] else "Unlock",
+                    key=f"lock_{s['id']}"
+                ):
+                    supabase.table("sales_stock_statements") \
+                        .update({"locked": not s["locked"]}) \
+                        .eq("id", s["id"]) \
+                        .execute()
+                    st.rerun()
+
+            with c3:
+                if st.button("Delete", key=f"del_{s['id']}"):
+                    supabase.table("sales_stock_items") \
+                        .delete() \
+                        .eq("statement_id", s["id"]) \
+                        .execute()
+                    supabase.table("sales_stock_statements") \
+                        .delete() \
+                        .eq("id", s["id"]) \
+                        .execute()
+                    st.rerun()
+
+# =========================================================
+# ============ ADMIN — EDIT STATEMENT (PRE-LOCK) ==========
+# =========================================================
+if role == "admin" and st.session_state.edit_stmt_id:
+    stmt = supabase.table("sales_stock_statements") \
+        .select("*") \
+        .eq("id", st.session_state.edit_stmt_id) \
+        .execute().data[0]
+
+    items = supabase.table("sales_stock_items") \
+        .select("*") \
+        .eq("statement_id", stmt["id"]) \
+        .execute().data
+
+    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
+
+    st.header("✏️ Edit Statement (Before Lock)")
+    st.write(f"**Period:** {stmt['month']} {stmt['year']}")
+
+    for i in items:
+        st.subheader(products.get(i["product_id"]))
+        opening = i["opening"]
+
+        purchase = st.number_input(
+            "Purchase", value=i["purchase"], key=f"p{i['id']}"
+        )
+        issue = st.number_input(
+            "Issue", value=i["issue"], key=f"i{i['id']}"
+        )
+        closing = st.number_input(
+            "Closing", value=i["closing"], key=f"c{i['id']}"
+        )
+
+        diff = opening + purchase - issue - closing
+        st.write(f"Difference: {diff}")
+
+        supabase.table("sales_stock_items").update({
+            "purchase": purchase,
+            "issue": issue,
+            "closing": closing,
+            "difference": diff
+        }).eq("id", i["id"]).execute()
+
+    if st.button("⬅ Back to Lock Control"):
+        st.session_state.edit_stmt_id = None
+        st.rerun()
 
 # =========================================================
 # ================= ADMIN — EXCEPTIONS ====================
@@ -96,29 +188,6 @@ if role == "admin" and st.session_state.nav == "Exceptions":
     items = supabase.table("sales_stock_items").select("*").execute().data
     products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
     stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
-    users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
-
-    st.subheader("📄 Statement-Level Exceptions")
-
-    for s in stmts:
-        stmt_items = [i for i in items if i["statement_id"] == s["id"]]
-        if not stmt_items:
-            continue
-
-        has_issue = any(i["difference"] != 0 for i in stmt_items)
-        if not has_issue:
-            continue
-
-        with st.container(border=True):
-            st.write(f"**User:** {users.get(s['user_id'])}")
-            st.write(f"**Stockist:** {stockists.get(s['stockist_id'])}")
-            st.write(f"**Period:** {s['month']} {s['year']}")
-            if st.button("Open (Read-Only)", key=f"stmt_{s['id']}"):
-                st.session_state.view_stmt_id = s["id"]
-                st.rerun()
-
-    st.divider()
-    st.subheader("📦 Product-Level Exceptions")
 
     for i in items:
         stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
@@ -138,46 +207,8 @@ if role == "admin" and st.session_state.nav == "Exceptions":
 
         with st.container(border=True):
             st.markdown(f"### {SEVERITY[severity]} — {products.get(i['product_id'])}")
-            st.write(f"**Month:** {stmt['month']} {stmt['year']}")
-            st.write(f"**Stockist:** {stockists.get(stmt['stockist_id'])}")
+            st.write(f"{stmt['month']} {stmt['year']} | {stockists.get(stmt['stockist_id'])}")
             st.write(f"Issue: {i['issue']} | Closing: {i['closing']} | Diff: {i['difference']}")
-            if st.button("Open Statement", key=f"prod_{i['id']}"):
-                st.session_state.view_stmt_id = stmt["id"]
-                st.rerun()
-
-# =========================================================
-# ================= ADMIN — VIEW STATEMENT =================
-# =========================================================
-if role == "admin" and st.session_state.view_stmt_id:
-    stmt = supabase.table("sales_stock_statements") \
-        .select("*") \
-        .eq("id", st.session_state.view_stmt_id) \
-        .execute().data[0]
-
-    items = supabase.table("sales_stock_items") \
-        .select("*") \
-        .eq("statement_id", stmt["id"]) \
-        .execute().data
-
-    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
-
-    st.header("📄 Statement View (Read-Only)")
-    st.write(f"**Period:** {stmt['month']} {stmt['year']}")
-    st.write(f"**Status:** {stmt['status']}")
-
-    for i in items:
-        st.write(
-            products.get(i["product_id"]),
-            "| Opening:", i["opening"],
-            "| Purchase:", i["purchase"],
-            "| Issue:", i["issue"],
-            "| Closing:", i["closing"],
-            "| Diff:", i["difference"]
-        )
-
-    if st.button("⬅ Back"):
-        st.session_state.view_stmt_id = None
-        st.rerun()
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
