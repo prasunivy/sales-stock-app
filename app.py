@@ -18,6 +18,11 @@ SEVERITY = {
     "Low": "🟡 LOW"
 }
 
+MONTH_ORDER = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December"
+]
+
 # ================= SESSION =================
 for k, v in {
     "logged_in": False,
@@ -70,6 +75,8 @@ if role == "admin":
         st.session_state.nav = "Exceptions"
     if st.sidebar.button("🔐 Lock Control"):
         st.session_state.nav = "Lock"
+    if st.sidebar.button("📈 Matrix Dashboards"):
+        st.session_state.nav = "Matrix"
     if st.sidebar.button("🤖 AI Seasonal Insights"):
         st.session_state.nav = "AI"
 
@@ -81,134 +88,103 @@ if st.sidebar.button("Logout"):
     logout()
 
 # =========================================================
-# ================= ADMIN — LOCK CONTROL ==================
+# ================= ADMIN — MATRIX DASHBOARDS =============
 # =========================================================
-if role == "admin" and st.session_state.nav == "Lock":
-    st.header("🔐 Lock Control")
-
-    stmts = supabase.table("sales_stock_statements") \
-        .select("*") \
-        .order("created_at", desc=True) \
-        .execute().data
-
-    users = {u["id"]: u["username"] for u in supabase.table("users").select("*").execute().data}
-    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
-
-    for s in stmts:
-        with st.container(border=True):
-            st.write(f"**User:** {users.get(s['user_id'])}")
-            st.write(f"**Stockist:** {stockists.get(s['stockist_id'])}")
-            st.write(f"**Period:** {s['month']} {s['year']}")
-            st.write(f"**Status:** {s['status']} | **Locked:** {s['locked']}")
-
-            c1, c2, c3 = st.columns(3)
-
-            with c1:
-                if st.button("Edit", key=f"edit_{s['id']}", disabled=s["locked"]):
-                    st.session_state.edit_stmt_id = s["id"]
-                    st.rerun()
-
-            with c2:
-                if st.button(
-                    "Lock" if not s["locked"] else "Unlock",
-                    key=f"lock_{s['id']}"
-                ):
-                    supabase.table("sales_stock_statements") \
-                        .update({"locked": not s["locked"]}) \
-                        .eq("id", s["id"]) \
-                        .execute()
-                    st.rerun()
-
-            with c3:
-                if st.button("Delete", key=f"del_{s['id']}"):
-                    supabase.table("sales_stock_items") \
-                        .delete() \
-                        .eq("statement_id", s["id"]) \
-                        .execute()
-                    supabase.table("sales_stock_statements") \
-                        .delete() \
-                        .eq("id", s["id"]) \
-                        .execute()
-                    st.rerun()
-
-# =========================================================
-# ============ ADMIN — EDIT STATEMENT (PRE-LOCK) ==========
-# =========================================================
-if role == "admin" and st.session_state.edit_stmt_id:
-    stmt = supabase.table("sales_stock_statements") \
-        .select("*") \
-        .eq("id", st.session_state.edit_stmt_id) \
-        .execute().data[0]
-
-    items = supabase.table("sales_stock_items") \
-        .select("*") \
-        .eq("statement_id", stmt["id"]) \
-        .execute().data
-
-    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
-
-    st.header("✏️ Edit Statement (Before Lock)")
-    st.write(f"**Period:** {stmt['month']} {stmt['year']}")
-
-    for i in items:
-        st.subheader(products.get(i["product_id"]))
-        opening = i["opening"]
-
-        purchase = st.number_input(
-            "Purchase", value=i["purchase"], key=f"p{i['id']}"
-        )
-        issue = st.number_input(
-            "Issue", value=i["issue"], key=f"i{i['id']}"
-        )
-        closing = st.number_input(
-            "Closing", value=i["closing"], key=f"c{i['id']}"
-        )
-
-        diff = opening + purchase - issue - closing
-        st.write(f"Difference: {diff}")
-
-        supabase.table("sales_stock_items").update({
-            "purchase": purchase,
-            "issue": issue,
-            "closing": closing,
-            "difference": diff
-        }).eq("id", i["id"]).execute()
-
-    if st.button("⬅ Back to Lock Control"):
-        st.session_state.edit_stmt_id = None
-        st.rerun()
-
-# =========================================================
-# ================= ADMIN — EXCEPTIONS ====================
-# =========================================================
-if role == "admin" and st.session_state.nav == "Exceptions":
-    st.header("🚨 Exception Dashboard (Read-Only)")
+if role == "admin" and st.session_state.nav == "Matrix":
+    st.header("📈 Matrix Dashboards")
 
     stmts = supabase.table("sales_stock_statements").select("*").execute().data
     items = supabase.table("sales_stock_items").select("*").execute().data
-    products = {p["id"]: p["name"] for p in supabase.table("products").select("*").execute().data}
-    stockists = {s["id"]: s["name"] for s in supabase.table("stockists").select("*").execute().data}
+    products = supabase.table("products").select("*").execute().data
 
-    for i in items:
-        stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
-        if not stmt:
+    # ---------------- MATRIX 1 ----------------
+    st.subheader("📊 Matrix 1 — Month × Product")
+
+    year_sel = st.selectbox(
+        "Year",
+        sorted({s["year"] for s in stmts}, reverse=True),
+        key="m1_year"
+    )
+
+    month_sel = st.selectbox(
+        "Month",
+        MONTH_ORDER,
+        key="m1_month"
+    )
+
+    matrix1 = []
+
+    for p in products:
+        p_items = []
+        for i in items:
+            stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
+            if not stmt:
+                continue
+            if stmt["year"] == year_sel and stmt["month"] == month_sel and i["product_id"] == p["id"]:
+                p_items.append(i)
+
+        if not p_items:
             continue
 
-        severity = None
-        if i["difference"] != 0:
-            severity = "High"
-        elif i["issue"] == 0 and i["closing"] > 0:
-            severity = "Medium"
-        elif i["closing"] >= 2 * i["issue"] and i["issue"] > 0:
-            severity = "Low"
+        matrix1.append({
+            "Product": p["name"],
+            "Opening": sum(i["opening"] for i in p_items),
+            "Purchase": sum(i["purchase"] for i in p_items),
+            "Issue": sum(i["issue"] for i in p_items),
+            "Closing": sum(i["closing"] for i in p_items),
+            "Difference": sum(i["difference"] for i in p_items)
+        })
 
-        if not severity:
+    if matrix1:
+        st.dataframe(matrix1, use_container_width=True)
+    else:
+        st.info("No data for selected month.")
+
+    st.divider()
+
+    # ---------------- MATRIX 2 ----------------
+    st.subheader("📈 Matrix 2 — Product × Month")
+
+    prod_sel = st.selectbox(
+        "Product",
+        products,
+        format_func=lambda x: x["name"],
+        key="m2_prod"
+    )
+
+    year_sel2 = st.selectbox(
+        "Year",
+        sorted({s["year"] for s in stmts}, reverse=True),
+        key="m2_year"
+    )
+
+    matrix2 = []
+
+    for m in MONTH_ORDER:
+        m_items = []
+        for i in items:
+            stmt = next((s for s in stmts if s["id"] == i["statement_id"]), None)
+            if not stmt:
+                continue
+            if stmt["year"] == year_sel2 and stmt["month"] == m and i["product_id"] == prod_sel["id"]:
+                m_items.append(i)
+
+        if not m_items:
             continue
 
-        with st.container(border=True):
-            st.markdown(f"### {SEVERITY[severity]} — {products.get(i['product_id'])}")
-            st.write(f"{stmt['month']} {stmt['year']} | {stockists.get(stmt['stockist_id'])}")
-            st.write(f"Issue: {i['issue']} | Closing: {i['closing']} | Diff: {i['difference']}")
+        matrix2.append({
+            "Month": m,
+            "Opening": sum(i["opening"] for i in m_items),
+            "Purchase": sum(i["purchase"] for i in m_items),
+            "Issue": sum(i["issue"] for i in m_items),
+            "Closing": sum(i["closing"] for i in m_items),
+            "Difference": sum(i["difference"] for i in m_items)
+        })
+
+    if matrix2:
+        st.dataframe(matrix2, use_container_width=True)
+    else:
+        st.info("No data for selected product/year.")
 
 st.write("---")
 st.write("© Ivy Pharmaceuticals")
