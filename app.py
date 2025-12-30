@@ -14,9 +14,11 @@ st.set_page_config(
 
 supabase = create_client(
     st.secrets["SUPABASE_URL"],
-    st.secrets["SUPABASE_ANON_KEY"],
-    st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+    st.secrets["SUPABASE_ANON_KEY"]
 )
+admin_supabase = create_client(
+    st.secrets["SUPABASE_URL"],
+    st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
 
 # ======================================================
 # SESSION STATE INIT
