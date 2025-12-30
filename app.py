@@ -12,14 +12,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Public client (RLS enforced)
 supabase = create_client(
     st.secrets["SUPABASE_URL"],
     st.secrets["SUPABASE_ANON_KEY"]
 )
+
+# Admin client (service role – admin actions only)
 admin_supabase = create_client(
     st.secrets["SUPABASE_URL"],
     st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
 )
+
 # ======================================================
 # SESSION STATE INIT
 # ======================================================
@@ -41,10 +45,13 @@ def notify(msg):
     st.success(msg)
 
 # ======================================================
-# USERNAME → EMAIL (INTERNAL ONLY)
+# USERNAME → INTERNAL EMAIL
 # ======================================================
-def username_to_email(username):
-    res = supabase.table("users").select("id").eq("username", username).execute()
+def username_to_email(username: str):
+    res = supabase.table("users") \
+        .select("id") \
+        .eq("username", username) \
+        .execute()
     if not res.data:
         return None
     return f"{username}@internal.local"
@@ -63,7 +70,10 @@ def login(username, password):
     })
 
 def load_profile(user_id):
-    res = supabase.table("users").select("*").eq("id", user_id).execute()
+    res = supabase.table("users") \
+        .select("*") \
+        .eq("id", user_id) \
+        .execute()
     return res.data[0] if res.data else None
 
 # ======================================================
@@ -182,7 +192,10 @@ if role == "user":
     if st.session_state.statement_id:
         st.subheader("Product Entry")
 
-        products = supabase.table("products").select("*").order("name").execute().data
+        products = supabase.table("products") \
+            .select("*") \
+            .order("name") \
+            .execute().data
 
         for p in products:
             st.markdown(f"### {p['name']}")
@@ -200,7 +213,12 @@ if role == "user":
                 save_product(
                     st.session_state.statement_id,
                     p["id"],
-                    dict(opening=opening, purchase=purchase, issue=issue, closing=closing)
+                    {
+                        "opening": opening,
+                        "purchase": purchase,
+                        "issue": issue,
+                        "closing": closing
+                    }
                 )
                 notify("Saved")
 
@@ -223,46 +241,54 @@ if role == "user":
 # ADMIN PANEL
 # ======================================================
 if role == "admin":
-    st.subheader("🔐 Reset User Password")
-
-    users = supabase.table("users").select("id, username").execute().data
-    user = st.selectbox("Select User", users, format_func=lambda x: x["username"])
-
-    new_password = st.text_input("New Password", type="password")
-
-    if st.button("Reset Password"):
-        if len(new_password) < 6:
-            st.error("Password must be at least 6 characters")
-        else:
-            # Reset password via Supabase Auth (ADMIN API)
-            admin_supabase.auth.admin.update_user_by_id(
-                user["id"],
-                {"password": new_password}
-            )
-
-            # Audit trail
-            supabase.table("users").update({
-                "last_password_reset_at": datetime.utcnow().isoformat(),
-                "password_reset_by": st.session_state.auth_user.id
-            }).eq("id", user["id"]).execute()
-
-            st.success(f"Password reset for user: {user['username']}")
-if role == "admin":
     st.title("Admin Dashboard")
 
-    section = st.radio("Admin Section", ["Statements", "Users", "Stockists"])
+    section = st.radio(
+        "Admin Section",
+        ["Statements", "Users", "Stockists", "Reset User Password"]
+    )
 
+    # -------- STATEMENTS ----------
     if section == "Statements":
         st.dataframe(pd.DataFrame(
             supabase.table("statements").select("*").execute().data
         ))
 
+    # -------- USERS ----------
     if section == "Users":
         st.dataframe(pd.DataFrame(
             supabase.table("users").select("*").execute().data
         ))
 
+    # -------- STOCKISTS ----------
     if section == "Stockists":
         st.dataframe(pd.DataFrame(
             supabase.table("stockists").select("*").execute().data
         ))
+
+    # -------- PASSWORD RESET ----------
+    if section == "Reset User Password":
+        st.subheader("🔐 Reset User Password")
+
+        users = supabase.table("users") \
+            .select("id, username") \
+            .execute().data
+
+        user = st.selectbox("Select User", users, format_func=lambda x: x["username"])
+        new_password = st.text_input("New Password", type="password")
+
+        if st.button("Reset Password"):
+            if len(new_password) < 6:
+                st.error("Password must be at least 6 characters")
+            else:
+                admin_supabase.auth.admin.update_user_by_id(
+                    user["id"],
+                    {"password": new_password}
+                )
+
+                supabase.table("users").update({
+                    "last_password_reset_at": datetime.utcnow().isoformat(),
+                    "password_reset_by": user_id
+                }).eq("id", user["id"]).execute()
+
+                st.success(f"Password reset for {user['username']}")
