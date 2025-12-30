@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-
 from supabase import create_client
 from datetime import datetime
 
@@ -19,243 +17,224 @@ supabase = create_client(
     st.secrets["SUPABASE_ANON_KEY"]
 )
 
-import streamlit as st
-from supabase import create_client
-from datetime import datetime
+# ======================================================
+# SESSION STATE INIT
+# ======================================================
+for key in ["auth_user", "role", "statement_id"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
 
 # ======================================================
-# CONFIG
+# UTILITIES
 # ======================================================
-st.set_page_config(page_title="Ivy Pharmaceuticals — Sales & Stock", layout="wide")
-
-supabase = create_client(
-    st.secrets["SUPABASE_URL"],
-    st.secrets["SUPABASE_ANON_KEY"]
-)
-
-MONTH_ORDER = [
-    "April","May","June","July","August","September",
-    "October","November","December","January","February","March"
-]
-
-# ======================================================
-# SESSION STATE
-# ======================================================
-for k in [
-    "logged_in", "user", "nav",
-    "statement_id", "product_index"
-]:
-    st.session_state.setdefault(k, None)
-
-# ======================================================
-# HELPERS
-# ======================================================
-def safe_select(table):
+def safe(fn, msg="Operation failed"):
     try:
-        return supabase.table(table).select("*").execute().data or []
-    except Exception:
-        st.error(f"Failed to load {table}")
-        return []
+        return fn()
+    except Exception as e:
+        st.error(f"{msg}: {e}")
+        return None
 
-def safe_insert(table, payload):
-    try:
-        supabase.table(table).insert(payload).execute()
-        return True
-    except Exception:
-        st.error(f"Insert failed: {table}")
-        return False
+def notify(msg):
+    st.success(msg)
 
+# ======================================================
+# USERNAME → EMAIL (INTERNAL ONLY)
+# ======================================================
+def username_to_email(username):
+    res = supabase.table("users").select("id").eq("username", username).execute()
+    if not res.data:
+        return None
+    return f"{username}@internal.local"
+
+# ======================================================
+# AUTH
+# ======================================================
 def login(username, password):
-    users = safe_select("users")
-    match = [u for u in users if u.get("username")==username and u.get("password")==password]
-    if match:
-        st.session_state.logged_in = True
-        st.session_state.user = match[0]
-        st.session_state.nav = "Users" if match[0]["role"]=="admin" else "My Statements"
-        st.rerun()
-    else:
-        st.error("Invalid credentials")
+    email = username_to_email(username)
+    if not email:
+        raise Exception("Invalid username")
 
-def logout():
-    st.session_state.clear()
-    st.rerun()
+    return supabase.auth.sign_in_with_password({
+        "email": email,
+        "password": password
+    })
+
+def load_profile(user_id):
+    res = supabase.table("users").select("*").eq("id", user_id).execute()
+    return res.data[0] if res.data else None
 
 # ======================================================
-# LOGIN (STABLE)
+# STATEMENT FUNCTIONS
 # ======================================================
-st.title("Ivy Pharmaceuticals — Sales & Stock")
+def get_or_create_statement(user_id, stockist_id, year, month):
+    res = supabase.table("statements") \
+        .select("*") \
+        .eq("stockist_id", stockist_id) \
+        .eq("year", year) \
+        .eq("month", month) \
+        .execute()
 
-if not st.session_state.logged_in:
-    with st.form("login_form"):
-        u = st.text_input("Username")
-        p = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login", use_container_width=True)
+    if res.data:
+        return res.data[0]
 
-    if submit:
-        login(u, p)
+    return supabase.table("statements").insert({
+        "user_id": user_id,
+        "stockist_id": stockist_id,
+        "year": year,
+        "month": month
+    }).execute().data[0]
+
+def lock_statement(statement_id):
+    supabase.rpc("lock_statement", {"stmt": statement_id}).execute()
+
+def save_product(statement_id, product_id, vals):
+    supabase.table("statement_products").upsert({
+        "statement_id": statement_id,
+        "product_id": product_id,
+        **vals,
+        "updated_at": datetime.utcnow().isoformat()
+    }).execute()
+
+def final_submit(statement_id):
+    supabase.table("statements").update({
+        "status": "final",
+        "final_submitted_at": datetime.utcnow().isoformat()
+    }).eq("id", statement_id).execute()
+
+# ======================================================
+# LOGIN SCREEN
+# ======================================================
+if not st.session_state.auth_user:
+    st.title("🔐 Login")
+
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        try:
+            auth = login(username, password)
+            profile = load_profile(auth.user.id)
+
+            if not profile:
+                st.error("User profile missing")
+            else:
+                st.session_state.auth_user = auth.user
+                st.session_state.role = profile["role"]
+                st.rerun()
+
+        except Exception:
+            st.error("Invalid username or password")
 
     st.stop()
 
-user = st.session_state.user
-role = user["role"]
-uid = user["id"]
-
 # ======================================================
-# SIDEBAR NAVIGATION
+# SIDEBAR
 # ======================================================
-st.sidebar.title("Menu")
-
-if role == "admin":
-    if st.sidebar.button("Users"): st.session_state.nav = "Users"
-    if st.sidebar.button("Products"): st.session_state.nav = "Products"
-    if st.sidebar.button("Stockists"): st.session_state.nav = "Stockists"
-    if st.sidebar.button("Allocate"): st.session_state.nav = "Allocate"
-
-if role == "user":
-    if st.sidebar.button("My Statements"): st.session_state.nav = "My Statements"
-    if st.sidebar.button("New Statement"): st.session_state.nav = "New Statement"
+st.sidebar.title("Navigation")
 
 if st.sidebar.button("Logout"):
-    logout()
+    st.session_state.clear()
+    st.rerun()
+
+role = st.session_state.role
+user_id = st.session_state.auth_user.id
 
 # ======================================================
-# ADMIN — USERS
+# USER PANEL
 # ======================================================
-if role=="admin" and st.session_state.nav=="Users":
-    st.header("👤 Users")
+if role == "user":
+    st.title("User Dashboard")
 
-    with st.form("add_user"):
-        uname = st.text_input("Username")
-        pwd = st.text_input("Password")
-        r = st.selectbox("Role", ["user","admin"])
-        if st.form_submit_button("Add User", use_container_width=True):
-            safe_insert("users", {"username":uname,"password":pwd,"role":r})
+    tab = st.radio("Action", ["Create / Resume", "View"])
+
+    # -------- CREATE / RESUME ----------
+    if tab == "Create / Resume":
+        stockist_ids = supabase.table("user_stockists") \
+            .select("stockist_id") \
+            .eq("user_id", user_id) \
+            .execute().data
+
+        stockists = supabase.table("stockists") \
+            .select("id,name") \
+            .in_("id", [s["stockist_id"] for s in stockist_ids]) \
+            .execute().data
+
+        if not stockists:
+            st.warning("No stockists allotted")
+            st.stop()
+
+        stockist = st.selectbox("Stockist", stockists, format_func=lambda x: x["name"])
+        year = st.selectbox("Year", [datetime.now().year - 1, datetime.now().year])
+        month = st.selectbox("Month", list(range(1, 13)))
+
+        if st.button("Open Statement"):
+            stmt = safe(lambda: get_or_create_statement(user_id, stockist["id"], year, month))
+            if stmt:
+                safe(lambda: lock_statement(stmt["id"]), "Statement open on another device")
+                st.session_state.statement_id = stmt["id"]
+                notify("Statement opened")
+                st.rerun()
+
+    # -------- PRODUCT ENTRY ----------
+    if st.session_state.statement_id:
+        st.subheader("Product Entry")
+
+        products = supabase.table("products").select("*").order("name").execute().data
+
+        for p in products:
+            st.markdown(f"### {p['name']}")
+
+            c1, c2, c3, c4 = st.columns(4)
+            opening = c1.number_input("Opening", 0.0, key=f"o_{p['id']}")
+            purchase = c2.number_input("Purchase", 0.0, key=f"p_{p['id']}")
+            issue = c3.number_input("Issue", 0.0, key=f"i_{p['id']}")
+            closing = c4.number_input("Closing", 0.0, key=f"c_{p['id']}")
+
+            diff = opening + purchase - issue - closing
+            st.caption(f"Difference: {diff}")
+
+            if st.button("Save", key=f"s_{p['id']}"):
+                save_product(
+                    st.session_state.statement_id,
+                    p["id"],
+                    dict(opening=opening, purchase=purchase, issue=issue, closing=closing)
+                )
+                notify("Saved")
+
+        if st.button("Final Submission"):
+            final_submit(st.session_state.statement_id)
+            notify("Statement submitted")
+            st.session_state.statement_id = None
             st.rerun()
 
-    for u in safe_select("users"):
-        st.write(f"{u.get('username')} ({u.get('role')})")
+    # -------- VIEW ----------
+    if tab == "View":
+        data = supabase.table("statements") \
+            .select("year,month,status") \
+            .eq("user_id", user_id) \
+            .execute().data
+
+        st.dataframe(pd.DataFrame(data))
 
 # ======================================================
-# ADMIN — PRODUCTS
+# ADMIN PANEL
 # ======================================================
-if role=="admin" and st.session_state.nav=="Products":
-    st.header("📦 Products")
+if role == "admin":
+    st.title("Admin Dashboard")
 
-    with st.form("add_product"):
-        name = st.text_input("Product Name")
-        peak = st.number_input("Peak",0)
-        high = st.number_input("High",0)
-        low = st.number_input("Low",0)
-        lowest = st.number_input("Lowest",0)
-        if st.form_submit_button("Add Product", use_container_width=True):
-            safe_insert("products", {
-                "name":name,
-                "peak":peak,
-                "high":high,
-                "low":low,
-                "lowest":lowest
-            })
-            st.rerun()
+    section = st.radio("Admin Section", ["Statements", "Users", "Stockists"])
 
-    for p in safe_select("products"):
-        st.write(
-            f"{p.get('name')} | "
-            f"Peak:{p.get('peak',0)} "
-            f"High:{p.get('high',0)} "
-            f"Low:{p.get('low',0)} "
-            f"Lowest:{p.get('lowest',0)}"
-        )
+    if section == "Statements":
+        st.dataframe(pd.DataFrame(
+            supabase.table("statements").select("*").execute().data
+        ))
 
-# ======================================================
-# ADMIN — STOCKISTS
-# ======================================================
-if role=="admin" and st.session_state.nav=="Stockists":
-    st.header("🏪 Stockists")
+    if section == "Users":
+        st.dataframe(pd.DataFrame(
+            supabase.table("users").select("*").execute().data
+        ))
 
-    with st.form("add_stockist"):
-        name = st.text_input("Stockist Name")
-        if st.form_submit_button("Add Stockist", use_container_width=True):
-            safe_insert("stockists", {"name":name})
-            st.rerun()
-
-    for s in safe_select("stockists"):
-        st.write(s.get("name"))
-
-# ======================================================
-# ADMIN — ALLOCATE (SCHEMA-AGNOSTIC)
-# ======================================================
-if role=="admin" and st.session_state.nav=="Allocate":
-    st.header("🔗 Allocate Stockists")
-
-    users = safe_select("users")
-    stockists = safe_select("stockists")
-    allocations = safe_select("user_stockist")
-
-    with st.form("allocate"):
-        u = st.selectbox("User", users, format_func=lambda x:x["username"])
-        s = st.selectbox("Stockist", stockists, format_func=lambda x:x["name"])
-        if st.form_submit_button("Allocate", use_container_width=True):
-            safe_insert("user_stockist", {
-                list({k for k in u.keys() if "id" in k.lower()})[0]: u["id"],
-                list({k for k in s.keys() if "id" in k.lower()})[0]: s["id"]
-            })
-            st.success("Allocated")
-
-    st.subheader("Existing Allocations")
-    for a in allocations:
-        st.write(a)
-
-# ======================================================
-# USER — MY STATEMENTS
-# ======================================================
-if role=="user" and st.session_state.nav=="My Statements":
-    st.header("📄 My Statements")
-
-    stmts = safe_select("sales_stock_statements")
-    stockists = safe_select("stockists")
-    smap = {s["id"]:s["name"] for s in stockists}
-
-    my_stmts = [s for s in stmts if s.get("user_id")==uid]
-
-    if not my_stmts:
-        st.info("No statements yet")
-
-    for s in my_stmts:
-        st.write(
-            f"{s.get('month')} {s.get('year')} | "
-            f"{smap.get(s.get('stockist_id'),'—')} | "
-            f"{s.get('status')}"
-        )
-
-# ======================================================
-# USER — NEW STATEMENT (SCHEMA-AGNOSTIC)
-# ======================================================
-if role=="user" and st.session_state.nav=="New Statement":
-    st.header("📝 New Statement")
-
-    all_maps = safe_select("user_stockist")
-    my_maps = [m for m in all_maps if uid in m.values()]
-
-    stockists = safe_select("stockists")
-    stockists = [s for s in stockists if s["id"] in [m.get("stockist_id") for m in my_maps]]
-
-    if not stockists:
-        st.warning("No stockist allocated. Contact admin.")
-    else:
-        with st.form("create_stmt"):
-            stck = st.selectbox("Stockist", stockists, format_func=lambda x:x["name"])
-            month = st.selectbox("Month", MONTH_ORDER)
-            year = st.number_input("Year", value=datetime.now().year)
-            if st.form_submit_button("Create Statement", use_container_width=True):
-                safe_insert("sales_stock_statements", {
-                    "user_id":uid,
-                    "stockist_id":stck["id"],
-                    "month":month,
-                    "year":int(year),
-                    "status":"draft",
-                    "locked":False
-                })
-                st.success("Statement created")
-
-st.write("---")
-st.write("© Ivy Pharmaceuticals")
+    if section == "Stockists":
+        st.dataframe(pd.DataFrame(
+            supabase.table("stockists").select("*").execute().data
+        ))
