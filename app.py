@@ -292,3 +292,31 @@ if role == "admin":
                 }).eq("id", user["id"]).execute()
 
                 st.success(f"Password reset for {user['username']}")
+                if section == "Create User":
+    st.subheader("➕ Create User")
+
+    new_username = st.text_input("Username")
+    new_password = st.text_input("Password", type="password")
+
+    if st.button("Create User"):
+        if len(new_password) < 6:
+            st.error("Password too short")
+        else:
+            email = f"{new_username}@internal.local"
+
+            # 1️⃣ Create auth user
+            auth_user = admin_supabase.auth.admin.create_user({
+                "email": email,
+                "password": new_password,
+                "email_confirm": True
+            })
+
+            # 2️⃣ Insert into users table
+            supabase.table("users").insert({
+                "id": auth_user.user.id,
+                "username": new_username,
+                "role": "user"
+            }).execute()
+
+            st.success(f"User '{new_username}' created")
+
