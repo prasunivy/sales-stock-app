@@ -245,7 +245,7 @@ if role == "admin":
 
     section = st.radio(
         "Admin Section",
-        ["Statements", "Users", "Stockists", "Reset User Password"]
+        ["Statements", "Users", "Stockists", "Create User", "Reset User Password"]
     )
 
     # -------- STATEMENTS ----------
@@ -259,6 +259,40 @@ if role == "admin":
         st.dataframe(pd.DataFrame(
             supabase.table("users").select("*").execute().data
         ))
+    # -------- CREATE USER ----------
+    if section == "Create User":
+        st.subheader("➕ Create User")
+
+        new_username = st.text_input("Username")
+        new_password = st.text_input("Password", type="password")
+
+        if st.button("Create User"):
+            if not new_username:
+                st.error("Username required")
+            elif len(new_password) < 6:
+                st.error("Password must be at least 6 characters")
+            else:
+                email = f"{new_username}@internal.local"
+
+                try:
+                    # 1️⃣ Create auth user
+                    auth_user = admin_supabase.auth.admin.create_user({
+                        "email": email,
+                        "password": new_password,
+                        "email_confirm": True
+                    })
+
+                    # 2️⃣ Insert into users table
+                    supabase.table("users").insert({
+                        "id": auth_user.user.id,
+                        "username": new_username,
+                        "role": "user"
+                    }).execute()
+
+                    st.success(f"User '{new_username}' created successfully")
+
+                except Exception as e:
+                    st.error(f"Failed to create user: {e}")
 
     # -------- STOCKISTS ----------
     if section == "Stockists":
