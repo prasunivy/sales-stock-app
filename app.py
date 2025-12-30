@@ -255,12 +255,19 @@ if role == "admin":
         ))
 
     # -------- USERS ----------
-    if section == "Users":
+    elif section == "Users":
         st.dataframe(pd.DataFrame(
             supabase.table("users").select("*").execute().data
         ))
+
+    # -------- STOCKISTS ----------
+    elif section == "Stockists":
+        st.dataframe(pd.DataFrame(
+            supabase.table("stockists").select("*").execute().data
+        ))
+
     # -------- CREATE USER ----------
-    if section == "Create User":
+    elif section == "Create User":
         st.subheader("➕ Create User")
 
         new_username = st.text_input("Username")
@@ -275,14 +282,12 @@ if role == "admin":
                 email = f"{new_username}@internal.local"
 
                 try:
-                    # 1️⃣ Create auth user
                     auth_user = admin_supabase.auth.admin.create_user({
                         "email": email,
                         "password": new_password,
                         "email_confirm": True
                     })
 
-                    # 2️⃣ Insert into users table
                     supabase.table("users").insert({
                         "id": auth_user.user.id,
                         "username": new_username,
@@ -294,14 +299,8 @@ if role == "admin":
                 except Exception as e:
                     st.error(f"Failed to create user: {e}")
 
-    # -------- STOCKISTS ----------
-    if section == "Stockists":
-        st.dataframe(pd.DataFrame(
-            supabase.table("stockists").select("*").execute().data
-        ))
-
-    # -------- PASSWORD RESET ----------
-    if section == "Reset User Password":
+    # -------- RESET PASSWORD ----------
+    elif section == "Reset User Password":
         st.subheader("🔐 Reset User Password")
 
         users = supabase.table("users") \
@@ -322,35 +321,7 @@ if role == "admin":
 
                 supabase.table("users").update({
                     "last_password_reset_at": datetime.utcnow().isoformat(),
-                    "password_reset_by": user_id
+                    "password_reset_by": st.session_state.auth_user.id
                 }).eq("id", user["id"]).execute()
 
                 st.success(f"Password reset for {user['username']}")
-                if section == "Create User":
-    st.subheader("➕ Create User")
-
-    new_username = st.text_input("Username")
-    new_password = st.text_input("Password", type="password")
-
-    if st.button("Create User"):
-        if len(new_password) < 6:
-            st.error("Password too short")
-        else:
-            email = f"{new_username}@internal.local"
-
-            # 1️⃣ Create auth user
-            auth_user = admin_supabase.auth.admin.create_user({
-                "email": email,
-                "password": new_password,
-                "email_confirm": True
-            })
-
-            # 2️⃣ Insert into users table
-            supabase.table("users").insert({
-                "id": auth_user.user.id,
-                "username": new_username,
-                "role": "user"
-            }).execute()
-
-            st.success(f"User '{new_username}' created")
-
