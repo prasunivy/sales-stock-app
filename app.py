@@ -1,4 +1,25 @@
 import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from supabase import create_client
+from datetime import datetime
+
+# ======================================================
+# CONFIG
+# ======================================================
+st.set_page_config(
+    page_title="Ivy Pharmaceuticals — Sales & Stock",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+supabase = create_client(
+    st.secrets["SUPABASE_URL"],
+    st.secrets["SUPABASE_ANON_KEY"]
+)
+
+import streamlit as st
 from supabase import create_client
 from datetime import datetime
 
