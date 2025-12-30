@@ -4,3 +4,4 @@ pandas
 reportlab
 matplotlib
 fpdf
+python-dotenv
