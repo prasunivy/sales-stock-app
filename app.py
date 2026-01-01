@@ -400,6 +400,24 @@ elif month in (product.get("low_months") or []):
 elif month in (product.get("lowest_months") or []):
     month_type = "lowest"
 
+# ======================================================
+# ORDER ENGINE — CALCULATE SUGGESTED ORDER
+# ======================================================
+
+suggested_order = 0
+
+if month_type == "peak":
+    suggested_order = issue * 2 - closing
+elif month_type == "high":
+    suggested_order = issue * 1.5 - closing
+elif month_type == "low":
+    suggested_order = issue * 1 - closing
+elif month_type == "lowest":
+    suggested_order = issue * 0.8 - closing
+
+if suggested_order < 0:
+    suggested_order = 0
+
 
 # ======================================================
 # STEP 7.1 — NAVIGATION BUTTONS
