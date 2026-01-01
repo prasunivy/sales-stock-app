@@ -490,7 +490,23 @@ if role == "user" and st.session_state.get("engine_stage") == "preview":
                 st.session_state["product_index"] = idx
                 st.session_state["engine_stage"] = "edit"
                 st.rerun()
+# ======================================================
+# STEP 9.1 — FINAL SUBMISSION VALIDATION
+# ======================================================
 
+st.divider()
+st.subheader("🚦 Final Submission")
+
+total_products = len(products)
+saved_products = len(preview_rows)
+
+if saved_products != total_products:
+    st.error(
+        f"Statement incomplete: {saved_products} / {total_products} products saved."
+    )
+    st.stop()
+
+            
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
                 st.stop()
