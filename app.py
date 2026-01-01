@@ -296,6 +296,21 @@ def fetch_last_month_values(stockist_id, product_id, year, month):
             return row["closing"], row.get("issue", 0)
 
     return 0, 0
+# ======================================================
+# STEP 5.4 — RESOLVE OPENING & LAST MONTH ISSUE
+# ======================================================
+
+if existing_row:
+    # Resume draft safely
+    opening = existing_row.get("opening", 0)
+    last_month_issue = existing_row.get("last_month_issue", 0)
+else:
+    opening, last_month_issue = fetch_last_month_values(
+        selected_stockist["stockist_id"],
+        product["id"],
+        year,
+        month
+    )
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
