@@ -241,6 +241,164 @@ if role == "admin":
 
             st.success(f"User '{new_username}' created")
 
+    # -------- STOCKISTS (CREATE / EDIT / DELETE) ----------
+    elif section == "Stockists":
+        st.subheader("🏪 Stockists Management")
+
+        # ===============================
+        # CREATE STOCKIST
+        # ===============================
+        st.markdown("### ➕ Add New Stockist")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            name = st.text_input("Stockist Name")
+            location = st.text_input("Location")
+        with col2:
+            phone = st.text_input("Phone")
+            payment_terms = st.number_input(
+                "Payment Terms (days)",
+                min_value=0,
+                step=1
+            )
+
+        if st.button("Add Stockist"):
+            if not name.strip():
+                st.error("Stockist name is required")
+            else:
+                existing = supabase.table("stockists") \
+                    .select("id") \
+                    .ilike("name", name.strip()) \
+                    .execute().data
+
+                if existing:
+                    st.warning("Stockist already exists")
+                else:
+                    supabase.table("stockists").insert({
+                        "name": name.strip(),
+                        "location": location.strip(),
+                        "phone": phone.strip(),
+                        "payment_terms": payment_terms,
+                        "created_by": user_id
+                    }).execute()
+
+                    supabase.table("audit_logs").insert({
+                        "action": "create_stockist",
+                        "target_type": "stockist",
+                        "performed_by": user_id,
+                        "metadata": {
+                            "name": name,
+                            "location": location,
+                            "phone": phone,
+                            "payment_terms": payment_terms
+                        }
+                    }).execute()
+
+                    st.success("Stockist added successfully")
+                    st.rerun()
+
+        st.divider()
+
+        # ===============================
+        # EDIT / DELETE STOCKIST
+        # ===============================
+        st.markdown("### ✏️ Edit / Delete Stockist")
+
+        stockists = supabase.table("stockists") \
+            .select("id, name, location, phone, payment_terms, created_at") \
+            .order("name") \
+            .execute().data
+
+        if not stockists:
+            st.info("No stockists available")
+            st.stop()
+
+        stockist = st.selectbox(
+            "Select Stockist",
+            stockists,
+            format_func=lambda x: x["name"]
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            edit_name = st.text_input("Name", value=stockist["name"])
+            edit_location = st.text_input("Location", value=stockist["location"] or "")
+        with col2:
+            edit_phone = st.text_input("Phone", value=stockist["phone"] or "")
+            edit_terms = st.number_input(
+                "Payment Terms (days)",
+                min_value=0,
+                step=1,
+                value=stockist["payment_terms"] or 0
+            )
+
+        col_save, col_delete = st.columns(2)
+
+        # -------- UPDATE ----------
+        with col_save:
+            if st.button("💾 Save Changes"):
+                supabase.table("stockists").update({
+                    "name": edit_name.strip(),
+                    "location": edit_location.strip(),
+                    "phone": edit_phone.strip(),
+                    "payment_terms": edit_terms
+                }).eq("id", stockist["id"]).execute()
+
+                supabase.table("audit_logs").insert({
+                    "action": "update_stockist",
+                    "target_type": "stockist",
+                    "target_id": stockist["id"],
+                    "performed_by": user_id,
+                    "metadata": {
+                        "name": edit_name,
+                        "location": edit_location,
+                        "phone": edit_phone,
+                        "payment_terms": edit_terms
+                    }
+                }).execute()
+
+                st.success("Stockist updated successfully")
+                st.rerun()
+
+        # -------- DELETE ----------
+        with col_delete:
+            if st.button("🗑️ Delete Stockist"):
+                # Safety check: statements
+                used_stmt = supabase.table("statements") \
+                    .select("id") \
+                    .eq("stockist_id", stockist["id"]) \
+                    .limit(1) \
+                    .execute().data
+
+                used_alloc = supabase.table("user_stockists") \
+                    .select("id") \
+                    .eq("stockist_id", stockist["id"]) \
+                    .limit(1) \
+                    .execute().data
+
+                if used_stmt or used_alloc:
+                    st.error(
+                        "Cannot delete stockist. "
+                        "It is already used in statements or assigned to users."
+                    )
+                else:
+                    supabase.table("stockists") \
+                        .delete() \
+                        .eq("id", stockist["id"]) \
+                        .execute()
+
+                    supabase.table("audit_logs").insert({
+                        "action": "delete_stockist",
+                        "target_type": "stockist",
+                        "target_id": stockist["id"],
+                        "performed_by": user_id,
+                        "metadata": {"name": stockist["name"]}
+                    }).execute()
+
+                    st.success("Stockist deleted successfully")
+                    st.rerun()
+
+    
     # -------- RESET PASSWORD ----------
     elif section == "Reset User Password":
         st.subheader("🔐 Reset User Password")
