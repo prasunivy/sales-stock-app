@@ -110,7 +110,7 @@ if role == "admin":
         "Users",
         "Create User",
         "Stockists",
-        "Products",  # 👈 ADD THIS
+        "Products",
         "Reset User Password",
         "Audit Logs",
         "Lock / Unlock Statements"
