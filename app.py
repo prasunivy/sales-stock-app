@@ -473,6 +473,23 @@ if role == "user" and st.session_state.get("engine_stage") == "preview":
 
     st.subheader("📋 Statement Preview")
     st.dataframe(df, use_container_width=True)
+    st.divider()
+    st.subheader("✏️ Edit a Product")
+
+    product_names = [r["products"]["name"] for r in preview_rows]
+
+    selected_product_name = st.selectbox(
+        "Select product to edit",
+        product_names
+    )
+
+    if st.button("Edit Selected Product"):
+        # Find index from master product list
+        for idx, p in enumerate(products):
+            if p["name"] == selected_product_name:
+                st.session_state["product_index"] = idx
+                st.session_state["engine_stage"] = "edit"
+                st.rerun()
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
