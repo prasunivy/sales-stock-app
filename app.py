@@ -404,6 +404,27 @@ with col_next:
         next_clicked = st.button("💾 Save Final Product")
     else:
         next_clicked = st.button("💾 Save & Next")
+# ======================================================
+# STEP 7.2 — UPSERT PRODUCT ROW
+# ======================================================
+
+def save_product_row():
+    supabase.table("statement_products").upsert({
+        "statement_id": statement_id,
+        "product_id": product["id"],
+        "opening": opening,
+        "purchase": purchase,
+        "issue": issue,
+        "closing": closing,
+        "order_qty": 0,  # will be calculated later
+        "last_month_issue": last_month_issue,
+        "updated_at": datetime.utcnow().isoformat()
+    }).execute()
+
+    supabase.table("statements").update({
+        "current_product_index": product_index,
+        "last_saved_at": datetime.utcnow().isoformat()
+    }).eq("id", statement_id).execute()
 
 
             elif result["mode"] == "locked":
