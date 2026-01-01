@@ -447,6 +447,19 @@ elif issue > last_month_issue:
 else:
     st.warning("Issue same as last month")
 
+# ======================================================
+# GUIDANCE ENGINE — STOCK ADVICE
+# ======================================================
+
+st.markdown("### 📦 Stock Guidance")
+
+if closing == 0 and issue == 0:
+    st.error("No stock movement — you should promote this product")
+elif issue > 0 and closing >= 2 * issue:
+    st.warning("Closing stock is high")
+elif issue > 0 and closing < 2 * issue:
+    st.success("Stock level is healthy — consider ordering if needed")
+
 
 order_difference = suggested_order - order_qty
 st.markdown("### 📦 Order Insight")
