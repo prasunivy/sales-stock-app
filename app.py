@@ -62,6 +62,42 @@ def login(username, password):
 def load_profile(user_id):
     res = supabase.table("users").select("*").eq("id", user_id).execute()
     return res.data[0]
+# ======================================================
+# STATEMENT RESOLVER (ENGINE CORE)
+# ======================================================
+
+def resolve_statement(user_id, stockist_id, year, month):
+    res = supabase.table("statements") \
+        .select("*") \
+        .eq("stockist_id", stockist_id) \
+        .eq("year", year) \
+        .eq("month", month) \
+        .execute()
+
+    if not res.data:
+        return {
+            "mode": "create",
+            "statement": None
+        }
+
+    stmt = res.data[0]
+
+    if stmt["status"] == "final":
+        return {
+            "mode": "view",
+            "statement": stmt
+        }
+
+    if stmt.get("locked"):
+        return {
+            "mode": "locked",
+            "statement": stmt
+        }
+
+    return {
+        "mode": "edit",
+        "statement": stmt
+    }
 
 # ======================================================
 # LOGIN UI
