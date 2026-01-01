@@ -418,6 +418,23 @@ elif month_type == "lowest":
 if suggested_order < 0:
     suggested_order = 0
 
+# ======================================================
+# ORDER ENGINE — USER OVERRIDE
+# ======================================================
+
+if existing_row:
+    order_qty = existing_row.get("order_qty", suggested_order)
+else:
+    order_qty = suggested_order
+
+order_qty = st.number_input(
+    "Suggested Order (Editable)",
+    min_value=0.0,
+    value=float(order_qty),
+    step=1.0
+)
+
+order_difference = suggested_order - order_qty
 
 # ======================================================
 # STEP 7.1 — NAVIGATION BUTTONS
