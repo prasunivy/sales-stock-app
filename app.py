@@ -245,6 +245,23 @@ if role == "user" and "statement_id" in st.session_state:
     st.subheader(
         f"Product {product_index + 1} of {len(products)} — {product['name']}"
     )
+product = products[product_index]
+
+st.subheader(
+    f"Product {product_index + 1} of {len(products)} — {product['name']}"
+)
+
+# ===== STEP 5.1 STARTS HERE =====
+
+existing_row = supabase.table("statement_products") \
+    .select("*") \
+    .eq("statement_id", statement_id) \
+    .eq("product_id", product["id"]) \
+    .execute().data
+
+existing_row = existing_row[0] if existing_row else None
+
+# ===== STEP 5.1 ENDS HERE =====
 
 
             elif result["mode"] == "locked":
