@@ -293,7 +293,7 @@ if role == "admin":
         low = st.multiselect("Low Months", range(1, 13))
         lowest = st.multiselect("Lowest Months", range(1, 13))
 
-        if st.button("Add Product"):
+if st.button("Add Product"):
     clean_name = name.strip()
 
     if not clean_name:
@@ -330,6 +330,7 @@ if role == "admin":
 
             st.success("Product added successfully")
             st.rerun()
+
 
 
         st.divider()
