@@ -311,6 +311,18 @@ else:
         year,
         month
     )
+# ======================================================
+# STEP 6.1 — INPUT DEFAULTS (RESUME SAFE)
+# ======================================================
+
+if existing_row:
+    purchase = existing_row.get("purchase", 0)
+    issue = existing_row.get("issue", 0)
+    closing = existing_row.get("closing", opening)
+else:
+    purchase = 0
+    issue = 0
+    closing = opening
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
