@@ -228,6 +228,14 @@ if role == "user" and "statement_id" in st.session_state:
 
     statement_id = st.session_state["statement_id"]
     product_index = st.session_state.get("product_index", 0)
+    products = supabase.table("products") \
+        .select("*") \
+        .order("sort_order") \
+        .execute().data
+
+    if not products:
+        st.error("No products found in master")
+        st.stop()
 
 
             elif result["mode"] == "locked":
