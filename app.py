@@ -104,16 +104,18 @@ if role == "admin":
     st.title("Admin Dashboard")
 
     section = st.radio(
-        "Admin Section",
-        [
-            "Statements",
-            "Users",
-            "Create User",
-            "Stockists",
-            "Reset User Password",
-            "Audit Logs"
-        ]
-    )
+    "Admin Section",
+    [
+        "Statements",
+        "Users",
+        "Create User",
+        "Stockists",
+        "Reset User Password",
+        "Audit Logs",
+        "Lock / Unlock Statements"
+    ]
+)
+
 
     # -------- STATEMENTS ----------
     if section == "Statements":
@@ -264,3 +266,67 @@ if role == "admin":
             .execute().data
 
         st.dataframe(pd.DataFrame(logs), use_container_width=True)
+    # -------- LOCK / UNLOCK STATEMENTS ----------
+    elif section == "Lock / Unlock Statements":
+        st.subheader("🔒 Lock / Unlock Statements")
+
+        statements = supabase.table("statements") \
+            .select("id, year, month, stockist_id, status") \
+            .order("year", desc=True) \
+            .order("month", desc=True) \
+            .execute().data
+
+        if not statements:
+            st.info("No statements found")
+            st.stop()
+
+        stmt = st.selectbox(
+            "Select Statement",
+            statements,
+            format_func=lambda x: f"{x['year']}-{x['month']} | Stockist {x['stockist_id']} | {x.get('status', 'draft')}"
+        )
+
+        current_status = stmt.get("status", "draft")
+        st.info(f"Current Status: {current_status.upper()}")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("🔒 Lock Statement"):
+                supabase.table("statements").update({
+                    "status": "locked",
+                    "updated_at": datetime.utcnow().isoformat()
+                }).eq("id", stmt["id"]).execute()
+
+                supabase.table("audit_logs").insert({
+                    "action": "lock_statement",
+                    "target_type": "statement",
+                    "target_id": stmt["id"],
+                    "performed_by": user_id,
+                    "metadata": {
+                        "previous_status": current_status
+                    }
+                }).execute()
+
+                st.success("Statement locked successfully")
+                st.rerun()
+
+        with col2:
+            if st.button("🔓 Unlock Statement"):
+                supabase.table("statements").update({
+                    "status": "draft",
+                    "updated_at": datetime.utcnow().isoformat()
+                }).eq("id", stmt["id"]).execute()
+
+                supabase.table("audit_logs").insert({
+                    "action": "unlock_statement",
+                    "target_type": "statement",
+                    "target_id": stmt["id"],
+                    "performed_by": user_id,
+                    "metadata": {
+                        "previous_status": current_status
+                    }
+                }).execute()
+
+                st.success("Statement unlocked successfully")
+                st.rerun()
