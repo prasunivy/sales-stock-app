@@ -199,27 +199,25 @@ if role == "user":
         )
 
        if action == "create" and result["mode"] in ("create", "edit"):
-    # Either create new draft or resume existing draft
 
-    if result["mode"] == "create":
-        stmt = supabase.table("statements").insert({
-            "user_id": user_id,
-            "stockist_id": selected_stockist["stockist_id"],
-            "year": year,
-            "month": month,
-            "status": "draft",
-            "current_product_index": 0
-        }).execute().data[0]
+	   if result["mode"] == "create":
+		  stmt = supabase.table("statements").insert({
+			"user_id": user_id,
+			"stockist_id": selected_stockist["stockist_id"],
+			"year": year,
+			"month": month,
+			"status": "draft",
+			"current_product_index": 0
+		    }).execute().data[0]
 
-    else:
-        stmt = result["statement"]
+	else:
+		stmt = result["statement"]
+	    st.session_state["statement_id"] = stmt["id"]
+	    st.session_state["product_index"] = stmt["current_product_index"] or 0
+	    st.session_state["engine_mode"] = "edit"
 
-    # Persist engine state
-    st.session_state["statement_id"] = stmt["id"]
-    st.session_state["product_index"] = stmt["current_product_index"] or 0
-    st.session_state["engine_mode"] = "edit"
+	    st.rerun()
 
-    st.rerun()
 
     # ======================================================
 # PRODUCT ENGINE ENTRY
