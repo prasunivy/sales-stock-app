@@ -263,6 +263,39 @@ existing_row = existing_row[0] if existing_row else None
 
 # ===== STEP 5.1 ENDS HERE =====
 
+# ======================================================
+# STEP 5.3 — LAST MONTH FINAL DATA FETCH
+# ======================================================
+
+def fetch_last_month_values(stockist_id, product_id, year, month):
+    # First month safeguard
+    if month == 1:
+        return 0, 0
+
+    prev_month = month - 1
+    prev_year = year
+
+    res = supabase.table("statements") \
+        .select(
+            "id, statement_products(closing, issue)"
+        ) \
+        .eq("stockist_id", stockist_id) \
+        .eq("year", prev_year) \
+        .eq("month", prev_month) \
+        .eq("status", "final") \
+        .execute().data
+
+    if not res:
+        return 0, 0
+
+    # There should be only one statement due to unique constraint
+    rows = res[0].get("statement_products", [])
+
+    for row in rows:
+        if row and row.get("closing") is not None:
+            return row["closing"], row.get("issue", 0)
+
+    return 0, 0
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
