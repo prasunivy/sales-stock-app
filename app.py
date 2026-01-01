@@ -236,6 +236,10 @@ if role == "user" and "statement_id" in st.session_state:
     if not products:
         st.error("No products found in master")
         st.stop()
+    if product_index >= len(products):
+        st.success("All products completed. Proceed to preview.")
+        st.session_state["engine_stage"] = "preview"
+        st.stop()
 
 
             elif result["mode"] == "locked":
