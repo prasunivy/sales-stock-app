@@ -240,6 +240,11 @@ if role == "user" and "statement_id" in st.session_state:
         st.success("All products completed. Proceed to preview.")
         st.session_state["engine_stage"] = "preview"
         st.stop()
+    product = products[product_index]
+
+    st.subheader(
+        f"Product {product_index + 1} of {len(products)} — {product['name']}"
+    )
 
 
             elif result["mode"] == "locked":
