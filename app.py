@@ -477,7 +477,7 @@ def save_product_row():
         "purchase": purchase,
         "issue": issue,
         "closing": closing,
-        "order_qty": 0,  # will be calculated later
+        "order_qty": order_qty, 
         "last_month_issue": last_month_issue,
         "updated_at": datetime.utcnow().isoformat()
     }).execute()
