@@ -132,6 +132,26 @@ if st.sidebar.button("Logout"):
 
 role = st.session_state.role
 user_id = st.session_state.auth_user.id
+# ======================================================
+# USER LANDING PAGE
+# ======================================================
+
+if role == "user":
+
+    st.title("📊 Sales & Stock Statement")
+
+    st.markdown("### Choose an action")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        create_clicked = st.button("➕ Create", use_container_width=True)
+
+    with col2:
+        edit_clicked = st.button("✏️ Edit", use_container_width=True)
+
+    with col3:
+        view_clicked = st.button("👁 View", use_container_width=True)
 
 # ======================================================
 # ADMIN PANEL
