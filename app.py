@@ -436,31 +436,23 @@ if role == "admin":
         if not product_name.strip():
             st.error("Product name is required")
         else:
-            existing = supabase.table("products") \
-                .select("id") \
-                .ilike("name", product_name.strip()) \
-                .execute().data
+            supabase.table("products").insert({
+                "name": product_name.strip(),
+                "peak_months": peak_months,
+                "high_months": high_months,
+                "low_months": low_months,
+                "lowest_months": lowest_months
+            }).execute()
 
-            if existing:
-                st.warning("Product already exists")
-            else:
-                supabase.table("products").insert({
-                    "name": product_name.strip(),
-                    "peak_months": peak_months,
-                    "high_months": high_months,
-                    "low_months": low_months,
-                    "lowest_months": lowest_months
-                }).execute()
-
-                st.success("Product added successfully")
-                st.rerun()
+            st.success("Product added")
+            st.rerun()
 
     st.divider()
 
     # ===============================
-    # EDIT / DELETE PRODUCT
+    # EDIT PRODUCT
     # ===============================
-    st.markdown("### ✏️ Edit / Delete Product")
+    st.markdown("### ✏️ Edit Product")
 
     products = supabase.table("products") \
         .select("*") \
@@ -469,79 +461,25 @@ if role == "admin":
 
     if not products:
         st.info("No products found")
-        st.stop()
+    else:
+        product = st.selectbox(
+            "Select Product",
+            products,
+            format_func=lambda x: x["name"]
+        )
 
-    product = st.selectbox(
-        "Select Product",
-        products,
-        format_func=lambda x: x["name"]
-    )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
         edit_name = st.text_input(
             "Product Name",
             value=product["name"]
         )
 
-    with col2:
-        edit_peak = st.multiselect(
-            "Peak Months",
-            list(range(1, 13)),
-            default=product.get("peak_months") or []
-        )
-        edit_high = st.multiselect(
-            "High Months",
-            list(range(1, 13)),
-            default=product.get("high_months") or []
-        )
-        edit_low = st.multiselect(
-            "Low Months",
-            list(range(1, 13)),
-            default=product.get("low_months") or []
-        )
-        edit_lowest = st.multiselect(
-            "Lowest Months",
-            list(range(1, 13)),
-            default=product.get("lowest_months") or []
-        )
-
-    col_save, col_delete = st.columns(2)
-
-    # -------- UPDATE ----------
-    with col_save:
-        if st.button("💾 Save Changes"):
+        if st.button("Save Changes"):
             supabase.table("products").update({
-                "name": edit_name.strip(),
-                "peak_months": edit_peak,
-                "high_months": edit_high,
-                "low_months": edit_low,
-                "lowest_months": edit_lowest
+                "name": edit_name.strip()
             }).eq("id", product["id"]).execute()
 
-            st.success("Product updated successfully")
+            st.success("Product updated")
             st.rerun()
-
-    # -------- DELETE ----------
-    with col_delete:
-        if st.button("🗑️ Delete Product"):
-            used = supabase.table("statement_products") \
-                .select("id") \
-                .eq("product_id", product["id"]) \
-                .limit(1) \
-                .execute().data
-
-            if used:
-                st.error("Cannot delete product. It is already used in statements.")
-            else:
-                supabase.table("products") \
-                    .delete() \
-                    .eq("id", product["id"]) \
-                    .execute()
-
-                st.success("Product deleted successfully")
-                st.rerun()
 
     # -------- RESET PASSWORD ----------
     elif section == "Reset User Password":
