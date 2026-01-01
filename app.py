@@ -162,16 +162,95 @@ if role == "admin":
             supabase.table("statements").select("*").execute().data
         ))
 
-    # -------- USERS (VIEW ONLY) ----------
+        # -------- USERS (EDIT & REASSIGN STOCKISTS) ----------
     elif section == "Users":
-        st.subheader("👤 Users")
+        st.subheader("👤 Edit User & Reassign Stockists")
 
         users = supabase.table("users") \
-            .select("id, username, role, is_active, created_at") \
-            .order("created_at", desc=True) \
+            .select("id, username, role, is_active") \
+            .order("username") \
             .execute().data
 
-        st.dataframe(pd.DataFrame(users))
+        if not users:
+            st.info("No users found")
+            st.stop()
+
+        selected_user = st.selectbox(
+            "Select User",
+            users,
+            format_func=lambda x: x["username"]
+        )
+
+        # Current values
+        new_username = st.text_input(
+            "Username",
+            value=selected_user["username"]
+        )
+
+        is_active = st.checkbox(
+            "User Active",
+            value=selected_user["is_active"]
+        )
+
+        # Fetch all stockists
+        all_stockists = supabase.table("stockists") \
+            .select("id, name") \
+            .order("name") \
+            .execute().data
+
+        # Fetch assigned stockists
+        assigned = supabase.table("user_stockists") \
+            .select("stockist_id") \
+            .eq("user_id", selected_user["id"]) \
+            .execute().data
+
+        assigned_ids = [a["stockist_id"] for a in assigned]
+
+        selected_stockists = st.multiselect(
+            "Assigned Stockists",
+            all_stockists,
+            default=[s for s in all_stockists if s["id"] in assigned_ids],
+            format_func=lambda x: x["name"]
+        )
+
+        if st.button("Save Changes"):
+            try:
+                # 1️⃣ Update users table
+                supabase.table("users").update({
+                    "username": new_username,
+                    "is_active": is_active,
+                    "updated_at": datetime.utcnow().isoformat()
+                }).eq("id", selected_user["id"]).execute()
+
+                # 2️⃣ Reset stockist assignments
+                supabase.table("user_stockists") \
+                    .delete() \
+                    .eq("user_id", selected_user["id"]) \
+                    .execute()
+
+                for s in selected_stockists:
+                    supabase.table("user_stockists").insert({
+                        "user_id": selected_user["id"],
+                        "stockist_id": s["id"]
+                    }).execute()
+
+                # 3️⃣ Audit log
+                supabase.table("audit_logs").insert({
+                    "action": "update_user",
+                    "target_type": "user",
+                    "target_id": selected_user["id"],
+                    "performed_by": st.session_state.auth_user.id,
+                    "metadata": {
+                        "new_username": new_username,
+                        "is_active": is_active,
+                        "stockists": [s["name"] for s in selected_stockists]
+                    }
+                }).execute()
+
+                st.success("User updated successfully")
+
+            except Exception as e:
+                st.error(f"Failed to update user: {e}")
 
     # -------- CREATE USER + ASSIGN STOCKISTS ----------
     elif section == "Create User":
