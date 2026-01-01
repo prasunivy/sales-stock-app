@@ -152,9 +152,17 @@ if role == "admin":
     st.title("Admin Dashboard")
 
     section = st.radio(
-        "Admin Section",
-        ["Statements", "Users", "Create User", "Stockists", "Reset User Password"]
-    )
+    "Admin Section",
+    [
+        "Statements",
+        "Users",
+        "Create User",
+        "Stockists",
+        "Reset User Password",
+        "Audit Logs"
+    ]
+)
+
 
     # -------- STATEMENTS ----------
     if section == "Statements":
@@ -355,3 +363,29 @@ if role == "admin":
                 }).eq("id", user["id"]).execute()
 
                 st.success(f"Password reset for {user['username']}")
+    # -------- AUDIT LOG VIEWER ----------
+    elif section == "Audit Logs":
+        st.subheader("🧾 Audit Logs")
+
+        logs = supabase.table("audit_logs") \
+            .select(
+                "created_at, action, target_type, target_id, performed_by, metadata"
+            ) \
+            .order("created_at", desc=True) \
+            .execute().data
+
+        if not logs:
+            st.info("No audit logs found")
+            st.stop()
+
+        df = pd.DataFrame(logs)
+
+        # Pretty formatting
+        df["created_at"] = pd.to_datetime(df["created_at"]).dt.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        st.dataframe(
+            df,
+            use_container_width=True
+        )
