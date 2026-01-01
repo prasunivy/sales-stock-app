@@ -415,7 +415,6 @@ if role == "admin":
 
     elif section == "Products":
     st.subheader("📦 Product Master")
-
     # ===============================
     # ADD NEW PRODUCT
     # ===============================
