@@ -656,6 +656,8 @@ if role == "admin":
             "Reset User Password",
             "Audit Logs",
             "Lock / Unlock Statements"
+            "Analytics"
+
         ]
     )
 
