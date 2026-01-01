@@ -458,6 +458,21 @@ if role == "user" and st.session_state.get("engine_stage") == "preview":
     if not preview_rows:
         st.warning("No products saved yet.")
         st.stop()
+    df = pd.DataFrame([
+        {
+            "Product": r["products"]["name"],
+            "Opening": r["opening"],
+            "Purchase": r["purchase"],
+            "Issue": r["issue"],
+            "Closing": r["closing"],
+            "Difference": r["difference"],
+            "Order": r["order_qty"]
+        }
+        for r in preview_rows
+    ])
+
+    st.subheader("📋 Statement Preview")
+    st.dataframe(df, use_container_width=True)
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
