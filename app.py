@@ -384,6 +384,23 @@ if difference != 0:
     st.warning(f"Difference detected: {difference}")
 else:
     st.success("No difference — stock balanced")
+
+# ======================================================
+# ORDER ENGINE — DETERMINE SEASON TYPE
+# ======================================================
+
+month_type = None
+
+if month in (product.get("peak_months") or []):
+    month_type = "peak"
+elif month in (product.get("high_months") or []):
+    month_type = "high"
+elif month in (product.get("low_months") or []):
+    month_type = "low"
+elif month in (product.get("lowest_months") or []):
+    month_type = "lowest"
+
+
 # ======================================================
 # STEP 7.1 — NAVIGATION BUTTONS
 # ======================================================
