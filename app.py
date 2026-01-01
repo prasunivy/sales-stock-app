@@ -369,6 +369,22 @@ with col5:
         value=float(closing),
         step=1.0
     )
+# ======================================================
+# STEP 6.3 — LIVE CALCULATIONS
+# ======================================================
+
+calculated_closing = opening + purchase - issue
+difference = calculated_closing - closing
+
+st.markdown("### Live Calculation")
+
+st.write(f"**Calculated Closing:** {calculated_closing}")
+
+if difference != 0:
+    st.warning(f"Difference detected: {difference}")
+else:
+    st.success("No difference — stock balanced")
+
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
