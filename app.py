@@ -384,6 +384,26 @@ if difference != 0:
     st.warning(f"Difference detected: {difference}")
 else:
     st.success("No difference — stock balanced")
+# ======================================================
+# STEP 7.1 — NAVIGATION BUTTONS
+# ======================================================
+
+is_first = product_index == 0
+is_last = product_index == len(products) - 1
+
+col_prev, col_next = st.columns(2)
+
+with col_prev:
+    prev_clicked = st.button(
+        "⬅ Previous",
+        disabled=is_first
+    )
+
+with col_next:
+    if is_last:
+        next_clicked = st.button("💾 Save Final Product")
+    else:
+        next_clicked = st.button("💾 Save & Next")
 
 
             elif result["mode"] == "locked":
