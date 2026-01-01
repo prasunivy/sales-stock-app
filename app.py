@@ -1025,3 +1025,17 @@ if role == "admin":
         .eq("month", month) \
         .eq("stockist_id", stockist["id"]) \
         .execute().data
+    if not rows:
+    st.warning("No data for selected period")
+   else:
+       df = pd.DataFrame([
+        {
+            "Product": r["products"]["name"],
+            "Total Issue": r["total_issue"],
+            "Total Closing": r["total_closing"],
+            "Total Order": r["total_order"]
+        }
+        for r in rows
+    ])
+
+    st.dataframe(df, use_container_width=True)
