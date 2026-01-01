@@ -294,8 +294,21 @@ if role == "admin":
         lowest = st.multiselect("Lowest Months", range(1, 13))
 
         if st.button("Add Product"):
+    clean_name = name.strip()
+
+    if not clean_name:
+        st.error("Product name is required")
+    else:
+        existing = supabase.table("products") \
+            .select("id") \
+            .ilike("name", clean_name) \
+            .execute().data
+
+        if existing:
+            st.error("Product already exists")
+        else:
             supabase.table("products").insert({
-                "name": name,
+                "name": clean_name,
                 "peak_months": peak,
                 "high_months": high,
                 "low_months": low,
@@ -306,11 +319,18 @@ if role == "admin":
                 "action": "create_product",
                 "target_type": "product",
                 "performed_by": user_id,
-                "metadata": {"name": name}
+                "metadata": {
+                    "name": clean_name,
+                    "peak": peak,
+                    "high": high,
+                    "low": low,
+                    "lowest": lowest
+                }
             }).execute()
 
-            st.success("Product added")
+            st.success("Product added successfully")
             st.rerun()
+
 
         st.divider()
 
