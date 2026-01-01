@@ -285,87 +285,123 @@ if role == "admin":
     elif section == "Products":
         st.subheader("📦 Product Master")
 
-        st.markdown("### ➕ Add Product")
+        # -------------------------------
+        # ADD PRODUCT
+        # -------------------------------
         name = st.text_input("Product Name")
 
-        peak = st.multiselect("Peak Months", range(1, 13))
-        high = st.multiselect("High Months", range(1, 13))
-        low = st.multiselect("Low Months", range(1, 13))
-        lowest = st.multiselect("Lowest Months", range(1, 13))
+        peak = st.multiselect("Peak Months", list(range(1, 13)))
+        high = st.multiselect("High Months", list(range(1, 13)))
+        low = st.multiselect("Low Months", list(range(1, 13)))
+        lowest = st.multiselect("Lowest Months", list(range(1, 13)))
 
-if st.button("Add Product"):
-    clean_name = name.strip()
+        if st.button("Add Product"):
+            clean_name = name.strip()
 
-    if not clean_name:
-        st.error("Product name is required")
-    else:
-        existing = supabase.table("products") \
-            .select("id") \
-            .ilike("name", clean_name) \
-            .execute().data
+            if not clean_name:
+                st.error("Product name is required")
+            else:
+                existing = supabase.table("products") \
+                    .select("id") \
+                    .ilike("name", clean_name) \
+                    .execute().data
 
-        if existing:
-            st.error("Product already exists")
-        else:
-            supabase.table("products").insert({
-                "name": clean_name,
-                "peak_months": peak,
-                "high_months": high,
-                "low_months": low,
-                "lowest_months": lowest
-            }).execute()
+                if existing:
+                    st.error("Product already exists")
+                else:
+                    supabase.table("products").insert({
+                        "name": clean_name,
+                        "peak_months": peak,
+                        "high_months": high,
+                        "low_months": low,
+                        "lowest_months": lowest
+                    }).execute()
 
-            supabase.table("audit_logs").insert({
-                "action": "create_product",
-                "target_type": "product",
-                "performed_by": user_id,
-                "metadata": {
-                    "name": clean_name,
-                    "peak": peak,
-                    "high": high,
-                    "low": low,
-                    "lowest": lowest
-                }
-            }).execute()
+                    supabase.table("audit_logs").insert({
+                        "action": "create_product",
+                        "target_type": "product",
+                        "performed_by": user_id,
+                        "metadata": {
+                            "name": clean_name,
+                            "peak": peak,
+                            "high": high,
+                            "low": low,
+                            "lowest": lowest
+                        }
+                    }).execute()
 
-            st.success("Product added successfully")
-            st.rerun()
-
-
+                    st.success("Product added successfully")
+                    st.rerun()
 
         st.divider()
 
-        products = supabase.table("products").select("*").order("name").execute().data
+        # -------------------------------
+        # EDIT / DELETE PRODUCT
+        # -------------------------------
+        products = supabase.table("products") \
+            .select("*") \
+            .order("name") \
+            .execute().data
 
-        if products:
-            p = st.selectbox("Select Product", products, format_func=lambda x: x["name"])
-            edit_name = st.text_input("Edit Name", value=p["name"])
+        if not products:
+            st.info("No products found")
+        else:
+            product = st.selectbox(
+                "Select Product",
+                products,
+                format_func=lambda x: x["name"]
+            )
 
-            if st.button("Save Product"):
-                supabase.table("products").update({
-                    "name": edit_name
-                }).eq("id", p["id"]).execute()
+            edit_name = st.text_input(
+                "Edit Product Name",
+                value=product["name"]
+            )
 
-                st.success("Updated")
-                st.rerun()
+            col1, col2 = st.columns(2)
 
-            if st.button("Delete Product"):
-                used = supabase.table("statement_products") \
-                    .select("id") \
-                    .eq("product_id", p["id"]) \
-                    .limit(1) \
-                    .execute().data
+            with col1:
+                if st.button("Save Changes"):
+                    supabase.table("products").update({
+                        "name": edit_name.strip()
+                    }).eq("id", product["id"]).execute()
 
-                if used:
-                    st.error("Product used in statements")
-                else:
-                    supabase.table("products") \
-                        .delete() \
-                        .eq("id", p["id"]) \
-                        .execute()
+                    supabase.table("audit_logs").insert({
+                        "action": "update_product",
+                        "target_type": "product",
+                        "target_id": product["id"],
+                        "performed_by": user_id,
+                        "metadata": {"name": edit_name}
+                    }).execute()
 
-                    st.success("Deleted")
+                    st.success("Product updated")
                     st.rerun()
+
+            with col2:
+                if st.button("Delete Product"):
+                    used = supabase.table("statement_products") \
+                        .select("id") \
+                        .eq("product_id", product["id"]) \
+                        .limit(1) \
+                        .execute().data
+
+                    if used:
+                        st.error("Cannot delete product used in statements")
+                    else:
+                        supabase.table("products") \
+                            .delete() \
+                            .eq("id", product["id"]) \
+                            .execute()
+
+                        supabase.table("audit_logs").insert({
+                            "action": "delete_product",
+                            "target_type": "product",
+                            "target_id": product["id"],
+                            "performed_by": user_id,
+                            "metadata": {"name": product["name"]}
+                        }).execute()
+
+                        st.success("Product deleted")
+                        st.rerun()
 
     # -------- RESET PASSWORD ----------
     elif section == "Reset User Password":
