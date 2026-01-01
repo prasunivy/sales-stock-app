@@ -198,11 +198,29 @@ if role == "user":
             month=month
         )
 
-        if action == "create":
-            if result["mode"] == "create":
-                st.success("No statement exists. You can create a new one.")
-            elif result["mode"] == "edit":
-                st.info("Draft statement exists. Redirecting to edit.")
+        if action == "create" and result["mode"] in ("create", "edit"):
+    # Either create new draft or resume existing draft
+
+    if result["mode"] == "create":
+        stmt = supabase.table("statements").insert({
+            "user_id": user_id,
+            "stockist_id": selected_stockist["stockist_id"],
+            "year": year,
+            "month": month,
+            "status": "draft",
+            "current_product_index": 0
+        }).execute().data[0]
+
+    else:
+        stmt = result["statement"]
+
+    # Persist engine state
+    st.session_state["statement_id"] = stmt["id"]
+    st.session_state["product_index"] = stmt["current_product_index"] or 0
+    st.session_state["engine_mode"] = "edit"
+
+    st.rerun()
+
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
                 st.stop()
