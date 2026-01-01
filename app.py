@@ -448,6 +448,16 @@ if next_clicked:
 # ======================================================
 
 if role == "user" and st.session_state.get("engine_stage") == "preview":
+    preview_rows = supabase.table("statement_products") \
+        .select(
+            "product_id, opening, purchase, issue, closing, difference, order_qty, products(name)"
+        ) \
+        .eq("statement_id", st.session_state["statement_id"]) \
+        .execute().data
+
+    if not preview_rows:
+        st.warning("No products saved yet.")
+        st.stop()
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
