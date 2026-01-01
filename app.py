@@ -435,6 +435,15 @@ order_qty = st.number_input(
 )
 
 order_difference = suggested_order - order_qty
+st.markdown("### 📦 Order Insight")
+
+st.write(f"**Season Type:** {month_type or 'normal'}")
+st.write(f"**Suggested Order:** {suggested_order}")
+
+if order_difference != 0:
+    st.warning(f"Order manually adjusted by {abs(order_difference)} units")
+else:
+    st.success("Order matches system suggestion")
 
 # ======================================================
 # STEP 7.1 — NAVIGATION BUTTONS
