@@ -220,6 +220,15 @@ if role == "user":
     st.session_state["engine_mode"] = "edit"
 
     st.rerun()
+    # ======================================================
+# PRODUCT ENGINE ENTRY
+# ======================================================
+
+if role == "user" and "statement_id" in st.session_state:
+
+    statement_id = st.session_state["statement_id"]
+    product_index = st.session_state.get("product_index", 0)
+
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
