@@ -1001,19 +1001,27 @@ if role == "admin":
 
             st.success("Unlocked")
 # -------- Analytics ----------
-          elif section == "Analytics":
-st.subheader("📊 Monthly Sales & Stock Analytics")
+     elif section == "Analytics":
+        st.subheader("📊 Monthly Sales & Stock Analytics")
 
-years = sorted(
-    set(r["year"] for r in supabase.table("monthly_summary").select("year").execute().data)
-)
+        years = sorted(
+        set(r["year"] for r in supabase.table("monthly_summary").select("year").execute().data)
+         )
 
-if not years:
-    st.info("No finalized data available yet")
-    st.stop()
+    if not years:
+        st.info("No finalized data available yet")
+        st.stop()
 
-year = st.selectbox("Year", years)
-month = st.selectbox("Month", list(range(1, 13)))
+       year = st.selectbox("Year", years)
+       month = st.selectbox("Month", list(range(1, 13)))
 
-stockists = supabase.table("stockists").select("id, name").order("name").execute().data
-stockist = st.selectbox("Stockist", stockists, format_func=lambda x: x["name"])
+       stockists = supabase.table("stockists").select("id, name").order("name").execute().data
+       stockist = st.selectbox("Stockist", stockists, format_func=lambda x: x["name"])
+       rows = supabase.table("monthly_summary") \
+    .select(
+        "total_issue, total_closing, total_order, products(name)"
+            ) \
+         .eq("year", year) \
+        .eq("month", month) \
+        .eq("stockist_id", stockist["id"]) \
+        .execute().data
