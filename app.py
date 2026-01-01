@@ -505,6 +505,23 @@ if saved_products != total_products:
         f"Statement incomplete: {saved_products} / {total_products} products saved."
     )
     st.stop()
+# ======================================================
+# STEP 9.2 — FINAL SUBMIT (LOCK STATEMENT)
+# ======================================================
+
+if st.button("✅ Final Submit Statement"):
+    supabase.table("statements").update({
+        "status": "final",
+        "final_submitted_at": datetime.utcnow().isoformat(),
+        "current_product_index": None
+    }).eq("id", st.session_state["statement_id"]).execute()
+
+    # Clear engine state
+    st.session_state.pop("engine_stage", None)
+    st.session_state.pop("product_index", None)
+
+    st.success("Statement finalized successfully.")
+    st.rerun()
 
             
             elif result["mode"] == "locked":
