@@ -198,7 +198,7 @@ if role == "user":
             month=month
         )
 
-        if action == "create" and result["mode"] in ("create", "edit"):
+       if action == "create" and result["mode"] in ("create", "edit"):
     # Either create new draft or resume existing draft
 
     if result["mode"] == "create":
@@ -220,6 +220,7 @@ if role == "user":
     st.session_state["engine_mode"] = "edit"
 
     st.rerun()
+
     # ======================================================
 # PRODUCT ENGINE ENTRY
 # ======================================================
