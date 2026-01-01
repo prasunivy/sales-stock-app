@@ -242,6 +242,7 @@ if role == "admin":
             st.success(f"User '{new_username}' created")
 
     # -------- STOCKISTS (CREATE / EDIT / DELETE) ----------
+    
     elif section == "Stockists":
         st.subheader("🏪 Stockists Management")
 
@@ -252,17 +253,18 @@ if role == "admin":
 
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input("Stockist Name")
-            location = st.text_input("Location")
+            name = st.text_input("Stockist Name", key="new_stockist_name")
+            location = st.text_input("Location", key="new_stockist_location")
         with col2:
-            phone = st.text_input("Phone")
+            phone = st.text_input("Phone", key="new_stockist_phone")
             payment_terms = st.number_input(
                 "Payment Terms (days)",
                 min_value=0,
-                step=1
+                step=1,
+                key="new_stockist_terms"
             )
 
-        if st.button("Add Stockist"):
+        if st.button("Add Stockist", key="add_stockist_btn"):
             if not name.strip():
                 st.error("Stockist name is required")
             else:
@@ -305,7 +307,7 @@ if role == "admin":
         st.markdown("### ✏️ Edit / Delete Stockist")
 
         stockists = supabase.table("stockists") \
-            .select("id, name, location, phone, payment_terms, created_at") \
+            .select("id, name, location, phone, payment_terms") \
             .order("name") \
             .execute().data
 
@@ -316,27 +318,41 @@ if role == "admin":
         stockist = st.selectbox(
             "Select Stockist",
             stockists,
-            format_func=lambda x: x["name"]
+            format_func=lambda x: x["name"],
+            key="edit_stockist_select"
         )
 
         col1, col2 = st.columns(2)
         with col1:
-            edit_name = st.text_input("Name", value=stockist["name"])
-            edit_location = st.text_input("Location", value=stockist["location"] or "")
+            edit_name = st.text_input(
+                "Name",
+                value=stockist["name"],
+                key=f"edit_name_{stockist['id']}"
+            )
+            edit_location = st.text_input(
+                "Location",
+                value=stockist["location"] or "",
+                key=f"edit_location_{stockist['id']}"
+            )
         with col2:
-            edit_phone = st.text_input("Phone", value=stockist["phone"] or "")
+            edit_phone = st.text_input(
+                "Phone",
+                value=stockist["phone"] or "",
+                key=f"edit_phone_{stockist['id']}"
+            )
             edit_terms = st.number_input(
                 "Payment Terms (days)",
                 min_value=0,
                 step=1,
-                value=stockist["payment_terms"] or 0
+                value=stockist["payment_terms"] or 0,
+                key=f"edit_terms_{stockist['id']}"
             )
 
         col_save, col_delete = st.columns(2)
 
         # -------- UPDATE ----------
         with col_save:
-            if st.button("💾 Save Changes"):
+            if st.button("💾 Save Changes", key=f"save_stockist_{stockist['id']}"):
                 supabase.table("stockists").update({
                     "name": edit_name.strip(),
                     "location": edit_location.strip(),
@@ -362,8 +378,7 @@ if role == "admin":
 
         # -------- DELETE ----------
         with col_delete:
-            if st.button("🗑️ Delete Stockist"):
-                # Safety check: statements
+            if st.button("🗑️ Delete Stockist", key=f"delete_stockist_{stockist['id']}"):
                 used_stmt = supabase.table("statements") \
                     .select("id") \
                     .eq("stockist_id", stockist["id"]) \
@@ -379,7 +394,7 @@ if role == "admin":
                 if used_stmt or used_alloc:
                     st.error(
                         "Cannot delete stockist. "
-                        "It is already used in statements or assigned to users."
+                        "It is used in statements or assigned to users."
                     )
                 else:
                     supabase.table("stockists") \
