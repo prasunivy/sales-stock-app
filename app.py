@@ -182,6 +182,53 @@ if role == "user":
         "Month",
         list(range(1, current_month + 1))
     )
+    action = None
+    if create_clicked:
+        action = "create"
+    elif edit_clicked:
+        action = "edit"
+    elif view_clicked:
+        action = "view"
+
+    if action:
+        result = resolve_statement(
+            user_id=user_id,
+            stockist_id=selected_stockist["stockist_id"],
+            year=year,
+            month=month
+        )
+
+        if action == "create":
+            if result["mode"] == "create":
+                st.success("No statement exists. You can create a new one.")
+            elif result["mode"] == "edit":
+                st.info("Draft statement exists. Redirecting to edit.")
+            elif result["mode"] == "locked":
+                st.error("Statement already locked.")
+                st.stop()
+            elif result["mode"] == "view":
+                st.warning("Statement already finalized. Use View.")
+                st.stop()
+
+        if action == "edit":
+            if result["mode"] == "edit":
+                st.success("Opening draft statement for edit.")
+            elif result["mode"] == "create":
+                st.error("No draft exists. Please create first.")
+                st.stop()
+            elif result["mode"] == "locked":
+                st.error("Statement already locked.")
+                st.stop()
+            elif result["mode"] == "view":
+                st.error("Statement already finalized. Edit not allowed.")
+                st.stop()
+
+        if action == "view":
+            if result["statement"]:
+                st.success("Opening statement in view mode.")
+            else:
+                st.error("No statement exists for this period.")
+                st.stop()
 
 # ======================================================
 # ADMIN PANEL
