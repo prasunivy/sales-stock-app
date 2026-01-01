@@ -415,6 +415,7 @@ if role == "admin":
 
     elif section == "Products":
     st.subheader("📦 Product Master")
+
     # ===============================
     # ADD NEW PRODUCT
     # ===============================
@@ -426,22 +427,10 @@ if role == "admin":
         product_name = st.text_input("Product Name")
 
     with col2:
-        peak_months = st.multiselect(
-            "Peak Months",
-            options=list(range(1, 13))
-        )
-        high_months = st.multiselect(
-            "High Months",
-            options=list(range(1, 13))
-        )
-        low_months = st.multiselect(
-            "Low Months",
-            options=list(range(1, 13))
-        )
-        lowest_months = st.multiselect(
-            "Lowest Months",
-            options=list(range(1, 13))
-        )
+        peak_months = st.multiselect("Peak Months", list(range(1, 13)))
+        high_months = st.multiselect("High Months", list(range(1, 13)))
+        low_months = st.multiselect("Low Months", list(range(1, 13)))
+        lowest_months = st.multiselect("Lowest Months", list(range(1, 13)))
 
     if st.button("Add Product"):
         if not product_name.strip():
@@ -461,19 +450,6 @@ if role == "admin":
                     "high_months": high_months,
                     "low_months": low_months,
                     "lowest_months": lowest_months
-                }).execute()
-
-                supabase.table("audit_logs").insert({
-                    "action": "create_product",
-                    "target_type": "product",
-                    "performed_by": user_id,
-                    "metadata": {
-                        "name": product_name,
-                        "peak": peak_months,
-                        "high": high_months,
-                        "low": low_months,
-                        "lowest": lowest_months
-                    }
                 }).execute()
 
                 st.success("Product added successfully")
@@ -512,27 +488,28 @@ if role == "admin":
     with col2:
         edit_peak = st.multiselect(
             "Peak Months",
-            options=list(range(1, 13)),
+            list(range(1, 13)),
             default=product.get("peak_months") or []
         )
         edit_high = st.multiselect(
             "High Months",
-            options=list(range(1, 13)),
+            list(range(1, 13)),
             default=product.get("high_months") or []
         )
         edit_low = st.multiselect(
             "Low Months",
-            options=list(range(1, 13)),
+            list(range(1, 13)),
             default=product.get("low_months") or []
         )
         edit_lowest = st.multiselect(
             "Lowest Months",
-            options=list(range(1, 13)),
+            list(range(1, 13)),
             default=product.get("lowest_months") or []
         )
 
     col_save, col_delete = st.columns(2)
 
+    # -------- UPDATE ----------
     with col_save:
         if st.button("💾 Save Changes"):
             supabase.table("products").update({
@@ -543,23 +520,10 @@ if role == "admin":
                 "lowest_months": edit_lowest
             }).eq("id", product["id"]).execute()
 
-            supabase.table("audit_logs").insert({
-                "action": "update_product",
-                "target_type": "product",
-                "target_id": product["id"],
-                "performed_by": user_id,
-                "metadata": {
-                    "name": edit_name,
-                    "peak": edit_peak,
-                    "high": edit_high,
-                    "low": edit_low,
-                    "lowest": edit_lowest
-                }
-            }).execute()
-
             st.success("Product updated successfully")
             st.rerun()
 
+    # -------- DELETE ----------
     with col_delete:
         if st.button("🗑️ Delete Product"):
             used = supabase.table("statement_products") \
@@ -575,14 +539,6 @@ if role == "admin":
                     .delete() \
                     .eq("id", product["id"]) \
                     .execute()
-
-                supabase.table("audit_logs").insert({
-                    "action": "delete_product",
-                    "target_type": "product",
-                    "target_id": product["id"],
-                    "performed_by": user_id,
-                    "metadata": {"name": product["name"]}
-                }).execute()
 
                 st.success("Product deleted successfully")
                 st.rerun()
