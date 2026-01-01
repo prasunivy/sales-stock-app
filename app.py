@@ -425,6 +425,23 @@ def save_product_row():
         "current_product_index": product_index,
         "last_saved_at": datetime.utcnow().isoformat()
     }).eq("id", statement_id).execute()
+# ======================================================
+# STEP 7.3 — BUTTON ACTION HANDLING
+# ======================================================
+
+if prev_clicked:
+    st.session_state["product_index"] = product_index - 1
+    st.rerun()
+
+if next_clicked:
+    save_product_row()
+
+    if is_last:
+        st.session_state["engine_stage"] = "preview"
+    else:
+        st.session_state["product_index"] = product_index + 1
+
+    st.rerun()
 
 
             elif result["mode"] == "locked":
