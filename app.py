@@ -534,7 +534,6 @@ if role == "admin":
 
     col_save, col_delete = st.columns(2)
 
-    # -------- UPDATE PRODUCT ----------
     with col_save:
         if st.button("💾 Save Changes"):
             supabase.table("products").update({
@@ -562,7 +561,6 @@ if role == "admin":
             st.success("Product updated successfully")
             st.rerun()
 
-    # -------- DELETE PRODUCT ----------
     with col_delete:
         if st.button("🗑️ Delete Product"):
             used = supabase.table("statement_products") \
