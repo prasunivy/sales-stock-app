@@ -323,6 +323,52 @@ else:
     purchase = 0
     issue = 0
     closing = opening
+# ======================================================
+# STEP 6.2 — INPUT FIELDS
+# ======================================================
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    opening = st.number_input(
+        "Opening",
+        min_value=0.0,
+        value=float(opening),
+        step=1.0
+    )
+
+with col2:
+    last_month_issue_display = st.number_input(
+        "Last Month Issue",
+        value=float(last_month_issue),
+        disabled=True
+    )
+
+with col3:
+    purchase = st.number_input(
+        "Purchase",
+        min_value=0.0,
+        value=float(purchase),
+        step=1.0
+    )
+
+col4, col5 = st.columns(2)
+
+with col4:
+    issue = st.number_input(
+        "Issue",
+        min_value=0.0,
+        value=float(issue),
+        step=1.0
+    )
+
+with col5:
+    closing = st.number_input(
+        "Closing",
+        min_value=0.0,
+        value=float(closing),
+        step=1.0
+    )
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
