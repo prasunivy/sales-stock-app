@@ -434,6 +434,20 @@ order_qty = st.number_input(
     step=1.0
 )
 
+# ======================================================
+# GUIDANCE ENGINE — ISSUE TREND
+# ======================================================
+
+st.markdown("### 📈 Issue Guidance")
+
+if issue < last_month_issue:
+    st.info("Product degrowth compared to last month")
+elif issue > last_month_issue:
+    st.success("Product growth compared to last month")
+else:
+    st.warning("Issue same as last month")
+
+
 order_difference = suggested_order - order_qty
 st.markdown("### 📦 Order Insight")
 
