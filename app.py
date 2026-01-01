@@ -152,6 +152,36 @@ if role == "user":
 
     with col3:
         view_clicked = st.button("👁 View", use_container_width=True)
+    st.divider()
+    st.subheader("Statement Period")
+
+    stockists = supabase.table("user_stockists") \
+        .select("stockist_id, stockists(name)") \
+        .eq("user_id", user_id) \
+        .execute().data
+
+    if not stockists:
+        st.warning("No stockists allocated to you")
+        st.stop()
+
+    selected_stockist = st.selectbox(
+        "Stockist",
+        stockists,
+        format_func=lambda x: x["stockists"]["name"]
+    )
+
+    current_year = datetime.now().year
+    current_month = datetime.now().month
+
+    year = st.selectbox(
+        "Year",
+        [current_year - 1, current_year]
+    )
+
+    month = st.selectbox(
+        "Month",
+        list(range(1, current_month + 1))
+    )
 
 # ======================================================
 # ADMIN PANEL
