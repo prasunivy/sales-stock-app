@@ -189,6 +189,9 @@ if role == "user":
 
             st.session_state["statement_id"] = stmt["id"]
             st.session_state["product_index"] = stmt["current_product_index"] or 0
+            st.session_state["statement_year"] = year
+            st.session_state["statement_month"] = month
+
             st.session_state["engine_stage"] = "edit"
             st.rerun()
 
@@ -207,6 +210,9 @@ if role == "user" and "statement_id" in st.session_state:
 
     statement_id = st.session_state["statement_id"]
     product_index = st.session_state.get("product_index", 0)
+    month = st.session_state["statement_month"]
+    year = st.session_state["statement_year"]
+
 
     products = supabase.table("products") \
         .select("*") \
