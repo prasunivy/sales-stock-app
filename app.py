@@ -1000,3 +1000,20 @@ if role == "admin":
             }).execute()
 
             st.success("Unlocked")
+# -------- Analytics ----------
+          elif section == "Analytics":
+st.subheader("📊 Monthly Sales & Stock Analytics")
+
+years = sorted(
+    set(r["year"] for r in supabase.table("monthly_summary").select("year").execute().data)
+)
+
+if not years:
+    st.info("No finalized data available yet")
+    st.stop()
+
+year = st.selectbox("Year", years)
+month = st.selectbox("Month", list(range(1, 13)))
+
+stockists = supabase.table("stockists").select("id, name").order("name").execute().data
+stockist = st.selectbox("Stockist", stockists, format_func=lambda x: x["name"])
