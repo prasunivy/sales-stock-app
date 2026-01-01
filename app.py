@@ -443,6 +443,11 @@ if next_clicked:
 
     st.rerun()
 
+# ======================================================
+# STEP 8 — PREVIEW PAGE
+# ======================================================
+
+if role == "user" and st.session_state.get("engine_stage") == "preview":
 
             elif result["mode"] == "locked":
                 st.error("Statement already locked.")
