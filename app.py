@@ -206,12 +206,33 @@ if role == "user":
 # ======================================================
 # PRODUCT ENGINE
 # ======================================================
+
+
 if role == "user" and "statement_id" in st.session_state:
 
     statement_id = st.session_state["statement_id"]
     product_index = st.session_state.get("product_index", 0)
+    # --------------------------------------------------
+# SAFE PERIOD RESOLUTION (NO NameError POSSIBLE)
+# --------------------------------------------------
+if "statement_month" in st.session_state and "statement_year" in st.session_state:
     month = st.session_state["statement_month"]
     year = st.session_state["statement_year"]
+else:
+    stmt = supabase.table("statements") \
+        .select("month, year") \
+        .eq("id", statement_id) \
+        .single() \
+        .execute() \
+        .data
+
+    month = stmt["month"]
+    year = stmt["year"]
+
+    # cache back into session
+    st.session_state["statement_month"] = month
+    st.session_state["statement_year"] = year
+
 
 
     products = supabase.table("products") \
