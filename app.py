@@ -153,10 +153,17 @@ if role == "user":
     )
 
     current_year = datetime.now().year
-    current_month = datetime.now().month
+current_month = datetime.now().month
 
-    year = st.selectbox("Year", [current_year - 1, current_year])
-    month = st.selectbox("Month", list(range(1, current_month + 1)))
+year = st.selectbox("Year", [current_year - 1, current_year])
+
+if year == current_year:
+    months = list(range(1, current_month + 1))
+else:
+    months = list(range(1, 13))
+
+month = st.selectbox("Month", months)
+
 
     action = None
     if create_clicked:
