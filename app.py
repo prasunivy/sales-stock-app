@@ -152,19 +152,20 @@ if role == "user":
         format_func=lambda x: x["stockists"]["name"]
     )
 
+    # ✅ YEAR / MONTH — FULLY INSIDE USER BLOCK
     current_year = datetime.now().year
-current_month = datetime.now().month
+    current_month = datetime.now().month
 
-year = st.selectbox("Year", [current_year - 1, current_year])
+    year = st.selectbox("Year", [current_year - 1, current_year])
 
-if year == current_year:
-    months = list(range(1, current_month + 1))
-else:
-    months = list(range(1, 13))
+    if year == current_year:
+        months = list(range(1, current_month + 1))
+    else:
+        months = list(range(1, 13))
 
     month = st.selectbox("Month", months)
 
-
+    # ✅ ACTION SELECTION
     action = None
     if create_clicked:
         action = "create"
