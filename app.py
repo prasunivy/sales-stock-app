@@ -162,7 +162,7 @@ if year == current_year:
 else:
     months = list(range(1, 13))
 
-month = st.selectbox("Month", months)
+    month = st.selectbox("Month", months)
 
 
     action = None
