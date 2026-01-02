@@ -209,7 +209,10 @@ if role == "user":
 
 
 if role != "user" or "statement_id" not in st.session_state:
+    # User has logged in but has not started a statement yet
+    st.info("Please create or edit a statement to begin.")
     st.stop()
+
 else:
     statement_id = st.session_state["statement_id"]
     product_index = st.session_state.get("product_index", 0)
