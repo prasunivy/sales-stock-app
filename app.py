@@ -203,23 +203,16 @@ if role == "user":
             st.warning("Statement already finalized. Use View.")
             st.stop()
 
-# ======================================================
-# PRODUCT ENGINE
-# ======================================================
-
 
 # ======================================================
 # PRODUCT ENGINE
 # ======================================================
-
 if role == "user" and "statement_id" in st.session_state:
 
     statement_id = st.session_state["statement_id"]
     product_index = st.session_state.get("product_index", 0)
 
-    # --------------------------------------------------
-    # SAFE PERIOD RESOLUTION (NO NameError POSSIBLE)
-    # --------------------------------------------------
+    # SAFE PERIOD RESOLUTION
     if "statement_month" in st.session_state and "statement_year" in st.session_state:
         month = st.session_state["statement_month"]
         year = st.session_state["statement_year"]
@@ -233,15 +226,8 @@ if role == "user" and "statement_id" in st.session_state:
 
         month = stmt["month"]
         year = stmt["year"]
-
-        # cache back into session
         st.session_state["statement_month"] = month
         st.session_state["statement_year"] = year
-
-    # ⬇️ CONTINUE product loop, inputs, seasonal engine, save & next
-
-
-
 
     products = supabase.table("products") \
         .select("*") \
@@ -282,63 +268,67 @@ if role == "user" and "statement_id" in st.session_state:
 
     closing = st.number_input("Closing", min_value=0.0, value=float(closing))
     order_qty = st.number_input("Order Qty", min_value=0.0, value=float(order_qty))
-# ======================================================
-# SEASONAL ORDER ENGINE — SEASON TYPE
-# ======================================================
-month_type = "normal"
 
-if month in (product.get("peak_months") or []):
-    month_type = "peak"
-elif month in (product.get("high_months") or []):
-    month_type = "high"
-elif month in (product.get("low_months") or []):
-    month_type = "low"
-elif month in (product.get("lowest_months") or []):
-    month_type = "lowest"
-# ======================================================
-# SEASONAL ORDER ENGINE — SUGGESTED ORDER
-# ======================================================
-suggested_order = 0
+    # ======================================================
+    # SEASONAL ORDER ENGINE — SEASON TYPE
+    # ======================================================
+    month_type = "normal"
 
-if month_type == "peak":
-    suggested_order = issue * 2 - closing
-elif month_type == "high":
-    suggested_order = issue * 1.5 - closing
-elif month_type == "low":
-    suggested_order = issue * 1 - closing
-elif month_type == "lowest":
-    suggested_order = issue * 0.8 - closing
+    if month in (product.get("peak_months") or []):
+        month_type = "peak"
+    elif month in (product.get("high_months") or []):
+        month_type = "high"
+    elif month in (product.get("low_months") or []):
+        month_type = "low"
+    elif month in (product.get("lowest_months") or []):
+        month_type = "lowest"
 
-if suggested_order < 0:
+    # ======================================================
+    # SEASONAL ORDER ENGINE — SUGGESTED ORDER
+    # ======================================================
     suggested_order = 0
-# ======================================================
-# SEASONAL ORDER ENGINE — USER OVERRIDE
-# ======================================================
-if row:
-    order_qty = row.get("order_qty", suggested_order)
-else:
-    order_qty = suggested_order
 
-order_qty = st.number_input(
-    "Suggested Order (Editable)",
-    min_value=0.0,
-    value=float(order_qty),
-    step=1.0
-)
-# ======================================================
-# SEASONAL ORDER ENGINE — INSIGHTS
-# ======================================================
-st.markdown("### 📦 Order Insight")
+    if month_type == "peak":
+        suggested_order = issue * 2 - closing
+    elif month_type == "high":
+        suggested_order = issue * 1.5 - closing
+    elif month_type == "low":
+        suggested_order = issue * 1 - closing
+    elif month_type == "lowest":
+        suggested_order = issue * 0.8 - closing
 
-st.write(f"**Season Type:** {month_type}")
-st.write(f"**System Suggested Order:** {suggested_order}")
+    if suggested_order < 0:
+        suggested_order = 0
 
-if order_qty != suggested_order:
-    st.warning(
-        f"Order manually adjusted by {abs(order_qty - suggested_order)} units"
+    # ======================================================
+    # SEASONAL ORDER ENGINE — USER OVERRIDE
+    # ======================================================
+    if row:
+        order_qty = row.get("order_qty", suggested_order)
+    else:
+        order_qty = suggested_order
+
+    order_qty = st.number_input(
+        "Suggested Order (Editable)",
+        min_value=0.0,
+        value=float(order_qty),
+        step=1.0
     )
-else:
-    st.success("Order matches system suggestion")
+
+    # ======================================================
+    # SEASONAL ORDER ENGINE — INSIGHTS
+    # ======================================================
+    st.markdown("### 📦 Order Insight")
+
+    st.write(f"**Season Type:** {month_type}")
+    st.write(f"**System Suggested Order:** {suggested_order}")
+
+    if order_qty != suggested_order:
+        st.warning(
+            f"Order manually adjusted by {abs(order_qty - suggested_order)} units"
+        )
+    else:
+        st.success("Order matches system suggestion")
 
     if st.button("💾 Save & Next"):
         supabase.table("statement_products").upsert({
@@ -354,6 +344,7 @@ else:
 
         st.session_state["product_index"] = product_index + 1
         st.rerun()
+
 
 # ======================================================
 # STEP 8 — PREVIEW
