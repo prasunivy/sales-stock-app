@@ -183,20 +183,7 @@ if role == "user" and not st.session_state.statement_id:
 
         if action == "create":
 
-            # STRICT re-check to avoid duplicate draft insert
-            existing = safe_exec(
-                supabase.table("statements")
-                .select("*")
-                .eq("user_id", user_id)
-                .eq("stockist_id", selected_stockist["stockist_id"])
-                .eq("year", year)
-                .eq("month", month)
-                .eq("status", "draft")
-            )
-
-            if existing:
-                stmt = existing[0]
-            else:
+            if result["mode"] == "create":
                 res = admin_supabase.table("statements").insert(
                     {
                         "user_id": user_id,
@@ -214,6 +201,17 @@ if role == "user" and not st.session_state.statement_id:
                     st.stop()
 
                 stmt = res.data[0]
+
+            elif result["mode"] == "edit":
+                stmt = result["statement"]
+
+            elif result["mode"] == "locked":
+                st.error("Statement already locked")
+                st.stop()
+
+            else:
+                st.warning("Statement already finalized")
+                st.stop()
 
             if stmt.get("editing_by") and stmt["editing_by"] != user_id:
                 st.error("Statement currently open on another device")
@@ -234,11 +232,6 @@ if role == "user" and not st.session_state.statement_id:
             st.session_state.statement_month = month
             st.session_state.engine_stage = stmt.get("engine_stage", "edit")
             st.rerun()
-
-        if result["mode"] == "locked":
-            st.error("Statement already locked")
-        if result["mode"] == "view":
-            st.warning("Statement already finalized")
 
 # ======================================================
 # PRODUCT ENGINE
