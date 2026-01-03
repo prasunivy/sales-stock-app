@@ -181,10 +181,22 @@ if role == "user" and not st.session_state.statement_id:
             month
         )
 
-        # ---------- CREATE / RESUME ----------
         if action == "create":
 
-            if result["mode"] == "create":
+            # STRICT re-check to avoid duplicate draft insert
+            existing = safe_exec(
+                supabase.table("statements")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("stockist_id", selected_stockist["stockist_id"])
+                .eq("year", year)
+                .eq("month", month)
+                .eq("status", "draft")
+            )
+
+            if existing:
+                stmt = existing[0]
+            else:
                 res = admin_supabase.table("statements").insert(
                     {
                         "user_id": user_id,
@@ -203,18 +215,6 @@ if role == "user" and not st.session_state.statement_id:
 
                 stmt = res.data[0]
 
-            elif result["mode"] == "edit":
-                stmt = result["statement"]
-
-            elif result["mode"] == "locked":
-                st.error("Statement already locked")
-                st.stop()
-
-            else:
-                st.warning("Statement already finalized")
-                st.stop()
-
-            # Single editor lock
             if stmt.get("editing_by") and stmt["editing_by"] != user_id:
                 st.error("Statement currently open on another device")
                 st.stop()
@@ -342,6 +342,7 @@ if role == "user" and st.session_state.engine_stage == "preview":
         st.session_state.clear()
         st.success("Statement finalized successfully")
         st.rerun()
+
 
 # ======================================================
 # ADMIN PANEL — FULL CRUD RESTORED
