@@ -200,7 +200,7 @@ if role == "user" and not st.session_state.statement_id:
                 st.error("Failed to create statement")
                 st.stop()
 
-            stmt = res.data[0]
+                stmt = res.data[0]
 
             else:
                 stmt = result["statement"]
