@@ -26,28 +26,38 @@ admin_supabase = create_client(
 # SESSION STATE
 # ======================================================
 for k in [
-    "auth_user", "role", "statement_id",
-    "product_index", "statement_year",
-    "statement_month", "engine_stage"
+    "auth_user", "role",
+    "statement_id", "product_index",
+    "statement_year", "statement_month",
+    "engine_stage"
 ]:
     if k not in st.session_state:
         st.session_state[k] = None
 
 # ======================================================
-# USERNAME → INTERNAL EMAIL
+# SAFE EXEC
+# ======================================================
+def safe_exec(q, msg="Database error"):
+    res = q.execute()
+    if hasattr(res, "error") and res.error:
+        st.error(msg)
+        st.stop()
+    return res.data
+
+# ======================================================
+# USERNAME → EMAIL
 # ======================================================
 def username_to_email(username: str):
-    res = supabase.table("users") \
-        .select("id, is_active") \
-        .eq("username", username) \
-        .execute()
-
-    if not res.data:
+    res = safe_exec(
+        supabase.table("users")
+        .select("id,is_active")
+        .eq("username", username),
+        "Invalid username"
+    )
+    if not res:
         return None
-
-    if not res.data[0].get("is_active", True):
+    if not res[0].get("is_active", True):
         raise Exception("Account disabled")
-
     return f"{username}@internal.local"
 
 # ======================================================
@@ -57,38 +67,36 @@ def login(username, password):
     email = username_to_email(username)
     if not email:
         raise Exception("Invalid username")
-
     return supabase.auth.sign_in_with_password({
         "email": email,
         "password": password
     })
 
-def load_profile(user_id):
-    res = supabase.table("users").select("*").eq("id", user_id).execute()
-    return res.data[0]
+def load_profile(uid):
+    return safe_exec(
+        supabase.table("users").select("*").eq("id", uid),
+        "User profile error"
+    )[0]
 
 # ======================================================
 # STATEMENT RESOLVER
 # ======================================================
 def resolve_statement(user_id, stockist_id, year, month):
-    res = supabase.table("statements") \
-        .select("*") \
-        .eq("stockist_id", stockist_id) \
-        .eq("year", year) \
-        .eq("month", month) \
-        .execute()
-
-    if not res.data:
+    res = safe_exec(
+        supabase.table("statements")
+        .select("*")
+        .eq("stockist_id", stockist_id)
+        .eq("year", year)
+        .eq("month", month)
+    )
+    if not res:
         return {"mode": "create", "statement": None}
 
-    stmt = res.data[0]
-
+    stmt = res[0]
     if stmt["status"] == "final":
         return {"mode": "view", "statement": stmt}
-
     if stmt["status"] == "locked":
         return {"mode": "locked", "statement": stmt}
-
     return {"mode": "edit", "statement": stmt}
 
 # ======================================================
@@ -96,28 +104,24 @@ def resolve_statement(user_id, stockist_id, year, month):
 # ======================================================
 if not st.session_state.auth_user:
     st.title("🔐 Login")
-
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    u = st.text_input("Username")
+    p = st.text_input("Password", type="password")
 
     if st.button("Login"):
         try:
-            auth = login(username, password)
-            profile = load_profile(auth.user.id)
-
+            auth = login(u, p)
+            prof = load_profile(auth.user.id)
             st.session_state.auth_user = auth.user
-            st.session_state.role = profile["role"]
+            st.session_state.role = prof["role"]
             st.rerun()
         except Exception as e:
             st.error(str(e))
-
     st.stop()
 
 # ======================================================
 # SIDEBAR
 # ======================================================
 st.sidebar.title("Navigation")
-
 if st.sidebar.button("Logout"):
     st.session_state.clear()
     st.rerun()
@@ -128,28 +132,22 @@ user_id = st.session_state.auth_user.id
 # ======================================================
 # USER LANDING
 # ======================================================
-if role == "user":
-
+if role == "user" and not st.session_state.statement_id:
     st.title("📊 Sales & Stock Statement")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    c1, c2, c3 = st.columns(3)
+    with c1:
         create_clicked = st.button("➕ Create", use_container_width=True)
-    with col2:
+    with c2:
         edit_clicked = st.button("✏️ Edit", use_container_width=True)
-    with col3:
+    with c3:
         view_clicked = st.button("👁 View", use_container_width=True)
 
-    st.divider()
-
-    stockists = supabase.table("user_stockists") \
-        .select("stockist_id, stockists(name)") \
-        .eq("user_id", user_id) \
-        .execute().data
-
-    if not stockists:
-        st.warning("No stockists allocated")
-        st.stop()
+    stockists = safe_exec(
+        supabase.table("user_stockists")
+        .select("stockist_id, stockists(name)")
+        .eq("user_id", user_id)
+    )
 
     selected_stockist = st.selectbox(
         "Stockist",
@@ -157,25 +155,15 @@ if role == "user":
         format_func=lambda x: x["stockists"]["name"]
     )
 
-    current_year = datetime.now().year
-    current_month = datetime.now().month
+    cy = datetime.now().year
+    cm = datetime.now().month
+    year = st.selectbox("Year", [cy - 1, cy])
+    month = st.selectbox(
+        "Month",
+        list(range(1, cm + 1)) if year == cy else list(range(1, 13))
+    )
 
-    year = st.selectbox("Year", [current_year - 1, current_year])
-
-    if year == current_year:
-        months = list(range(1, current_month + 1))
-    else:
-        months = list(range(1, 13))
-
-    month = st.selectbox("Month", months)
-
-    action = None
-    if create_clicked:
-        action = "create"
-    elif edit_clicked:
-        action = "edit"
-    elif view_clicked:
-        action = "view"
+    action = "create" if create_clicked else "edit" if edit_clicked else "view" if view_clicked else None
 
     if action:
         result = resolve_statement(
@@ -187,165 +175,144 @@ if role == "user":
 
         if action == "create" and result["mode"] in ("create", "edit"):
             if result["mode"] == "create":
-                res = admin_supabase.table("statements").insert({
-                    "user_id": user_id,
-                    "stockist_id": selected_stockist["stockist_id"],
-                    "year": year,
-                    "month": month,
-                    "status": "draft",
-                    "current_product_index": 0
-                }).execute()
-
-                if not res.data:
-                    st.error("Failed to create statement")
-                    st.stop()
-
-                stmt = res.data[0]
+                stmt = safe_exec(
+                    admin_supabase.table("statements").insert({
+                        "user_id": user_id,
+                        "stockist_id": selected_stockist["stockist_id"],
+                        "year": year,
+                        "month": month,
+                        "status": "draft",
+                        "current_product_index": 0,
+                        "engine_stage": "edit"
+                    })
+                )[0]
             else:
                 stmt = result["statement"]
 
+            if stmt.get("editing_by") and stmt["editing_by"] != user_id:
+                st.error("Statement currently open on another device")
+                st.stop()
+
+            safe_exec(
+                admin_supabase.table("statements")
+                .update({
+                    "editing_by": user_id,
+                    "editing_at": datetime.utcnow().isoformat()
+                })
+                .eq("id", stmt["id"])
+            )
+
             st.session_state.statement_id = stmt["id"]
-            st.session_state.product_index = stmt["current_product_index"] or 0
+            st.session_state.product_index = stmt["current_product_index"]
             st.session_state.statement_year = year
             st.session_state.statement_month = month
-            st.session_state.engine_stage = "edit"
-
+            st.session_state.engine_stage = stmt["engine_stage"]
             st.rerun()
 
-        elif result["mode"] == "locked":
-            st.error("Statement already locked.")
-            st.stop()
-
-        elif result["mode"] == "view":
-            st.warning("Statement already finalized.")
-            st.stop()
+        if result["mode"] == "locked":
+            st.error("Statement already locked")
+        if result["mode"] == "view":
+            st.warning("Statement already finalized")
 
 # ======================================================
 # PRODUCT ENGINE
 # ======================================================
-if role == "user" and st.session_state.statement_id:
+if role == "user" and st.session_state.statement_id and st.session_state.engine_stage == "edit":
+    sid = st.session_state.statement_id
+    idx = st.session_state.product_index
 
-    statement_id = st.session_state.statement_id
-    product_index = st.session_state.product_index or 0
-    month = st.session_state.statement_month
-    year = st.session_state.statement_year
+    products = safe_exec(
+        supabase.table("products").select("*").order("sort_order")
+    )
 
-    products = supabase.table("products") \
-        .select("*") \
-        .order("sort_order") \
-        .execute().data
-
-    if product_index >= len(products):
+    if idx >= len(products):
+        safe_exec(
+            admin_supabase.table("statements")
+            .update({"engine_stage": "preview"})
+            .eq("id", sid)
+        )
         st.session_state.engine_stage = "preview"
         st.rerun()
 
-    product = products[product_index]
+    product = products[idx]
 
-    st.subheader(
-        f"Product {product_index + 1} of {len(products)} — {product['name']}"
+    row = safe_exec(
+        supabase.table("statement_products")
+        .select("*")
+        .eq("statement_id", sid)
+        .eq("product_id", product["id"])
     )
 
-    row = supabase.table("statement_products") \
-        .select("*") \
-        .eq("statement_id", statement_id) \
-        .eq("product_id", product["id"]) \
-        .execute().data
-
-    row = row[0] if row else None
-
-    opening = row["opening"] if row else 0
-    purchase = row["purchase"] if row else 0
-    issue = row["issue"] if row else 0
-    closing = row["closing"] if row else opening
-    order_qty = row["order_qty"] if row else 0
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        opening = st.number_input("Opening", min_value=0.0, value=float(opening))
-    with col2:
-        purchase = st.number_input("Purchase", min_value=0.0, value=float(purchase))
-    with col3:
-        issue = st.number_input("Issue", min_value=0.0, value=float(issue))
-
-    closing = st.number_input("Closing", min_value=0.0, value=float(closing))
-
-    # ----------------- SEASONAL ENGINE -----------------
-    month_type = "normal"
-    if month in (product.get("peak_months") or []):
-        month_type = "peak"
-    elif month in (product.get("high_months") or []):
-        month_type = "high"
-    elif month in (product.get("low_months") or []):
-        month_type = "low"
-    elif month in (product.get("lowest_months") or []):
-        month_type = "lowest"
-
-    suggested_order = 0
-    if month_type == "peak":
-        suggested_order = issue * 2 - closing
-    elif month_type == "high":
-        suggested_order = issue * 1.5 - closing
-    elif month_type == "low":
-        suggested_order = issue * 1 - closing
-    elif month_type == "lowest":
-        suggested_order = issue * 0.8 - closing
-
-    suggested_order = max(0, suggested_order)
-
-    order_qty = st.number_input(
-        "Suggested Order (Editable)",
-        min_value=0.0,
-        value=float(order_qty or suggested_order)
-    )
+    row = row[0] if row else {}
+    opening = st.number_input("Opening", min_value=0.0, value=float(row.get("opening", 0)))
+    purchase = st.number_input("Purchase", min_value=0.0, value=float(row.get("purchase", 0)))
+    issue = st.number_input("Issue", min_value=0.0, value=float(row.get("issue", 0)))
+    closing = st.number_input("Closing", min_value=0.0, value=float(row.get("closing", opening)))
 
     if st.button("💾 Save & Next"):
-        admin_supabase.table("statement_products").upsert({
-            "statement_id": statement_id,
-            "product_id": product["id"],
-            "opening": opening,
-            "purchase": purchase,
-            "issue": issue,
-            "closing": closing,
-            "order_qty": order_qty,
-            "updated_at": datetime.utcnow().isoformat()
-        }).execute()
+        safe_exec(
+            admin_supabase.table("statement_products").upsert({
+                "statement_id": sid,
+                "product_id": product["id"],
+                "opening": opening,
+                "purchase": purchase,
+                "issue": issue,
+                "closing": closing,
+                "updated_at": datetime.utcnow().isoformat()
+            })
+        )
 
         st.session_state.product_index += 1
+        safe_exec(
+            admin_supabase.table("statements")
+            .update({"current_product_index": st.session_state.product_index})
+            .eq("id", sid)
+        )
         st.rerun()
 
 # ======================================================
 # PREVIEW & FINAL SUBMIT
 # ======================================================
 if role == "user" and st.session_state.engine_stage == "preview":
+    sid = st.session_state.statement_id
 
-    rows = supabase.table("statement_products") \
-        .select("opening, purchase, issue, closing, order_qty, products(name)") \
-        .eq("statement_id", st.session_state.statement_id) \
-        .execute().data
+    rows = safe_exec(
+        supabase.table("statement_products")
+        .select("opening,purchase,issue,closing,products(name)")
+        .eq("statement_id", sid)
+    )
+
+    products = safe_exec(supabase.table("products").select("id"))
+
+    if len(rows) != len(products):
+        st.error("Incomplete products. Please finish all entries.")
+        st.stop()
 
     df = pd.DataFrame([{
         "Product": r["products"]["name"],
         "Opening": r["opening"],
         "Purchase": r["purchase"],
         "Issue": r["issue"],
-        "Closing": r["closing"],
-        "Order": r["order_qty"]
+        "Closing": r["closing"]
     } for r in rows])
 
-    st.subheader("📋 Statement Preview")
     st.dataframe(df, use_container_width=True)
 
     if st.button("✅ Final Submit"):
-        admin_supabase.table("statements").update({
-            "status": "final",
-            "final_submitted_at": datetime.utcnow().isoformat(),
-            "current_product_index": None
-        }).eq("id", st.session_state.statement_id).execute()
+        safe_exec(
+            admin_supabase.table("statements")
+            .update({
+                "status": "final",
+                "final_submitted_at": datetime.utcnow().isoformat(),
+                "editing_by": None,
+                "editing_at": None
+            })
+            .eq("id", sid)
+        )
 
         st.session_state.clear()
-        st.success("Statement finalized successfully.")
+        st.success("Statement finalized successfully")
         st.rerun()
-
 
 # ======================================================
 # ADMIN PANEL — FULL CRUD RESTORED
