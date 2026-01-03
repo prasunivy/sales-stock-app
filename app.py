@@ -183,19 +183,25 @@ if role == "user" and not st.session_state.statement_id:
 
         if action == "create" and result["mode"] in ("create", "edit"):
             if result["mode"] == "create":
-                stmt = safe_exec(
-                    admin_supabase.table("statements")
-                    .insert({
-                        "user_id": user_id,
-                        "stockist_id": selected_stockist["stockist_id"],
-                        "year": year,
-                        "month": month,
-                        "status": "draft",
-                        "current_product_index": 0,
-                        "engine_stage": "edit"
-                    })
-                    .select("*")
-                )[0]
+                res = admin_supabase.table("statements").insert(
+                {
+                    "user_id": user_id,
+                    "stockist_id": selected_stockist["stockist_id"],
+                    "year": year,
+                    "month": month,
+                    "status": "draft",
+                    "current_product_index": 0,
+                    "engine_stage": "edit"
+                },
+                returning="representation"
+            ).execute()
+
+            if not res.data:
+                st.error("Failed to create statement")
+                st.stop()
+
+            stmt = res.data[0]
+
             else:
                 stmt = result["statement"]
 
