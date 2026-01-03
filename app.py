@@ -35,7 +35,7 @@ for k in [
         st.session_state[k] = None
 
 # ======================================================
-# SAFE EXEC (POSTGREST SAFE)
+# SAFE EXEC
 # ======================================================
 def safe_exec(q, msg="Database error"):
     try:
@@ -52,24 +52,21 @@ def safe_exec(q, msg="Database error"):
     return res.data or []
 
 # ======================================================
-# USERNAME → EMAIL
+# AUTH HELPERS
 # ======================================================
 def username_to_email(username):
-    res = safe_exec(
+    rows = safe_exec(
         supabase.table("users")
         .select("id,is_active")
         .eq("username", username),
         "Invalid username"
     )
-    if not res:
+    if not rows:
         return None
-    if not res[0].get("is_active", True):
+    if not rows[0]["is_active"]:
         raise Exception("Account disabled")
     return f"{username}@internal.local"
 
-# ======================================================
-# AUTH
-# ======================================================
 def login(username, password):
     email = username_to_email(username)
     if not email:
@@ -81,24 +78,28 @@ def login(username, password):
 
 def load_profile(uid):
     return safe_exec(
-        supabase.table("users").select("*").eq("id", uid)
+        supabase.table("users")
+        .select("*")
+        .eq("id", uid)
     )[0]
 
 # ======================================================
 # STATEMENT RESOLVER
 # ======================================================
 def resolve_statement(user_id, stockist_id, year, month):
-    res = safe_exec(
+    rows = safe_exec(
         supabase.table("statements")
         .select("*")
+        .eq("user_id", user_id)
         .eq("stockist_id", stockist_id)
         .eq("year", year)
         .eq("month", month)
     )
-    if not res:
+
+    if not rows:
         return {"mode": "create", "statement": None}
 
-    stmt = res[0]
+    stmt = rows[0]
     if stmt["status"] == "final":
         return {"mode": "view", "statement": stmt}
     if stmt["status"] == "locked":
@@ -118,7 +119,6 @@ if not st.session_state.auth_user:
         try:
             auth = login(username, password)
             profile = load_profile(auth.user.id)
-
             st.session_state.auth_user = auth.user
             st.session_state.role = profile["role"]
             st.rerun()
@@ -181,30 +181,40 @@ if role == "user" and not st.session_state.statement_id:
             month
         )
 
-        if action == "create" and result["mode"] in ("create", "edit"):
+        # ---------- CREATE / RESUME ----------
+        if action == "create":
+
             if result["mode"] == "create":
                 res = admin_supabase.table("statements").insert(
-                {
-                    "user_id": user_id,
-                    "stockist_id": selected_stockist["stockist_id"],
-                    "year": year,
-                    "month": month,
-                    "status": "draft",
-                    "current_product_index": 0,
-                    "engine_stage": "edit"
-                },
-                returning="representation"
-            ).execute()
+                    {
+                        "user_id": user_id,
+                        "stockist_id": selected_stockist["stockist_id"],
+                        "year": year,
+                        "month": month,
+                        "status": "draft",
+                        "current_product_index": 0
+                    },
+                    returning="representation"
+                ).execute()
 
-            if not res.data:
-                st.error("Failed to create statement")
-                st.stop()
+                if not res.data:
+                    st.error("Failed to create statement")
+                    st.stop()
 
                 stmt = res.data[0]
 
-            else:
+            elif result["mode"] == "edit":
                 stmt = result["statement"]
 
+            elif result["mode"] == "locked":
+                st.error("Statement already locked")
+                st.stop()
+
+            else:
+                st.warning("Statement already finalized")
+                st.stop()
+
+            # Single editor lock
             if stmt.get("editing_by") and stmt["editing_by"] != user_id:
                 st.error("Statement currently open on another device")
                 st.stop()
@@ -222,7 +232,7 @@ if role == "user" and not st.session_state.statement_id:
             st.session_state.product_index = stmt["current_product_index"]
             st.session_state.statement_year = year
             st.session_state.statement_month = month
-            st.session_state.engine_stage = stmt["engine_stage"]
+            st.session_state.engine_stage = stmt.get("engine_stage", "edit")
             st.rerun()
 
         if result["mode"] == "locked":
@@ -258,7 +268,6 @@ if role == "user" and st.session_state.statement_id and st.session_state.engine_
         .eq("statement_id", sid)
         .eq("product_id", product["id"])
     )
-
     row = row[0] if row else {}
 
     opening = st.number_input("Opening", min_value=0.0, value=float(row.get("opening", 0)))
@@ -333,7 +342,6 @@ if role == "user" and st.session_state.engine_stage == "preview":
         st.session_state.clear()
         st.success("Statement finalized successfully")
         st.rerun()
-
 
 # ======================================================
 # ADMIN PANEL — FULL CRUD RESTORED
