@@ -313,7 +313,7 @@ if role == "user" and st.session_state.engine_stage == "preview":
         st.stop()
 
     df = pd.DataFrame([{
-        "Product": r["products"]["name"], if r.get("products") else "UNKNOWN",
+        "Product": r["products"]["name"] if r.get("products") else "UNKNOWN",
         "Opening": r["opening"],
         "Purchase": r["purchase"],
         "Issue": r["issue"],
