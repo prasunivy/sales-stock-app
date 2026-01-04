@@ -92,6 +92,18 @@ def fetch_last_month_data(stockist_id, product_id, year, month):
         return 0.0, 0.0
 
     return float(row[0]["closing"]), float(row[0]["issue"])
+def fetch_statement_product(statement_id, product_id):
+    rows = safe_exec(
+        admin_supabase.table("statement_products")
+        .select(
+            "opening,purchase,issue,closing,calculated_closing,"
+            "difference,order_qty,issue_guidance,stock_guidance"
+        )
+        .eq("statement_id", statement_id)
+        .eq("product_id", product_id)
+        .limit(1)
+    )
+    return rows[0] if rows else {}
 
 # ======================================================
 # AUTH HELPERS
