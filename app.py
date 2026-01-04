@@ -324,43 +324,92 @@ if (
         st.rerun()
 
 # ======================================================
-# PREVIEW & FINAL SUBMIT
+# PREVIEW & EDIT JUMP ENGINE — STEP 2
 # ======================================================
-if role == "user" and st.session_state.engine_stage == "preview":
+if (
+    role == "user"
+    and st.session_state.statement_id
+    and st.session_state.engine_stage in ("preview", "view")
+):
+
     sid = st.session_state.statement_id
+    readonly = st.session_state.engine_stage == "view"
+
+    st.subheader("📋 Statement Preview")
 
     rows = safe_exec(
         admin_supabase.table("statement_products")
-        .select("opening,purchase,issue,closing,products!statement_products_product_id_fkey(name)")
+        .select(
+            "product_id,opening,purchase,issue,closing,"
+            "calculated_closing,difference,"
+            "products!statement_products_product_id_fkey(name)"
+        )
         .eq("statement_id", sid)
     )
 
-    df = pd.DataFrame([{
-        "Product": r["products"]["name"],
-        "Opening": r["opening"],
-        "Purchase": r["purchase"],
-        "Issue": r["issue"],
-        "Closing": r["closing"]
-    } for r in rows])
+    if not rows:
+        st.warning("No products entered yet")
+        st.stop()
 
-    st.subheader("📋 Statement Preview")
-    st.dataframe(df, use_container_width=True)
+    df = pd.DataFrame(
+        [
+            {
+                "Product": r["products"]["name"],
+                "Opening": r["opening"],
+                "Purchase": r["purchase"],
+                "Issue": r["issue"],
+                "Closing": r["closing"],
+                "Difference": r["difference"],
+                "Product ID": r["product_id"]
+            }
+            for r in rows
+        ]
+    )
 
-    if st.button("✅ Final Submit"):
-        safe_exec(
-            admin_supabase.table("statements")
-            .update({
-                "status": "final",
-                "final_submitted_at": datetime.utcnow().isoformat(),
-                "editing_by": None,
-                "editing_at": None
-            })
-            .eq("id", sid)
+    st.dataframe(
+        df.drop(columns=["Product ID"]),
+        use_container_width=True
+    )
+
+    # --------------------------------------------------
+    # EDIT JUMP (ONLY IF NOT READ-ONLY)
+    # --------------------------------------------------
+    if not readonly:
+        st.markdown("### ✏️ Edit Product")
+
+        product_names = [
+            (r["products"]["name"], r["product_id"])
+            for r in rows
+        ]
+
+        selected = st.selectbox(
+            "Select product to edit",
+            product_names,
+            format_func=lambda x: x[0]
         )
 
-        st.session_state.clear()
-        st.success("Statement finalized successfully")
-        st.rerun()
+        if st.button("✏️ Edit Selected Product"):
+            products = safe_exec(
+                supabase.table("products")
+                .select("id")
+                .order("name")
+            )
+
+            id_to_index = {
+                p["id"]: i for i, p in enumerate(products)
+            }
+
+            st.session_state.product_index = id_to_index[selected[1]]
+            st.session_state.engine_stage = "edit"
+            st.rerun()
+
+    # --------------------------------------------------
+    # FINAL SUBMIT PLACEHOLDER (STEP 3)
+    # --------------------------------------------------
+    if readonly:
+        st.info("Read-only view")
+    else:
+        st.success("Review complete. Final submission comes in Step 3.")
 
 
 # ======================================================
