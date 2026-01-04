@@ -350,6 +350,7 @@ if (
         st.rerun()
 
 # ======================================================
+# ======================================================
 # PREVIEW & EDIT JUMP
 # ======================================================
 if (
@@ -368,7 +369,6 @@ if (
             "order_qty,issue_guidance,stock_guidance,"
             "products!statement_products_product_id_fkey(name)"
         )
-
         .eq("statement_id", sid)
     )
 
@@ -386,7 +386,6 @@ if (
                 "Stock Guidance": r["stock_guidance"],
                 "Product ID": r["product_id"]
             }
-
             for r in rows
         ]
     )
@@ -394,40 +393,39 @@ if (
     st.dataframe(df.drop(columns=["Product ID"]), use_container_width=True)
 
     # --------------------------------------------------
-# PREVIEW → EDIT JUMP
-# --------------------------------------------------
-if not readonly and rows:
+    # PREVIEW → EDIT JUMP
+    # --------------------------------------------------
+    if not readonly and rows:
 
-    st.subheader("✏️ Edit a Product")
+        st.subheader("✏️ Edit a Product")
 
-    product_options = [
-        (r["products"]["name"], r["product_id"])
-        for r in rows
-    ]
+        product_options = [
+            (r["products"]["name"], r["product_id"])
+            for r in rows
+        ]
 
-    selected = st.selectbox(
-        "Select product to edit",
-        product_options,
-        format_func=lambda x: x[0]
-    )
+        selected = st.selectbox(
+            "Select product to edit",
+            product_options,
+            format_func=lambda x: x[0]
+        )
 
-    if st.button("✏️ Edit Selected Product"):
+        if st.button("✏️ Edit Selected Product"):
 
-        # Build product_id → index mapping (ordered by product name)
-        product_index_map = {
-            p["id"]: idx
-            for idx, p in enumerate(
-                safe_exec(
-                    supabase.table("products")
-                    .select("id")
-                    .order("name")
+            product_index_map = {
+                p["id"]: idx
+                for idx, p in enumerate(
+                    safe_exec(
+                        supabase.table("products")
+                        .select("id")
+                        .order("name")
+                    )
                 )
-            )
-        }
+            }
 
-        st.session_state.product_index = product_index_map[selected[1]]
-        st.session_state.engine_stage = "edit"
-        st.rerun()
+            st.session_state.product_index = product_index_map[selected[1]]
+            st.session_state.engine_stage = "edit"
+            st.rerun()
 
 # ======================================================
 # FINAL SUBMIT
@@ -452,89 +450,26 @@ if (
         )
     )
 
-    total_products = len(
-    safe_exec(
-        supabase.table("products").select("id")
-    )
-)
-
-entered_products = len(
-    safe_exec(
-        admin_supabase.table("statement_products")
-        .select("product_id")
-        .eq("statement_id", st.session_state.statement_id)
-    )
-)
-
-if entered_products != total_products:
-    st.error(
-        f"Statement incomplete: {entered_products} of {total_products} products entered"
-    )
-    st.stop()
-
-if st.button("✅ Final Submit Statement", type="primary"):
-    safe_exec(
-        admin_supabase.table("statements")
-        .update(
-            {
-                "status": "final",
-                "final_submitted_at": datetime.utcnow().isoformat()
-            }
+    if entered_products != total_products:
+        st.error(
+            f"Statement incomplete: {entered_products} of {total_products} products entered"
         )
-        .eq("id", st.session_state.statement_id)
-    )
+        st.stop()
 
-    st.session_state.engine_stage = "view"
-    st.rerun()
-
-# ======================================================
-# READ-ONLY VIEW
-# ======================================================
-if (
-    role == "user"
-    and st.session_state.statement_id
-    and st.session_state.engine_stage == "view"
-):
-
-    st.subheader("👁 Final Statement")
-
-    rows = safe_exec(
-        admin_supabase.table("statement_products")
-        .select(
-            "opening,purchase,issue,closing,difference,"
-            "order_qty,issue_guidance,stock_guidance,"
-            "products!statement_products_product_id_fkey(name)"
+    if st.button("✅ Final Submit Statement", type="primary"):
+        safe_exec(
+            admin_supabase.table("statements")
+            .update(
+                {
+                    "status": "final",
+                    "final_submitted_at": datetime.utcnow().isoformat()
+                }
+            )
+            .eq("id", st.session_state.statement_id)
         )
 
-        .eq("statement_id", st.session_state.statement_id)
-    )
-
-    df = pd.DataFrame(
-        [
-            {
-                "Product": r["products"]["name"],
-                "Opening": r["opening"],
-                "Purchase": r["purchase"],
-                "Issue": r["issue"],
-                "Closing": r["closing"],
-                "Difference": r["difference"],
-                "Order": r["order_qty"],
-                "Issue Guidance": r["issue_guidance"],
-                "Stock Guidance": r["stock_guidance"]
-            }
-
-            for r in rows
-        ]
-    )
-
-    st.dataframe(df, use_container_width=True)
-
-    st.download_button(
-        "⬇️ Download CSV",
-        df.to_csv(index=False),
-        file_name="sales_stock_statement.csv",
-        mime="text/csv"
-    )
+        st.session_state.engine_stage = "view"
+        st.rerun()
 
 
 # ======================================================
