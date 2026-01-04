@@ -204,14 +204,22 @@ if role == "user" and not st.session_state.statement_id:
         st.rerun()
 
 # ======================================================
+# ======================================================
 # PRODUCT ENGINE
 # ======================================================
-if role == "user" and st.session_state.statement_id and st.session_state.engine_stage == "edit":
+if (
+    role == "user"
+    and st.session_state.statement_id
+    and st.session_state.engine_stage == "edit"
+):
+
     sid = st.session_state.statement_id
     idx = st.session_state.product_index
 
     products = safe_exec(
-        supabase.table("products").select("*").order("sort_order")
+        supabase.table("products")
+        .select("*")
+        .order("sort_order")
     )
 
     if idx >= len(products):
@@ -225,68 +233,75 @@ if role == "user" and st.session_state.statement_id and st.session_state.engine_
 
     product = products[idx]
 
-    st.subheader(f"Product {idx + 1} of {len(products)} — {product['name']}")
+    st.subheader(
+        f"Product {idx + 1} of {len(products)} — {product['name']}"
+    )
 
     row = safe_exec(
-        supabase.table("statement_products")
+        admin_supabase.table("statement_products")
         .select("*")
         .eq("statement_id", sid)
         .eq("product_id", product["id"])
     )
     row = row[0] if row else {}
 
-    opening = st.number_input("Opening", min_value=0.0, value=float(row.get("opening", 0)))
-    purchase = st.number_input("Purchase", min_value=0.0, value=float(row.get("purchase", 0)))
-    issue = st.number_input("Issue", min_value=0.0, value=float(row.get("issue", 0)))
-    closing = st.number_input("Closing", min_value=0.0, value=float(row.get("closing", opening)))
-
-   
-# ------------------------------------------------------
-# NAVIGATION BUTTONS
-# ------------------------------------------------------
-c1, c2 = st.columns(2)
-
-# ⬅ PREVIOUS BUTTON
-if c1.button("⬅ Previous", disabled=(idx == 0)):
-    st.session_state.product_index -= 1
-
-    safe_exec(
-        admin_supabase.table("statements")
-        .update(
-            {"current_product_index": st.session_state.product_index}
-        )
-        .eq("id", sid)
+    opening = st.number_input(
+        "Opening", min_value=0.0, value=float(row.get("opening", 0))
+    )
+    purchase = st.number_input(
+        "Purchase", min_value=0.0, value=float(row.get("purchase", 0))
+    )
+    issue = st.number_input(
+        "Issue", min_value=0.0, value=float(row.get("issue", 0))
+    )
+    closing = st.number_input(
+        "Closing", min_value=0.0, value=float(row.get("closing", opening))
     )
 
-    st.rerun()
+    # --------------------------------------------------
+    # NAVIGATION
+    # --------------------------------------------------
+    col_prev, col_next = st.columns(2)
 
-# 💾 SAVE & NEXT BUTTON
-if c2.button("💾 Save & Next"):
-    safe_exec(
-        admin_supabase.table("statement_products").upsert(
-            {
-                "statement_id": sid,
-                "product_id": product["id"],
-                "opening": opening,
-                "purchase": purchase,
-                "issue": issue,
-                "closing": closing,
-                "updated_at": datetime.utcnow().isoformat()
-            }
+    if col_prev.button("⬅ Previous", disabled=(idx == 0)):
+        st.session_state.product_index -= 1
+
+        safe_exec(
+            admin_supabase.table("statements")
+            .update(
+                {"current_product_index": st.session_state.product_index}
+            )
+            .eq("id", sid)
         )
-    )
 
-    st.session_state.product_index += 1
+        st.rerun()
 
-    safe_exec(
-        admin_supabase.table("statements")
-        .update(
-            {"current_product_index": st.session_state.product_index}
+    if col_next.button("💾 Save & Next"):
+        safe_exec(
+            admin_supabase.table("statement_products").upsert(
+                {
+                    "statement_id": sid,
+                    "product_id": product["id"],
+                    "opening": opening,
+                    "purchase": purchase,
+                    "issue": issue,
+                    "closing": closing,
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            )
         )
-        .eq("id", sid)
-    )
 
-    st.rerun()
+        st.session_state.product_index += 1
+
+        safe_exec(
+            admin_supabase.table("statements")
+            .update(
+                {"current_product_index": st.session_state.product_index}
+            )
+            .eq("id", sid)
+        )
+
+        st.rerun()
 
 # ======================================================
 # PREVIEW & FINAL SUBMIT
