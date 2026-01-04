@@ -156,65 +156,49 @@ if role == "user" and not st.session_state.statement_id:
 
     if action == "create":
 
-        # 🔒 RECHECK BEFORE INSERT (FIXES DUPLICATE KEY ERROR)
-        existing = safe_exec(
-            supabase.table("statements")
-            .select("*")
-            .eq("stockist_id", selected_stockist["stockist_id"])
-            .eq("year", year)
-            .eq("month", month)
-            .limit(1)
-        )
+    res = admin_supabase.table("statements").upsert(
+        {
+            "user_id": user_id,
+            "stockist_id": selected_stockist["stockist_id"],
+            "year": year,
+            "month": month,
+            "status": "draft",
+            "current_product_index": 0
+        },
+        on_conflict="stockist_id,year,month",
+        returning="representation"
+    ).execute()
 
-        if existing:
-            stmt = existing[0]
+    if not res.data:
+        st.error("Unable to open statement")
+        st.stop()
 
-            if stmt["status"] == "locked":
-                st.error("Statement already locked")
-                st.stop()
+    stmt = res.data[0]
 
-            if stmt["status"] == "final":
-                st.warning("Statement already finalized")
-                st.stop()
+    if stmt["status"] == "locked":
+        st.error("Statement already locked")
+        st.stop()
 
-        else:
-            res = admin_supabase.table("statements").insert(
-                {
-                    "user_id": user_id,
-                    "stockist_id": selected_stockist["stockist_id"],
-                    "year": year,
-                    "month": month,
-                    "status": "draft",
-                    "current_product_index": 0
-                },
-                returning="representation"
-            ).execute()
+    if stmt["status"] == "final":
+        st.warning("Statement already finalized")
+        st.stop()
 
-            if not res.data:
-                st.error("Failed to create statement")
-                st.stop()
+    if stmt.get("editing_by") and stmt["editing_by"] != user_id:
+        st.error("Statement currently open on another device")
+        st.stop()
 
-            stmt = res.data[0]
+    admin_supabase.table("statements").update({
+        "editing_by": user_id,
+        "editing_at": datetime.utcnow().isoformat()
+    }).eq("id", stmt["id"]).execute()
 
-        if stmt.get("editing_by") and stmt["editing_by"] != user_id:
-            st.error("Statement is open on another device")
-            st.stop()
+    st.session_state.statement_id = stmt["id"]
+    st.session_state.product_index = stmt["current_product_index"]
+    st.session_state.statement_year = year
+    st.session_state.statement_month = month
+    st.session_state.engine_stage = "edit"
 
-        safe_exec(
-            admin_supabase.table("statements")
-            .update({
-                "editing_by": user_id,
-                "editing_at": datetime.utcnow().isoformat()
-            })
-            .eq("id", stmt["id"])
-        )
-
-        st.session_state.statement_id = stmt["id"]
-        st.session_state.product_index = stmt["current_product_index"]
-        st.session_state.statement_year = year
-        st.session_state.statement_month = month
-        st.session_state.engine_stage = "edit"
-        st.rerun()
+    st.rerun()
 
 # ======================================================
 # PRODUCT ENGINE
