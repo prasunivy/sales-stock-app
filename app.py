@@ -271,7 +271,7 @@ if role == "user" and st.session_state.engine_stage == "preview":
 
     rows = safe_exec(
         supabase.table("statement_products")
-        .select("opening,purchase,issue,closing,products(name)")
+        .select("opening,purchase,issue,closing,products!statement_products_product_id_fkey(name)")
         .eq("statement_id", sid)
     )
 
