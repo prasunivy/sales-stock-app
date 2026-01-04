@@ -236,6 +236,7 @@ if (
 
     st.subheader(f"Product {idx + 1} of {len(products)} — {product['name']}")
 
+    # Fetch existing draft row (if any)
     row = safe_exec(
         admin_supabase.table("statement_products")
         .select("*")
@@ -245,6 +246,7 @@ if (
     )
     row = row[0] if row else {}
 
+    # Last month data
     last_closing, last_issue = fetch_last_month_data(
         st.session_state.selected_stockist_id,
         product["id"],
@@ -284,6 +286,36 @@ if (
     if diff != 0:
         st.warning(f"Difference detected: {diff}")
 
+    # --------------------------------------------------
+    # GUIDANCE & ORDER (FROM SQL TRIGGER)
+    # --------------------------------------------------
+    live_row = fetch_statement_product(sid, product["id"])
+
+    if live_row:
+        st.divider()
+        g1, g2, g3 = st.columns(3)
+
+        with g1:
+            st.metric(
+                "📦 Suggested Order",
+                live_row.get("order_qty", 0)
+            )
+
+        with g2:
+            st.info(
+                f"Issue Guidance: {live_row.get('issue_guidance', '—')}"
+            )
+
+        with g3:
+            st.warning(
+                f"Stock Guidance: {live_row.get('stock_guidance', '—')}"
+            )
+    else:
+        st.info("Save the product to see guidance and order suggestion")
+
+    # --------------------------------------------------
+    # NAVIGATION
+    # --------------------------------------------------
     c1, c2 = st.columns(2)
 
     if c1.button("⬅ Previous", disabled=(idx == 0)):
@@ -333,8 +365,10 @@ if (
         admin_supabase.table("statement_products")
         .select(
             "product_id,opening,purchase,issue,closing,difference,"
+            "order_qty,issue_guidance,stock_guidance,"
             "products!statement_products_product_id_fkey(name)"
         )
+
         .eq("statement_id", sid)
     )
 
@@ -347,8 +381,12 @@ if (
                 "Issue": r["issue"],
                 "Closing": r["closing"],
                 "Difference": r["difference"],
+                "Order": r["order_qty"],
+                "Issue Guidance": r["issue_guidance"],
+                "Stock Guidance": r["stock_guidance"],
                 "Product ID": r["product_id"]
             }
+
             for r in rows
         ]
     )
@@ -433,8 +471,10 @@ if (
         admin_supabase.table("statement_products")
         .select(
             "opening,purchase,issue,closing,difference,"
+            "order_qty,issue_guidance,stock_guidance,"
             "products!statement_products_product_id_fkey(name)"
         )
+
         .eq("statement_id", st.session_state.statement_id)
     )
 
@@ -446,8 +486,12 @@ if (
                 "Purchase": r["purchase"],
                 "Issue": r["issue"],
                 "Closing": r["closing"],
-                "Difference": r["difference"]
+                "Difference": r["difference"],
+                "Order": r["order_qty"],
+                "Issue Guidance": r["issue_guidance"],
+                "Stock Guidance": r["stock_guidance"]
             }
+
             for r in rows
         ]
     )
