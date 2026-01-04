@@ -56,7 +56,7 @@ def safe_exec(q, msg="Database error"):
     return res.data or []
 
 # ======================================================
-# HELPERS (PLACED CORRECTLY)
+# HELPERS
 # ======================================================
 def get_previous_period(year, month):
     if month == 1:
@@ -156,7 +156,7 @@ role = st.session_state.role
 user_id = st.session_state.auth_user.id
 
 # ======================================================
-# USER LANDING (CREATE / RESUME ONLY — STEP 1)
+# USER LANDING
 # ======================================================
 if role == "user" and not st.session_state.statement_id:
 
@@ -211,7 +211,7 @@ if role == "user" and not st.session_state.statement_id:
         st.rerun()
 
 # ======================================================
-# PRODUCT ENGINE — STEP 1 (ERP CORE)
+# PRODUCT ENGINE
 # ======================================================
 if (
     role == "user"
@@ -221,9 +221,6 @@ if (
 
     sid = st.session_state.statement_id
     idx = st.session_state.product_index
-    stmt_year = st.session_state.statement_year
-    stmt_month = st.session_state.statement_month
-    stockist_id = st.session_state.selected_stockist_id
 
     products = safe_exec(
         supabase.table("products")
@@ -237,9 +234,7 @@ if (
 
     product = products[idx]
 
-    st.subheader(
-        f"Product {idx + 1} of {len(products)} — {product['name']}"
-    )
+    st.subheader(f"Product {idx + 1} of {len(products)} — {product['name']}")
 
     row = safe_exec(
         admin_supabase.table("statement_products")
@@ -251,10 +246,10 @@ if (
     row = row[0] if row else {}
 
     last_closing, last_issue = fetch_last_month_data(
-        stockist_id,
+        st.session_state.selected_stockist_id,
         product["id"],
-        stmt_year,
-        stmt_month
+        st.session_state.statement_year,
+        st.session_state.statement_month
     )
 
     opening = st.number_input(
@@ -285,9 +280,9 @@ if (
         key=f"closing_{sid}_{product['id']}"
     )
 
-    difference = calculated_closing - closing
-    if difference != 0:
-        st.warning(f"Difference detected: {difference}")
+    diff = calculated_closing - closing
+    if diff != 0:
+        st.warning(f"Difference detected: {diff}")
 
     c1, c2 = st.columns(2)
 
@@ -308,12 +303,12 @@ if (
                     "closing": closing,
                     "calculated_closing": calculated_closing,
                     "updated_at": datetime.utcnow().isoformat()
-                }
+                },
+                on_conflict="statement_id,product_id"
             )
         )
 
         st.session_state.product_index += 1
-
         safe_exec(
             admin_supabase.table("statements")
             .update({"current_product_index": st.session_state.product_index})
@@ -323,7 +318,7 @@ if (
         st.rerun()
 
 # ======================================================
-# PREVIEW & EDIT JUMP ENGINE — STEP 2
+# PREVIEW & EDIT JUMP
 # ======================================================
 if (
     role == "user"
@@ -334,21 +329,14 @@ if (
     sid = st.session_state.statement_id
     readonly = st.session_state.engine_stage == "view"
 
-    st.subheader("📋 Statement Preview")
-
     rows = safe_exec(
         admin_supabase.table("statement_products")
         .select(
-            "product_id,opening,purchase,issue,closing,"
-            "calculated_closing,difference,"
+            "product_id,opening,purchase,issue,closing,difference,"
             "products!statement_products_product_id_fkey(name)"
         )
         .eq("statement_id", sid)
     )
-
-    if not rows:
-        st.warning("No products entered yet")
-        st.stop()
 
     df = pd.DataFrame(
         [
@@ -365,52 +353,31 @@ if (
         ]
     )
 
-    st.dataframe(
-        df.drop(columns=["Product ID"]),
-        use_container_width=True
-    )
+    st.dataframe(df.drop(columns=["Product ID"]), use_container_width=True)
 
-    # --------------------------------------------------
-    # EDIT JUMP (ONLY IF NOT READ-ONLY)
-    # --------------------------------------------------
     if not readonly:
-        st.markdown("### ✏️ Edit Product")
-
-        product_names = [
-            (r["products"]["name"], r["product_id"])
-            for r in rows
-        ]
-
         selected = st.selectbox(
-            "Select product to edit",
-            product_names,
+            "Edit product",
+            [(r["products"]["name"], r["product_id"]) for r in rows],
             format_func=lambda x: x[0]
         )
 
-        if st.button("✏️ Edit Selected Product"):
-            products = safe_exec(
-                supabase.table("products")
-                .select("id")
-                .order("name")
-            )
-
+        if st.button("✏️ Edit Selected"):
             id_to_index = {
-                p["id"]: i for i, p in enumerate(products)
+                p["id"]: i
+                for i, p in enumerate(
+                    safe_exec(
+                        supabase.table("products").select("id").order("name")
+                    )
+                )
             }
 
             st.session_state.product_index = id_to_index[selected[1]]
             st.session_state.engine_stage = "edit"
             st.rerun()
 
-    # --------------------------------------------------
-    # FINAL SUBMIT PLACEHOLDER (STEP 3)
-    # --------------------------------------------------
-    if readonly:
-        st.info("Read-only view")
-    else:
-        st.success("Review complete. Final submission comes in Step 3.")
 # ======================================================
-# FINAL SUBMIT, LOCK & EXPORT — STEP 3
+# FINAL SUBMIT
 # ======================================================
 if (
     role == "user"
@@ -418,58 +385,41 @@ if (
     and st.session_state.engine_stage == "preview"
 ):
 
-    sid = st.session_state.statement_id
-
-    st.divider()
-    st.subheader("🔒 Final Submission")
-
-    # ----------------------------------------------
-    # VALIDATION: all products must exist
-    # ----------------------------------------------
     total_products = len(
-    safe_exec(
-        supabase.table("products")
-        .select("id")
+        safe_exec(
+            supabase.table("products").select("id")
+        )
     )
-)
 
-    entered_products = safe_exec(
-        admin_supabase.table("statement_products")
-        .select("product_id", count="exact")
-        .eq("statement_id", sid)
-    )[0]["count"]
+    entered_products = len(
+        safe_exec(
+            admin_supabase.table("statement_products")
+            .select("product_id")
+            .eq("statement_id", st.session_state.statement_id)
+        )
+    )
 
     if entered_products != total_products:
-        st.error(
-            f"Incomplete statement: {entered_products} / {total_products} products entered"
-        )
+        st.error("Statement incomplete")
         st.stop()
 
-    # ----------------------------------------------
-    # FINAL SUBMIT BUTTON
-    # ----------------------------------------------
     if st.button("✅ Final Submit Statement", type="primary"):
-
         safe_exec(
             admin_supabase.table("statements")
             .update(
                 {
                     "status": "final",
-                    "final_submitted_at": datetime.utcnow().isoformat(),
-                    "editing_by": None,
-                    "editing_at": None
+                    "final_submitted_at": datetime.utcnow().isoformat()
                 }
             )
-            .eq("id", sid)
+            .eq("id", st.session_state.statement_id)
         )
 
         st.session_state.engine_stage = "view"
-
-        st.success("Statement finalized successfully")
         st.rerun()
 
 # ======================================================
-# READ-ONLY VIEW + EXPORTS
+# READ-ONLY VIEW
 # ======================================================
 if (
     role == "user"
@@ -477,18 +427,15 @@ if (
     and st.session_state.engine_stage == "view"
 ):
 
-    sid = st.session_state.statement_id
-
-    st.subheader("👁 Final Statement (Read-only)")
+    st.subheader("👁 Final Statement")
 
     rows = safe_exec(
         admin_supabase.table("statement_products")
         .select(
-            "opening,purchase,issue,closing,"
-            "calculated_closing,difference,"
+            "opening,purchase,issue,closing,difference,"
             "products!statement_products_product_id_fkey(name)"
         )
-        .eq("statement_id", sid)
+        .eq("statement_id", st.session_state.statement_id)
     )
 
     df = pd.DataFrame(
@@ -507,12 +454,9 @@ if (
 
     st.dataframe(df, use_container_width=True)
 
-    # ----------------------------------------------
-    # EXPORTS
-    # ----------------------------------------------
     st.download_button(
         "⬇️ Download CSV",
-        data=df.to_csv(index=False),
+        df.to_csv(index=False),
         file_name="sales_stock_statement.csv",
         mime="text/csv"
     )
