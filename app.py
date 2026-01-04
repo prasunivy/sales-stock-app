@@ -410,6 +410,111 @@ if (
         st.info("Read-only view")
     else:
         st.success("Review complete. Final submission comes in Step 3.")
+# ======================================================
+# FINAL SUBMIT, LOCK & EXPORT — STEP 3
+# ======================================================
+if (
+    role == "user"
+    and st.session_state.statement_id
+    and st.session_state.engine_stage == "preview"
+):
+
+    sid = st.session_state.statement_id
+
+    st.divider()
+    st.subheader("🔒 Final Submission")
+
+    # ----------------------------------------------
+    # VALIDATION: all products must exist
+    # ----------------------------------------------
+    total_products = safe_exec(
+        supabase.table("products")
+        .select("id", count="exact")
+    )[0]["count"]
+
+    entered_products = safe_exec(
+        admin_supabase.table("statement_products")
+        .select("product_id", count="exact")
+        .eq("statement_id", sid)
+    )[0]["count"]
+
+    if entered_products != total_products:
+        st.error(
+            f"Incomplete statement: {entered_products} / {total_products} products entered"
+        )
+        st.stop()
+
+    # ----------------------------------------------
+    # FINAL SUBMIT BUTTON
+    # ----------------------------------------------
+    if st.button("✅ Final Submit Statement", type="primary"):
+
+        safe_exec(
+            admin_supabase.table("statements")
+            .update(
+                {
+                    "status": "final",
+                    "final_submitted_at": datetime.utcnow().isoformat(),
+                    "editing_by": None,
+                    "editing_at": None
+                }
+            )
+            .eq("id", sid)
+        )
+
+        st.session_state.engine_stage = "view"
+
+        st.success("Statement finalized successfully")
+        st.rerun()
+
+# ======================================================
+# READ-ONLY VIEW + EXPORTS
+# ======================================================
+if (
+    role == "user"
+    and st.session_state.statement_id
+    and st.session_state.engine_stage == "view"
+):
+
+    sid = st.session_state.statement_id
+
+    st.subheader("👁 Final Statement (Read-only)")
+
+    rows = safe_exec(
+        admin_supabase.table("statement_products")
+        .select(
+            "opening,purchase,issue,closing,"
+            "calculated_closing,difference,"
+            "products!statement_products_product_id_fkey(name)"
+        )
+        .eq("statement_id", sid)
+    )
+
+    df = pd.DataFrame(
+        [
+            {
+                "Product": r["products"]["name"],
+                "Opening": r["opening"],
+                "Purchase": r["purchase"],
+                "Issue": r["issue"],
+                "Closing": r["closing"],
+                "Difference": r["difference"]
+            }
+            for r in rows
+        ]
+    )
+
+    st.dataframe(df, use_container_width=True)
+
+    # ----------------------------------------------
+    # EXPORTS
+    # ----------------------------------------------
+    st.download_button(
+        "⬇️ Download CSV",
+        data=df.to_csv(index=False),
+        file_name="sales_stock_statement.csv",
+        mime="text/csv"
+    )
 
 
 # ======================================================
