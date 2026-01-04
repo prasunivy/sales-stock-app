@@ -232,8 +232,8 @@ if (
     )
 
     if idx >= len(products):
-        st.success("All products entered. Preview will be enabled in next step.")
-        st.stop()
+        st.session_state.engine_stage = "preview"
+        st.rerun()
 
     product = products[idx]
 
@@ -427,10 +427,12 @@ if (
     # ----------------------------------------------
     # VALIDATION: all products must exist
     # ----------------------------------------------
-    total_products = safe_exec(
+    total_products = len(
+    safe_exec(
         supabase.table("products")
-        .select("id", count="exact")
-    )[0]["count"]
+        .select("id")
+    )
+)
 
     entered_products = safe_exec(
         admin_supabase.table("statement_products")
