@@ -240,9 +240,31 @@ if role == "user" and st.session_state.statement_id and st.session_state.engine_
     issue = st.number_input("Issue", min_value=0.0, value=float(row.get("issue", 0)))
     closing = st.number_input("Closing", min_value=0.0, value=float(row.get("closing", opening)))
 
-    if st.button("💾 Save & Next"):
-        safe_exec(
-            admin_supabase.table("statement_products").upsert({
+   
+# ------------------------------------------------------
+# NAVIGATION BUTTONS
+# ------------------------------------------------------
+c1, c2 = st.columns(2)
+
+# ⬅ PREVIOUS BUTTON
+if c1.button("⬅ Previous", disabled=(idx == 0)):
+    st.session_state.product_index -= 1
+
+    safe_exec(
+        admin_supabase.table("statements")
+        .update(
+            {"current_product_index": st.session_state.product_index}
+        )
+        .eq("id", sid)
+    )
+
+    st.rerun()
+
+# 💾 SAVE & NEXT BUTTON
+if c2.button("💾 Save & Next"):
+    safe_exec(
+        admin_supabase.table("statement_products").upsert(
+            {
                 "statement_id": sid,
                 "product_id": product["id"],
                 "opening": opening,
@@ -250,18 +272,21 @@ if role == "user" and st.session_state.statement_id and st.session_state.engine_
                 "issue": issue,
                 "closing": closing,
                 "updated_at": datetime.utcnow().isoformat()
-            })
+            }
         )
+    )
 
-        st.session_state.product_index += 1
+    st.session_state.product_index += 1
 
-        safe_exec(
-            admin_supabase.table("statements")
-            .update({"current_product_index": st.session_state.product_index})
-            .eq("id", sid)
+    safe_exec(
+        admin_supabase.table("statements")
+        .update(
+            {"current_product_index": st.session_state.product_index}
         )
+        .eq("id", sid)
+    )
 
-        st.rerun()
+    st.rerun()
 
 # ======================================================
 # PREVIEW & FINAL SUBMIT
@@ -270,7 +295,7 @@ if role == "user" and st.session_state.engine_stage == "preview":
     sid = st.session_state.statement_id
 
     rows = safe_exec(
-        supabase.table("statement_products")
+        admin_supabase.table("statement_products")
         .select("opening,purchase,issue,closing,products!statement_products_product_id_fkey(name)")
         .eq("statement_id", sid)
     )
