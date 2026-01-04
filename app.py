@@ -393,26 +393,41 @@ if (
 
     st.dataframe(df.drop(columns=["Product ID"]), use_container_width=True)
 
-    if not readonly:
-        selected = st.selectbox(
-            "Edit product",
-            [(r["products"]["name"], r["product_id"]) for r in rows],
-            format_func=lambda x: x[0]
-        )
+    # --------------------------------------------------
+# PREVIEW → EDIT JUMP
+# --------------------------------------------------
+if not readonly and rows:
 
-        if st.button("✏️ Edit Selected"):
-            id_to_index = {
-                p["id"]: i
-                for i, p in enumerate(
-                    safe_exec(
-                        supabase.table("products").select("id").order("name")
-                    )
+    st.subheader("✏️ Edit a Product")
+
+    product_options = [
+        (r["products"]["name"], r["product_id"])
+        for r in rows
+    ]
+
+    selected = st.selectbox(
+        "Select product to edit",
+        product_options,
+        format_func=lambda x: x[0]
+    )
+
+    if st.button("✏️ Edit Selected Product"):
+
+        # Build product_id → index mapping (ordered by product name)
+        product_index_map = {
+            p["id"]: idx
+            for idx, p in enumerate(
+                safe_exec(
+                    supabase.table("products")
+                    .select("id")
+                    .order("name")
                 )
-            }
+            )
+        }
 
-            st.session_state.product_index = id_to_index[selected[1]]
-            st.session_state.engine_stage = "edit"
-            st.rerun()
+        st.session_state.product_index = product_index_map[selected[1]]
+        st.session_state.engine_stage = "edit"
+        st.rerun()
 
 # ======================================================
 # FINAL SUBMIT
@@ -437,24 +452,40 @@ if (
         )
     )
 
-    if entered_products != total_products:
-        st.error("Statement incomplete")
-        st.stop()
+    total_products = len(
+    safe_exec(
+        supabase.table("products").select("id")
+    )
+)
 
-    if st.button("✅ Final Submit Statement", type="primary"):
-        safe_exec(
-            admin_supabase.table("statements")
-            .update(
-                {
-                    "status": "final",
-                    "final_submitted_at": datetime.utcnow().isoformat()
-                }
-            )
-            .eq("id", st.session_state.statement_id)
+entered_products = len(
+    safe_exec(
+        admin_supabase.table("statement_products")
+        .select("product_id")
+        .eq("statement_id", st.session_state.statement_id)
+    )
+)
+
+if entered_products != total_products:
+    st.error(
+        f"Statement incomplete: {entered_products} of {total_products} products entered"
+    )
+    st.stop()
+
+if st.button("✅ Final Submit Statement", type="primary"):
+    safe_exec(
+        admin_supabase.table("statements")
+        .update(
+            {
+                "status": "final",
+                "final_submitted_at": datetime.utcnow().isoformat()
+            }
         )
+        .eq("id", st.session_state.statement_id)
+    )
 
-        st.session_state.engine_stage = "view"
-        st.rerun()
+    st.session_state.engine_stage = "view"
+    st.rerun()
 
 # ======================================================
 # READ-ONLY VIEW
