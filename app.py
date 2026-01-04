@@ -307,7 +307,6 @@ if (
                     "issue": issue,
                     "closing": closing,
                     "calculated_closing": calculated_closing,
-                    "difference": difference,
                     "updated_at": datetime.utcnow().isoformat()
                 }
             )
