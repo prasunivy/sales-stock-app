@@ -469,6 +469,8 @@ if (
         st.stop()
 
     if st.button("✅ Final Submit Statement", type="primary"):
+
+        # 1️⃣ Mark statement as final
         safe_exec(
             admin_supabase.table("statements")
             .update(
@@ -480,6 +482,15 @@ if (
             .eq("id", st.session_state.statement_id)
         )
 
+        # 2️⃣ Generate monthly summary (FINAL statements only)
+        safe_exec(
+            admin_supabase.rpc(
+                "populate_monthly_summary",
+                {"p_statement_id": st.session_state.statement_id}
+            )
+        )
+
+        # 3️⃣ Move to read-only view
         st.session_state.engine_stage = "view"
         st.rerun()
 
