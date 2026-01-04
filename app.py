@@ -26,9 +26,12 @@ admin_supabase = create_client(
 # SESSION STATE
 # ======================================================
 for k in [
-    "auth_user", "role",
-    "statement_id", "product_index",
-    "statement_year", "statement_month",
+    "auth_user",
+    "role",
+    "statement_id",
+    "product_index",
+    "statement_year",
+    "statement_month",
     "selected_stockist_id",
     "engine_stage"
 ]:
@@ -53,7 +56,7 @@ def safe_exec(q, msg="Database error"):
     return res.data or []
 
 # ======================================================
-# HELPERS  ✅ (CORRECT PLACEMENT)
+# HELPERS (PLACED CORRECTLY)
 # ======================================================
 def get_previous_period(year, month):
     if month == 1:
@@ -96,7 +99,7 @@ def fetch_last_month_data(stockist_id, product_id, year, month):
 def username_to_email(username):
     rows = safe_exec(
         supabase.table("users")
-        .select("id,is_active,role")
+        .select("id,is_active")
         .eq("username", username)
     )
     if not rows or not rows[0]["is_active"]:
@@ -115,7 +118,9 @@ def login(username, password):
 
 def load_profile(uid):
     return safe_exec(
-        supabase.table("users").select("*").eq("id", uid)
+        supabase.table("users")
+        .select("*")
+        .eq("id", uid)
     )[0]
 
 # ======================================================
@@ -151,7 +156,7 @@ role = st.session_state.role
 user_id = st.session_state.auth_user.id
 
 # ======================================================
-# USER LANDING — CREATE ONLY (STEP-1 SCOPE)
+# USER LANDING (CREATE / RESUME ONLY — STEP 1)
 # ======================================================
 if role == "user" and not st.session_state.statement_id:
 
@@ -193,7 +198,7 @@ if role == "user" and not st.session_state.statement_id:
         stmt = res.data[0]
 
         if stmt["status"] != "draft":
-            st.error("Statement locked or finalized")
+            st.error("Statement already locked or finalized")
             st.stop()
 
         st.session_state.statement_id = stmt["id"]
@@ -227,12 +232,14 @@ if (
     )
 
     if idx >= len(products):
-        st.success("All products entered. Preview coming next step.")
+        st.success("All products entered. Preview will be enabled in next step.")
         st.stop()
 
     product = products[idx]
 
-    st.subheader(f"Product {idx + 1} of {len(products)} — {product['name']}")
+    st.subheader(
+        f"Product {idx + 1} of {len(products)} — {product['name']}"
+    )
 
     row = safe_exec(
         admin_supabase.table("statement_products")
@@ -244,7 +251,10 @@ if (
     row = row[0] if row else {}
 
     last_closing, last_issue = fetch_last_month_data(
-        stockist_id, product["id"], stmt_year, stmt_month
+        stockist_id,
+        product["id"],
+        stmt_year,
+        stmt_month
     )
 
     opening = st.number_input(
@@ -304,6 +314,7 @@ if (
         )
 
         st.session_state.product_index += 1
+
         safe_exec(
             admin_supabase.table("statements")
             .update({"current_product_index": st.session_state.product_index})
