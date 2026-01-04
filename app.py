@@ -297,7 +297,7 @@ if role == "user" and st.session_state.engine_stage == "preview":
 
     rows = safe_exec(
         supabase.table("statement_products")
-        .select("opening,purchase,issue,closing,products(name)")
+        .select("opening,purchase,issue,closing,product_id,products(name)")
         .eq("statement_id", sid)
     )
 
@@ -310,7 +310,7 @@ if role == "user" and st.session_state.engine_stage == "preview":
         st.stop()
 
     df = pd.DataFrame([{
-        "Product": r["products"]["name"],
+        "Product": r["products"]["name"], if r.get("products") else "UNKNOWN",
         "Opening": r["opening"],
         "Purchase": r["purchase"],
         "Issue": r["issue"],
