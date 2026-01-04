@@ -254,6 +254,9 @@ if role == "user" and st.session_state.statement_id and st.session_state.engine_
         st.rerun()
 
     product = products[idx]
+    st.subheader(
+    f"Product {idx + 1} of {len(products)} — {product['name']}"
+    )
 
     row = safe_exec(
         supabase.table("statement_products")
