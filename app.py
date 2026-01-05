@@ -23,6 +23,7 @@ admin_supabase = create_client(
 )
 
 # ======================================================
+# ======================================================
 # SESSION STATE
 # ======================================================
 for k in [
@@ -37,6 +38,7 @@ for k in [
 ]:
     if k not in st.session_state:
         st.session_state[k] = None
+
 
 # ======================================================
 # SAFE EXEC
@@ -54,6 +56,54 @@ def safe_exec(q, msg="Database error"):
         st.stop()
 
     return res.data or []
+
+
+# ======================================================
+# CACHED DATA LOADERS (STEP 1 — PERFORMANCE OPTIMIZATION)
+# ======================================================
+
+@st.cache_data(ttl=3600)
+def load_products_cached():
+    return supabase.table("products") \
+        .select("*") \
+        .order("name") \
+        .execute().data
+
+
+@st.cache_data(ttl=3600)
+def load_users_cached():
+    return supabase.table("users") \
+        .select("id, username, role, is_active") \
+        .order("username") \
+        .execute().data
+
+
+@st.cache_data(ttl=3600)
+def load_stockists_cached():
+    return supabase.table("stockists") \
+        .select("id, name") \
+        .order("name") \
+        .execute().data
+
+
+@st.cache_data(ttl=300)
+def load_monthly_summary_cached(stockist_ids):
+    if not stockist_ids:
+        return []
+
+    return admin_supabase.table("monthly_summary") \
+        .select("""
+            year,
+            month,
+            total_issue,
+            total_closing,
+            total_order,
+            products(name),
+            stockist_id
+        """) \
+        .in_("stockist_id", stockist_ids) \
+        .execute().data
+
 
 # ======================================================
 # HELPERS
@@ -92,6 +142,8 @@ def fetch_last_month_data(stockist_id, product_id, year, month):
         return 0.0, 0.0
 
     return float(row[0]["closing"]), float(row[0]["issue"])
+
+
 def fetch_statement_product(statement_id, product_id):
     rows = safe_exec(
         admin_supabase.table("statement_products")
@@ -104,6 +156,7 @@ def fetch_statement_product(statement_id, product_id):
         .limit(1)
     )
     return rows[0] if rows else {}
+
 
 # ======================================================
 # AUTH HELPERS
@@ -324,10 +377,8 @@ if (
     sid = st.session_state.statement_id
     idx = st.session_state.product_index
 
-    products = safe_exec(
-        supabase.table("products")
-        .select("*")
-        .order("name")
+    products = load_products_cached()
+
     )
 
     if idx >= len(products):
@@ -886,22 +937,21 @@ if role == "admin":
 
         if st.button("Add Product"):
             supabase.table("products").insert({
-                "name": name.strip(),
-                "peak_months": peak,
-                "high_months": high,
-                "low_months": low,
-                "lowest_months": lowest
+            "name": name.strip(),
+            "peak_months": peak,
+            "high_months": high,
+            "low_months": low,
+            "lowest_months": lowest
             }).execute()
 
+            st.cache_data.clear()   # 🔄 CLEAR PRODUCT CACHE
             st.success("Product added")
             st.rerun()
 
         st.divider()
 
-        products = supabase.table("products") \
-            .select("*") \
-            .order("name") \
-            .execute().data
+        products = load_products_cached()
+
 
         product = st.selectbox("Select Product", products, format_func=lambda x: x["name"])
         edit_name = st.text_input("Edit Name", value=product["name"])
@@ -909,27 +959,30 @@ if role == "admin":
         if st.button("Update Product"):
             supabase.table("products").update({
                 "name": edit_name
-            }).eq("id", product["id"]).execute()
+                }).eq("id", product["id"]).execute()
 
+            st.cache_data.clear()   # 🔄 CLEAR PRODUCT CACHE
             st.success("Product updated")
             st.rerun()
 
+
         if st.button("Delete Product"):
             used = supabase.table("statement_products") \
-                .select("id") \
-                .eq("product_id", product["id"]) \
-                .limit(1) \
-                .execute().data
+            .select("id") \
+            .eq("product_id", product["id"]) \
+            .limit(1) \
+            .execute().data
 
             if used:
-                st.error("Product used in statements")
+            st.error("Product used in statements")
             else:
-                supabase.table("products").delete() \
-                    .eq("id", product["id"]) \
-                    .execute()
+            supabase.table("products").delete() \
+                .eq("id", product["id"]) \
+                .execute()
 
-                st.success("Product deleted")
-                st.rerun()
+            st.cache_data.clear()   # 🔄 CLEAR CACHED PRODUCTS
+            st.success("Product deleted")
+            st.rerun()
 
     # --------------------------------------------------
     # RESET PASSWORD
@@ -1225,6 +1278,109 @@ if st.session_state.get("engine_stage") == "reports":
         ),
         use_container_width=True
     )
+    # ==================================================
+    # 📈 TREND CHARTS — LAST 6 MONTHS
+    # ==================================================
+    st.subheader("📈 Trend Charts — Last 6 Months")
+
+    today = date.today()
+    last_6 = []
+    y, m = today.year, today.month
+
+    for _ in range(6):
+        last_6.append(f"{y}-{m:02d}")
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+
+    df_trend = df[df["Year-Month"].isin(last_6)]
+
+    if df_trend.empty:
+        st.info("No trend data available for last 6 months")
+    else:
+        trend_products = sorted(df_trend["Product"].unique())
+
+        default_index = 0
+        if st.session_state.get("drilldown_product") in trend_products:
+            default_index = trend_products.index(
+                st.session_state.drilldown_product
+            )
+
+        trend_product = st.selectbox(
+            "Select Product for Trend",
+            trend_products,
+            index=default_index
+        )
+
+        chart_df = (
+            df_trend[df_trend["Product"] == trend_product]
+            .sort_values("Year-Month")
+            .set_index("Year-Month")[["Issue", "Closing"]]
+        )
+
+        st.line_chart(chart_df)
+    # ==================================================
+    # 🔮 FORECAST — NEXT 3 MONTHS (SEASONAL LOGIC)
+    # ==================================================
+    st.subheader("🔮 Forecast — Next 3 Months")
+
+    products_master = [
+        p for p in load_products_cached()
+        if "peak_months" in p
+    ]
+
+    forecast_rows = []
+
+    for p in products_master:
+        product_name = p["name"]
+        df_p = df[df["Product"] == product_name]
+
+        if df_p.empty:
+            continue
+
+        last_issue = df_p.sort_values("Year-Month").iloc[-1]["Issue"]
+
+        fy, fm = today.year, today.month + 1
+        if fm == 13:
+            fm = 1
+            fy += 1
+
+        for _ in range(3):
+            if fm in (p.get("peak_months") or []):
+                factor = 2
+            elif fm in (p.get("high_months") or []):
+                factor = 1.5
+            elif fm in (p.get("lowest_months") or []):
+                factor = 0.8
+            else:
+                factor = 1
+
+            forecast_rows.append({
+                "Product": product_name,
+                "Forecast Month": f"{fy}-{fm:02d}",
+                "Forecast Issue": round(last_issue * factor, 2)
+            })
+
+            fm += 1
+            if fm == 13:
+                fm = 1
+                fy += 1
+
+    if forecast_rows:
+        forecast_df = pd.DataFrame(forecast_rows)
+
+        st.dataframe(
+            forecast_df.pivot_table(
+                index="Product",
+                columns="Forecast Month",
+                values="Forecast Issue",
+                fill_value=0
+            ),
+            use_container_width=True
+        )
+    else:
+        st.info("Forecast not available for selected filters")
 
     # ==================================================
     # KPI — MONTH ON MONTH
