@@ -1005,42 +1005,44 @@ if st.button("Save Changes"):
 st.markdown("### 🗑 Delete Stockist")
 
 if st.button("Delete Stockist"):
-     used_in_statements = supabase.table("statements") \
-         .select("id") \
-         .eq("stockist_id", stockist["id"]) \
-         .limit(1) \
-         .execute().data
+    used_in_statements = supabase.table("statements") \
+        .select("id") \
+        .eq("stockist_id", stockist["id"]) \
+        .limit(1) \
+        .execute().data
 
-     used_in_users = supabase.table("user_stockists") \
+    used_in_users = supabase.table("user_stockists") \
         .select("user_id") \
         .eq("stockist_id", stockist["id"]) \
-         .limit(1) \
-         .execute().data
+        .limit(1) \
+        .execute().data
 
-
-     if used_in_statements:
-         st.error("❌ Stockist is used in statements — cannot delete")
+    if used_in_statements:
+        st.error("❌ Stockist is used in statements — cannot delete")
 
     elif used_in_users:
-         st.error("❌ Stockist is assigned to users — unassign users first")
+        st.error("❌ Stockist is assigned to users — unassign users first")
 
-     else:
-         supabase.table("stockists") \
-               .delete() \
-               .eq("id", stockist["id"]) \
-               .execute()
+    else:
+        supabase.table("stockists") \
+            .delete() \
+            .eq("id", stockist["id"]) \
+            .execute()
 
-         supabase.table("audit_logs").insert({
-               "action": "delete_stockist",
-                "target_type": "stockist",
-                "target_id": stockist["id"],
-                "performed_by": user_id,
-                "metadata": {"name": stockist["name"]}
-         }).execute()
+        supabase.table("audit_logs").insert({
+            "action": "delete_stockist",
+            "target_type": "stockist",
+            "target_id": stockist["id"],
+            "performed_by": user_id,
+            "metadata": {
+                "name": stockist["name"]
+            }
+        }).execute()
 
-          st.cache_data.clear()
-          st.success("✅ Stockist deleted successfully")
-          st.rerun()
+        st.cache_data.clear()
+        st.success("✅ Stockist deleted successfully")
+        st.rerun()
+
 
     # --------------------------------------------------
     # PRODUCTS CRUD
