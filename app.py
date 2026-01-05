@@ -556,93 +556,94 @@ if role == "admin":
     )
 
     # --------------------------------------------------
-# STATEMENTS
-# --------------------------------------------------
-if section == "Statements":
+    # STATEMENTS
+    # --------------------------------------------------
+    if section == "Statements":
 
-    st.subheader("📄 Statement Control Panel")
+        st.subheader("📄 Statement Control Panel")
 
-    rows = safe_exec(
-        admin_supabase.table("statements")
-        .select("""
-            id, year, month, status, locked,
-            editing_by, updated_at,
-            stockists(name),
-            users(username)
-        """)
-        .order("updated_at", desc=True)
-    )
-
-    if not rows:
-        st.info("No statements available")
-        st.stop()
-
-    stmt = st.selectbox(
-        "Select Statement",
-        rows,
-        format_func=lambda x: (
-            f"{x['stockists']['name']} | "
-            f"{x['month']}/{x['year']} | "
-            f"{x['users']['username']} | "
-            f"{'LOCKED' if x['locked'] else x['status'].upper()}"
+        rows = safe_exec(
+            admin_supabase.table("statements")
+            .select("""
+                id, year, month, status, locked,
+                editing_by, updated_at,
+                stockists(name),
+                users(username)
+            """)
+            .order("updated_at", desc=True)
         )
-    )
 
-    col1, col2, col3, col4 = st.columns(4)
+        if not rows:
+            st.info("No statements available")
+            st.stop()
 
-    with col1:
-        if st.button("👁 View"):
-            st.session_state.statement_id = stmt["id"]
-            st.session_state.engine_stage = "view"
-            st.rerun()
+        stmt = st.selectbox(
+            "Select Statement",
+            rows,
+            format_func=lambda x: (
+                f"{x['stockists']['name']} | "
+                f"{x['month']}/{x['year']} | "
+                f"{x['users']['username']} | "
+                f"{'LOCKED' if x['locked'] else x['status'].upper()}"
+            )
+        )
 
-    with col2:
-        if stmt["status"] == "final" and not stmt["locked"]:
-            if st.button("🔒 Lock"):
-                safe_exec(
-                    admin_supabase.table("statements")
-                    .update({
-                        "locked": True,
-                        "status": "locked",
-                        "locked_at": datetime.utcnow().isoformat(),
-                        "locked_by": user_id
-                    })
-                    .eq("id", stmt["id"])
-                )
-                st.success("Statement locked")
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            if st.button("👁 View"):
+                st.session_state.statement_id = stmt["id"]
+                st.session_state.engine_stage = "view"
                 st.rerun()
 
-    with col3:
-        if stmt["locked"]:
-            if st.button("🔓 Unlock"):
+        with col2:
+            if stmt["status"] == "final" and not stmt["locked"]:
+                if st.button("🔒 Lock"):
+                    safe_exec(
+                        admin_supabase.table("statements")
+                        .update({
+                            "locked": True,
+                            "status": "locked",
+                            "locked_at": datetime.utcnow().isoformat(),
+                            "locked_by": user_id
+                        })
+                        .eq("id", stmt["id"])
+                    )
+                    st.success("Statement locked")
+                    st.rerun()
+
+        with col3:
+            if stmt["locked"]:
+                if st.button("🔓 Unlock"):
+                    safe_exec(
+                        admin_supabase.table("statements")
+                        .update({
+                            "locked": False,
+                            "status": "final",
+                            "locked_at": None,
+                            "locked_by": None
+                        })
+                        .eq("id", stmt["id"])
+                    )
+                    st.success("Statement unlocked")
+                    st.rerun()
+
+        with col4:
+            if st.button("🗑 Delete"):
+                safe_exec(
+                    admin_supabase.table("statement_products")
+                    .delete()
+                    .eq("statement_id", stmt["id"])
+                )
                 safe_exec(
                     admin_supabase.table("statements")
-                    .update({
-                        "locked": False,
-                        "status": "final",
-                        "locked_at": None,
-                        "locked_by": None
-                    })
+                    .delete()
                     .eq("id", stmt["id"])
                 )
-                st.success("Statement unlocked")
+                st.success("Statement permanently deleted")
                 st.rerun()
 
-    with col4:
-        if st.button("🗑 Delete"):
-            safe_exec(
-                admin_supabase.table("statement_products")
-                .delete()
-                .eq("statement_id", stmt["id"])
-            )
-            safe_exec(
-                admin_supabase.table("statements")
-                .delete()
-                .eq("id", stmt["id"])
-            )
-            st.success("Statement permanently deleted")
-            st.rerun()
-
+    
 
     # --------------------------------------------------
     # USERS (EDIT + ASSIGN STOCKISTS)
