@@ -913,7 +913,7 @@ if role == "admin":
 
         st.divider()
 
-        # ===============================
+              # ===============================
         # ✏️ EDIT STOCKIST
         # ===============================
         stockists = load_stockists_cached()
@@ -928,7 +928,7 @@ if role == "admin":
             format_func=lambda x: x["name"]
         )
 
-            st.divider()
+        st.divider()
         st.markdown("### ✏️ Edit Stockist")
 
         edit_name = st.text_input(
@@ -941,11 +941,11 @@ if role == "admin":
             value=stockist.get("location") or ""
         )
 
-        
         edit_phone = st.text_input(
             "Edit Phone",
             value=stockist.get("phone") or "9433245464"
         )
+
         edit_payment_terms = st.number_input(
             "Edit Payment Terms (Days)",
             min_value=0,
@@ -982,7 +982,7 @@ if role == "admin":
             st.success("Stockist updated successfully")
             st.rerun()
 
-                # ===============================
+        # ===============================
         # 🗑 DELETE STOCKIST
         # ===============================
         st.markdown("### 🗑 Delete Stockist")
