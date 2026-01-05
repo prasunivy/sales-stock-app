@@ -669,25 +669,25 @@ if role == "admin":
     st.title("Admin Dashboard")
 
     if "admin_section" not in st.session_state:
-    st.session_state["admin_section"] = "Statements"
+        st.session_state["admin_section"] = "Statements"
 
-    section = st.session_state["admin_section"]
+        section = st.session_state["admin_section"]
 
-    st.radio(
-        "Admin Section",
-        [
-            "Statements",
-            "Users",
-            "Create User",
-            "Stockists",
-            "Products",
-            "Reset User Password",
-            "Audit Logs",
-            "Lock / Unlock Statements",
-            "Analytics"
-        ],
-        key="admin_section"
-    )
+        st.radio(
+            "Admin Section",
+            [
+                "Statements",
+                "Users",
+                "Create User",
+                "Stockists",
+                "Products",
+                "Reset User Password",
+                "Audit Logs",
+                "Lock / Unlock Statements",
+                "Analytics"
+            ],
+            key="admin_section"
+        )
 
 
 
