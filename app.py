@@ -1248,6 +1248,110 @@ if st.session_state.get("engine_stage") == "reports":
         )
 
         st.dataframe(matrix_user_sales, use_container_width=True)
+    # ==================================================
+    # 📈 TREND CHARTS — LAST 6 MONTHS
+    # ==================================================
+    st.subheader("📈 Trend Charts — Last 6 Months")
+
+    # Prepare last 6 months list
+    today = date.today()
+    last_6 = []
+    y, m = today.year, today.month
+
+    for _ in range(6):
+        last_6.append(f"{y}-{m:02d}")
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+
+    df_trend = df[df["Year-Month"].isin(last_6)]
+
+    if df_trend.empty:
+        st.info("No data available for last 6 months")
+    else:
+        products = sorted(df_trend["Product"].unique())
+
+        selected_product = st.selectbox(
+            "Select Product for Trend",
+            products
+        )
+
+        df_p = df_trend[df_trend["Product"] == selected_product] \
+            .sort_values("Year-Month")
+
+        chart_df = df_p.set_index("Year-Month")[["Issue", "Closing"]]
+
+        st.line_chart(chart_df)
+
+    # ==================================================
+    # 🔮 FORECAST — NEXT 3 MONTHS (SEASONAL)
+    # ==================================================
+    st.subheader("🔮 Forecast — Next 3 Months (Seasonal Logic)")
+
+    products_master = supabase.table("products") \
+        .select(
+            "id, name, peak_months, high_months, low_months, lowest_months"
+        ) \
+        .execute().data
+
+    product_map = {p["name"]: p for p in products_master}
+
+    forecast_rows = []
+
+    for product in products_master:
+
+        product_name = product["name"]
+        df_p = df[df["Product"] == product_name]
+
+        if df_p.empty:
+            continue
+
+        last_issue = df_p.sort_values("Year-Month").iloc[-1]["Issue"]
+
+        # Start forecasting from next month
+        fy, fm = today.year, today.month + 1
+        if fm == 13:
+            fm = 1
+            fy += 1
+
+        for i in range(3):
+            month_no = fm
+
+            if month_no in (product["peak_months"] or []):
+                factor = 2
+            elif month_no in (product["high_months"] or []):
+                factor = 1.5
+            elif month_no in (product["lowest_months"] or []):
+                factor = 0.8
+            else:
+                factor = 1
+
+            forecast_rows.append({
+                "Product": product_name,
+                "Forecast Month": f"{fy}-{fm:02d}",
+                "Forecast Issue": round(last_issue * factor, 2)
+            })
+
+            fm += 1
+            if fm == 13:
+                fm = 1
+                fy += 1
+
+    if forecast_rows:
+        forecast_df = pd.DataFrame(forecast_rows)
+
+        matrix_forecast = forecast_df.pivot_table(
+            index="Product",
+            columns="Forecast Month",
+            values="Forecast Issue",
+            aggfunc="sum",
+            fill_value=0
+        )
+
+        st.dataframe(matrix_forecast, use_container_width=True)
+    else:
+        st.info("Forecast not available")
 
 `
 
