@@ -922,88 +922,84 @@ if role == "admin":
 
         st.divider()
 
-              # ===============================
-        # ✏️ EDIT STOCKIST
-        # ===============================
-        stockists = load_stockists_cached()
+# ===============================
+# ✏️ EDIT STOCKIST
+# ===============================
+stockists = load_stockists_cached()
 
-        if not stockists:
-            st.info("No stockists available")
-            st.stop()
+if not stockists:
+    st.info("No stockists available")
+    st.stop()
 
-        stockist = st.selectbox(
-            "Select Stockist",
-            stockists,
-            format_func=lambda x: x["name"]
-        )
+stockist = st.selectbox(
+    "Select Stockist",
+    stockists,
+    format_func=lambda x: x["name"]
+)
 
-        st.divider()
-        st.markdown("### ✏️ Edit Stockist")
+st.divider()
+st.markdown("### ✏️ Edit Stockist")
 
-        edit_name = st.text_input(
-            "Edit Name",
-            value=stockist["name"]
-        )
+edit_name = st.text_input(
+    "Edit Name",
+    value=stockist["name"]
+)
 
-        edit_location = st.text_input(
-            "Edit Location",
-            value=stockist.get("location") or ""
-        )
+edit_location = st.text_input(
+    "Edit Location",
+    value=stockist.get("location") or ""
+)
 
-        edit_phone = st.text_input(
-            "Edit Phone",
-            value=stockist.get("phone") or "9433245464"
-        )
+edit_phone = st.text_input(
+    "Edit Phone",
+    value=stockist.get("phone") or "9433245464"
+)
 
-       edit_payment_terms = st.number_input(
-            "Edit Payment Terms (Days)",
-            min_value=0,
-            step=1,
-            value=stockist.get("payment_terms") or 0
-        )
+edit_payment_terms = st.number_input(
+    "Edit Payment Terms (Days)",
+    min_value=0,
+    step=1,
+    value=stockist.get("payment_terms") or 0
+)
 
-        edit_authorization_status = st.radio(
-            "Authorization Status",
-            ["AUTHORIZED", "NONAUTHORIZED"],
-            index=0 if stockist.get("authorization_status", "AUTHORIZED") == "AUTHORIZED" else 1,
-            horizontal=True
-        )
- 
+edit_authorization_status = st.radio(
+    "Authorization Status",
+    ["AUTHORIZED", "NONAUTHORIZED"],
+    index=0 if stockist.get("authorization_status", "AUTHORIZED") == "AUTHORIZED" else 1,
+    horizontal=True
+)
 
-        if st.button("Save Changes"):
-            if not edit_name.strip():
-                st.error("Stockist name cannot be empty")
-                st.stop()
+if st.button("Save Changes"):
+    if not edit_name.strip():
+        st.error("Stockist name cannot be empty")
+        st.stop()
 
-           supabase.table("stockists").update({
-            "name": edit_name.strip(),
-            "location": edit_location.strip() or None,
-            "phone": edit_phone.strip() or "9433245464",
-            "payment_terms": edit_payment_terms or None,
+    supabase.table("stockists").update({
+        "name": edit_name.strip(),
+        "location": edit_location.strip() or None,
+        "phone": edit_phone.strip() or "9433245464",
+        "payment_terms": edit_payment_terms or None,
+        "authorization_status": edit_authorization_status
+    }).eq("id", stockist["id"]).execute()
+
+    supabase.table("audit_logs").insert({
+        "action": "update_stockist",
+        "target_type": "stockist",
+        "target_id": stockist["id"],
+        "performed_by": user_id,
+        "metadata": {
+            "name": edit_name,
+            "location": edit_location,
+            "phone": edit_phone,
+            "payment_terms": edit_payment_terms,
             "authorization_status": edit_authorization_status
-            }).eq("id", stockist["id"]).execute()
+        }
+    }).execute()
 
-
-            supabase.table("audit_logs").insert({
-                "action": "update_stockist",
-                "target_type": "stockist",
-                "target_id": stockist["id"],
-                "performed_by": user_id,
-                "metadata": {
-                    "name": edit_name,
-                    "location": edit_location,
-                    "phone": edit_phone,
-                    "payment_terms": edit_payment_terms
-                }
-            }).execute()
-
-            st.cache_data.clear()   # 🔄 Clear cached stockists
-            st.success("Stockist updated successfully")
-            st.rerun()
-
-        # ===============================
-        # 🗑 DELETE STOCKIST
-        # ===============================
+    st.cache_data.clear()
+    st.success("Stockist updated successfully")
+    st.rerun()
+# =============================== # 🗑 DELETE STOCKIST # ===============================
         st.markdown("### 🗑 Delete Stockist")
 
         if st.button("Delete Stockist"):
