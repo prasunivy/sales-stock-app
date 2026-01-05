@@ -1352,6 +1352,111 @@ if st.session_state.get("engine_stage") == "reports":
         st.dataframe(matrix_forecast, use_container_width=True)
     else:
         st.info("Forecast not available")
+    # ==================================================
+    # 📊 KPI CARDS — MoM CHANGE & GROWTH %
+    # ==================================================
+    st.subheader("📊 KPI — Month-on-Month Performance")
+
+    # Aggregate issue by Year-Month (respect filters)
+    kpi_df = (
+        df.groupby("Year-Month", as_index=False)["Issue"]
+        .sum()
+        .sort_values("Year-Month")
+    )
+
+# Take only last 2 months available in filtered data
+    kpi_df = kpi_df.tail(2)
+
+
+    if len(kpi_df) < 2:
+        st.info("Not enough data to calculate MoM growth")
+    else:
+        latest = kpi_df.iloc[-1]
+        previous = kpi_df.iloc[-2]
+
+        mom_change = latest["Issue"] - previous["Issue"]
+
+        if previous["Issue"] != 0:
+            growth_pct = (mom_change / previous["Issue"]) * 100
+        else:
+            growth_pct = 0
+
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+            st.metric(
+                label="📦 Current Month Issue",
+                value=round(latest["Issue"], 2)
+            )
+
+        with c2:
+            st.metric(
+                label="🔄 MoM Change",
+                value=round(mom_change, 2),
+                delta=round(mom_change, 2)
+            )
+
+        with c3:
+            st.metric(
+                label="📈 Growth %",
+                value=f"{round(growth_pct, 2)}%",
+                delta=f"{round(growth_pct, 2)}%"
+            )
+    # ==================================================
+    # 📊 PRODUCT-LEVEL KPI CARDS
+    # ==================================================
+    st.subheader("📊 Product-level KPI Cards")
+
+    products = sorted(df["Product"].unique())
+
+    selected_product = st.selectbox(
+        "Select Product",
+        products
+    )
+
+    df_p = df[df["Product"] == selected_product] \
+        .sort_values("Year-Month")
+
+    if len(df_p) < 2:
+        st.info("Not enough data for product KPI")
+    else:
+        latest = df_p.iloc[-1]
+        previous = df_p.iloc[-2]
+
+        mom_change = latest["Issue"] - previous["Issue"]
+
+        if previous["Issue"] != 0:
+            growth_pct = (mom_change / previous["Issue"]) * 100
+        else:
+            growth_pct = 0
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        with c1:
+            st.metric(
+                "📦 Latest Issue",
+                round(latest["Issue"], 2)
+            )
+
+        with c2:
+            st.metric(
+                "⏮ Previous Issue",
+                round(previous["Issue"], 2)
+            )
+
+        with c3:
+            st.metric(
+                "🔄 MoM Change",
+                round(mom_change, 2),
+                delta=round(mom_change, 2)
+            )
+
+        with c4:
+            st.metric(
+                "📈 Growth %",
+                f"{round(growth_pct, 2)}%",
+                delta=f"{round(growth_pct, 2)}%"
+            )
 
 `
 
