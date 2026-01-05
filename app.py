@@ -882,6 +882,13 @@ if role == "admin":
             step=1
         )
 
+        authorization_status = st.radio(
+            "Authorization Status",
+            ["AUTHORIZED", "NONAUTHORIZED"],
+            horizontal=True
+        )
+
+
         if st.button("Add Stockist"):
             if not name.strip():
                 st.error("Stockist name is required")
@@ -892,8 +899,10 @@ if role == "admin":
                 "location": location.strip() or None,
                 "phone": phone.strip() or "9433245464",
                 "payment_terms": payment_terms or None,
+                "authorization_status": authorization_status,
                 "created_by": user_id
             }).execute()
+
 
             supabase.table("audit_logs").insert({
                 "action": "create_stockist",
@@ -946,24 +955,34 @@ if role == "admin":
             value=stockist.get("phone") or "9433245464"
         )
 
-        edit_payment_terms = st.number_input(
+       edit_payment_terms = st.number_input(
             "Edit Payment Terms (Days)",
             min_value=0,
             step=1,
             value=stockist.get("payment_terms") or 0
         )
 
+        edit_authorization_status = st.radio(
+            "Authorization Status",
+            ["AUTHORIZED", "NONAUTHORIZED"],
+            index=0 if stockist.get("authorization_status", "AUTHORIZED") == "AUTHORIZED" else 1,
+            horizontal=True
+        )
+ 
+
         if st.button("Save Changes"):
             if not edit_name.strip():
                 st.error("Stockist name cannot be empty")
                 st.stop()
 
-            supabase.table("stockists").update({
-                "name": edit_name.strip(),
-                "location": edit_location.strip() or None,
-                "phone": edit_phone.strip() or "9433245464",
-                "payment_terms": edit_payment_terms or None
+           supabase.table("stockists").update({
+            "name": edit_name.strip(),
+            "location": edit_location.strip() or None,
+            "phone": edit_phone.strip() or "9433245464",
+            "payment_terms": edit_payment_terms or None,
+            "authorization_status": edit_authorization_status
             }).eq("id", stockist["id"]).execute()
+
 
             supabase.table("audit_logs").insert({
                 "action": "update_stockist",
