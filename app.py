@@ -668,20 +668,26 @@ if role == "admin":
 
     st.title("Admin Dashboard")
 
+    if "admin_section" not in st.session_state:
+    st.session_state["admin_section"] = "Statements"
+
     section = st.radio(
         "Admin Section",
-        [
-            "Statements",
-            "Users",
-            "Create User",
-            "Stockists",
-            "Products",
-            "Reset User Password",
-            "Audit Logs",
-            "Lock / Unlock Statements",
-            "Analytics"
-        ]
-    )
+    [
+        "Statements",
+        "Users",
+        "Create User",
+        "Stockists",
+        "Products",
+        "Reset User Password",
+        "Audit Logs",
+        "Lock / Unlock Statements",
+        "Analytics"
+    ],
+    key="admin_section"
+)
+
+
 
     # --------------------------------------------------
     # STATEMENTS
@@ -916,9 +922,13 @@ if role == "admin":
                 }
             }).execute()
 
-            st.cache_data.clear()   # 🔄 Clear cached stockists
+            st.cache_data.clear()
             st.success("Stockist added successfully")
+
+            st.session_state["admin_section"] = "Statements"
+
             st.rerun()
+
 
         st.divider()
 
@@ -997,10 +1007,14 @@ if st.button("Save Changes"):
             "authorization_status": edit_authorization_status
         }
     }).execute()
-
     st.cache_data.clear()
     st.success("Stockist updated successfully")
+
+    st.session_state["admin_section"] = "Statements"
+
     st.rerun()
+
+    
 # ===============================
 # 🗑 DELETE STOCKIST
 # ===============================
@@ -1043,7 +1057,11 @@ if st.button("Delete Stockist"):
 
         st.cache_data.clear()
         st.success("✅ Stockist deleted successfully")
+
+        st.session_state["admin_section"] = "Statements"
+
         st.rerun()
+
 
 
     # --------------------------------------------------
