@@ -928,7 +928,7 @@ if role == "admin":
             format_func=lambda x: x["name"]
         )
 
-                  st.divider()
+            st.divider()
         st.markdown("### ✏️ Edit Stockist")
 
         edit_name = st.text_input(
