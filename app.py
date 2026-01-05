@@ -225,7 +225,12 @@ if role == "user" and not st.session_state.statement_id:
         if draft["locked"]:
             st.warning("Draft exists but is locked by admin")
         else:
-            st.info("📝 You have an unfinished draft. Resume data entry.")
+            st.info(
+                f"📝 You have an unfinished draft for {month}/{year}. "
+                f"Progress saved till product #{draft['current_product_index'] + 1}. "
+                "You can safely resume from where you left off."
+            )
+
 
             if st.button("▶ Resume Draft"):
                 # 🚫 Block if another device editing
@@ -328,6 +333,19 @@ if (
     product = products[idx]
 
     st.subheader(f"Product {idx + 1} of {len(products)} — {product['name']}")
+    # 💾 Last saved banner (statement-level)
+    stmt_meta = safe_exec(
+        admin_supabase.table("statements")
+        .select("last_saved_at")
+        .eq("id", sid)
+        .limit(1)
+    )
+
+    if stmt_meta and stmt_meta[0]["last_saved_at"]:
+        st.caption(f"💾 Last saved at {stmt_meta[0]['last_saved_at']}")
+    else:
+        st.caption("💾 Not saved yet")
+
     # 💾 Auto-save status
     last_saved = row.get("updated_at") if row else None
 
