@@ -556,9 +556,9 @@ if role == "admin":
     )
 
     # --------------------------------------------------
-    # STATEMENTS
-    # --------------------------------------------------
-    if section == "Statements":
+# STATEMENTS
+# --------------------------------------------------
+if section == "Statements":
 
     st.subheader("📄 Statement Control Panel")
 
