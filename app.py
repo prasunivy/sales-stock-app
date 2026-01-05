@@ -349,10 +349,20 @@ if (
     # 💾 Auto-save status
     last_saved = row.get("updated_at") if row else None
 
-if last_saved:
-    st.caption(f"Last saved at {last_saved}")
+# 💾 Last saved banner (statement-level)
+stmt_meta = safe_exec(
+    admin_supabase.table("statements")
+    .select("last_saved_at")
+    .eq("id", sid)
+    .limit(1)
+)
+
+if stmt_meta and stmt_meta[0]["last_saved_at"]:
+    st.caption(f"💾 Last saved at {stmt_meta[0]['last_saved_at']}")
 else:
-    st.caption("Not saved yet")
+    st.caption("💾 Not saved yet")
+
+
 
 
     # Fetch existing draft row (if any)
