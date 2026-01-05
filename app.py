@@ -505,24 +505,20 @@ if (
 
     if st.button("✅ Final Submit Statement", type="primary"):
 
-        # 1️⃣ Mark statement as final
+        # 1️⃣ Mark statement as final + release edit lock
         safe_exec(
-    admin_supabase.table("statements")
-    .update(
-        {
-            "status": "final",
-            "final_submitted_at": datetime.utcnow().isoformat(),
-            "editing_by": None,
-            "editing_at": None,
-            "updated_at": datetime.utcnow().isoformat()
-        }
-    )
-    .eq("id", st.session_state.statement_id)
-)
-
-    st.session_state.clear()
-    st.rerun()
-
+            admin_supabase.table("statements")
+            .update(
+                {
+                    "status": "final",
+                    "final_submitted_at": datetime.utcnow().isoformat(),
+                    "editing_by": None,
+                    "editing_at": None,
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            )
+            .eq("id", st.session_state.statement_id)
+        )
 
         # 2️⃣ Generate monthly summary (FINAL statements only)
         safe_exec(
