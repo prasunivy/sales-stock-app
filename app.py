@@ -161,8 +161,22 @@ if not st.session_state.auth_user:
 # ======================================================
 st.sidebar.title("Navigation")
 if st.sidebar.button("Logout"):
+
+    if st.session_state.get("statement_id"):
+        safe_exec(
+            admin_supabase.table("statements")
+            .update({
+                "editing_by": None,
+                "editing_at": None,
+                "updated_at": datetime.utcnow().isoformat()
+            })
+            .eq("id", st.session_state.statement_id)
+            .eq("editing_by", user_id)
+        )
+
     st.session_state.clear()
     st.rerun()
+
 
 role = st.session_state.role
 user_id = st.session_state.auth_user.id
@@ -192,35 +206,56 @@ if role == "user" and not st.session_state.statement_id:
         "Month",
         list(range(1, today.month + 1)) if year == today.year else list(range(1, 13))
     )
+if st.button("➕ Create / Resume"):
 
-    if st.button("➕ Create / Resume"):
-        res = admin_supabase.table("statements").upsert(
-            {
-                "user_id": user_id,
-                "stockist_id": selected["stockist_id"],
-                "year": year,
-                "month": month,
-                "status": "draft",
-                "current_product_index": 0
-            },
-            on_conflict="stockist_id,year,month",
-            returning="representation"
-        ).execute()
+    res = admin_supabase.table("statements").upsert(
+        {
+            "user_id": user_id,
+            "stockist_id": selected["stockist_id"],
+            "year": year,
+            "month": month,
+            "status": "draft",
+            "engine_stage": "edit",
+            "current_product_index": 0,
+            "updated_at": datetime.utcnow().isoformat()
+        },
+        on_conflict="stockist_id,year,month",
+        returning="representation"
+    ).execute()
 
-        stmt = res.data[0]
+    stmt = res.data[0]
 
-        if stmt["status"] != "draft":
-            st.error("Statement already locked or finalized")
-            st.stop()
+    # 🚫 Hard lock by admin
+    if stmt["locked"] or stmt["status"] == "locked":
+        st.error("Statement already locked by admin")
+        st.stop()
 
-        st.session_state.statement_id = stmt["id"]
-        st.session_state.product_index = stmt["current_product_index"]
-        st.session_state.statement_year = year
-        st.session_state.statement_month = month
-        st.session_state.selected_stockist_id = selected["stockist_id"]
-        st.session_state.engine_stage = "edit"
+    # 🚫 Single active editor rule
+    if stmt["editing_by"] and stmt["editing_by"] != user_id:
+        st.error("Statement currently open on another device")
+        st.stop()
 
-        st.rerun()
+    # ✅ Acquire edit lock
+    safe_exec(
+        admin_supabase.table("statements")
+        .update({
+            "editing_by": user_id,
+            "editing_at": datetime.utcnow().isoformat(),
+            "last_saved_at": datetime.utcnow().isoformat()
+        })
+        .eq("id", stmt["id"])
+    )
+
+    st.session_state.statement_id = stmt["id"]
+    st.session_state.product_index = stmt["current_product_index"] or 0
+    st.session_state.statement_year = year
+    st.session_state.statement_month = month
+    st.session_state.selected_stockist_id = selected["stockist_id"]
+    st.session_state.engine_stage = "edit"
+
+    st.rerun()
+
+    
 
 # ======================================================
 # PRODUCT ENGINE
@@ -472,15 +507,22 @@ if (
 
         # 1️⃣ Mark statement as final
         safe_exec(
-            admin_supabase.table("statements")
-            .update(
-                {
-                    "status": "final",
-                    "final_submitted_at": datetime.utcnow().isoformat()
-                }
-            )
-            .eq("id", st.session_state.statement_id)
-        )
+    admin_supabase.table("statements")
+    .update(
+        {
+            "status": "final",
+            "final_submitted_at": datetime.utcnow().isoformat(),
+            "editing_by": None,
+            "editing_at": None,
+            "updated_at": datetime.utcnow().isoformat()
+        }
+    )
+    .eq("id", st.session_state.statement_id)
+)
+
+    st.session_state.clear()
+    st.rerun()
+
 
         # 2️⃣ Generate monthly summary (FINAL statements only)
         safe_exec(
@@ -521,12 +563,90 @@ if role == "admin":
     # STATEMENTS
     # --------------------------------------------------
     if section == "Statements":
-        st.dataframe(
-            pd.DataFrame(
-                supabase.table("statements").select("*").execute().data
-            ),
-            use_container_width=True
+
+    st.subheader("📄 Statement Control Panel")
+
+    rows = safe_exec(
+        admin_supabase.table("statements")
+        .select("""
+            id, year, month, status, locked,
+            editing_by, updated_at,
+            stockists(name),
+            users(username)
+        """)
+        .order("updated_at", desc=True)
+    )
+
+    if not rows:
+        st.info("No statements available")
+        st.stop()
+
+    stmt = st.selectbox(
+        "Select Statement",
+        rows,
+        format_func=lambda x: (
+            f"{x['stockists']['name']} | "
+            f"{x['month']}/{x['year']} | "
+            f"{x['users']['username']} | "
+            f"{'LOCKED' if x['locked'] else x['status'].upper()}"
         )
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        if st.button("👁 View"):
+            st.session_state.statement_id = stmt["id"]
+            st.session_state.engine_stage = "view"
+            st.rerun()
+
+    with col2:
+        if stmt["status"] == "final" and not stmt["locked"]:
+            if st.button("🔒 Lock"):
+                safe_exec(
+                    admin_supabase.table("statements")
+                    .update({
+                        "locked": True,
+                        "status": "locked",
+                        "locked_at": datetime.utcnow().isoformat(),
+                        "locked_by": user_id
+                    })
+                    .eq("id", stmt["id"])
+                )
+                st.success("Statement locked")
+                st.rerun()
+
+    with col3:
+        if stmt["locked"]:
+            if st.button("🔓 Unlock"):
+                safe_exec(
+                    admin_supabase.table("statements")
+                    .update({
+                        "locked": False,
+                        "status": "final",
+                        "locked_at": None,
+                        "locked_by": None
+                    })
+                    .eq("id", stmt["id"])
+                )
+                st.success("Statement unlocked")
+                st.rerun()
+
+    with col4:
+        if st.button("🗑 Delete"):
+            safe_exec(
+                admin_supabase.table("statement_products")
+                .delete()
+                .eq("statement_id", stmt["id"])
+            )
+            safe_exec(
+                admin_supabase.table("statements")
+                .delete()
+                .eq("id", stmt["id"])
+            )
+            st.success("Statement permanently deleted")
+            st.rerun()
+
 
     # --------------------------------------------------
     # USERS (EDIT + ASSIGN STOCKISTS)
