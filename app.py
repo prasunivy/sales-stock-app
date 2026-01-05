@@ -966,8 +966,10 @@ edit_authorization_status = st.radio(
     "Authorization Status",
     ["AUTHORIZED", "NONAUTHORIZED"],
     index=0 if stockist.get("authorization_status", "AUTHORIZED") == "AUTHORIZED" else 1,
-    horizontal=True
+    horizontal=True,
+    key=f"edit_auth_status_{stockist['id']}"
 )
+
 
 if st.button("Save Changes"):
     if not edit_name.strip():
