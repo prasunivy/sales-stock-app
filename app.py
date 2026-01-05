@@ -995,10 +995,11 @@ if role == "admin":
                 .execute().data
 
             used_in_users = supabase.table("user_stockists") \
-                .select("id") \
+                .select("user_id") \
                 .eq("stockist_id", stockist["id"]) \
                 .limit(1) \
                 .execute().data
+
 
             if used_in_statements:
                 st.error("❌ Stockist is used in statements — cannot delete")
