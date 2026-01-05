@@ -1049,21 +1049,21 @@ if role == "admin":
 
         if st.button("Delete Product"):
             used = supabase.table("statement_products") \
-            .select("id") \
-            .eq("product_id", product["id"]) \
-            .limit(1) \
-            .execute().data
+                .select("id") \
+                .eq("product_id", product["id"]) \
+                .limit(1) \
+                .execute().data
 
             if used:
-            st.error("Product used in statements")
+                st.error("Product used in statements")
             else:
-            supabase.table("products").delete() \
-                .eq("id", product["id"]) \
-                .execute()
+                supabase.table("products").delete() \
+                    .eq("id", product["id"]) \
+                    .execute()
 
-            st.cache_data.clear()   # 🔄 CLEAR CACHED PRODUCTS
-            st.success("Product deleted")
-            st.rerun()
+                st.cache_data.clear()   # 🔄 CLEAR CACHED PRODUCTS
+                st.success("Product deleted")
+                st.rerun()
 
     # --------------------------------------------------
     # RESET PASSWORD
