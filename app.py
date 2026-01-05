@@ -1037,7 +1037,7 @@ if role == "admin":
             st.dataframe(df, use_container_width=True)
         else:
             st.warning("No data for selected period")
-    # ======================================================
+# ======================================================
 # REPORTS & MATRICES
 # ======================================================
 if st.session_state.get("engine_stage") == "reports":
@@ -1153,46 +1153,46 @@ if st.session_state.get("engine_stage") == "reports":
     # MATRIX 1 — PRODUCT-WISE SALES (ISSUE)
     # ==================================================
     st.subheader("📦 Matrix 1 — Product-wise Sales (Issue)")
-
-    matrix_issue = df.pivot_table(
-        index="Product",
-        columns="Year-Month",
-        values="Issue",
-        aggfunc="sum",
-        fill_value=0
+    st.dataframe(
+        df.pivot_table(
+            index="Product",
+            columns="Year-Month",
+            values="Issue",
+            aggfunc="sum",
+            fill_value=0
+        ),
+        use_container_width=True
     )
-
-    st.dataframe(matrix_issue, use_container_width=True)
 
     # ==================================================
     # MATRIX 2 — PRODUCT-WISE ORDER
     # ==================================================
     st.subheader("🧾 Matrix 2 — Product-wise Order")
-
-    matrix_order = df.pivot_table(
-        index="Product",
-        columns="Year-Month",
-        values="Order",
-        aggfunc="sum",
-        fill_value=0
+    st.dataframe(
+        df.pivot_table(
+            index="Product",
+            columns="Year-Month",
+            values="Order",
+            aggfunc="sum",
+            fill_value=0
+        ),
+        use_container_width=True
     )
-
-    st.dataframe(matrix_order, use_container_width=True)
 
     # ==================================================
     # MATRIX 3 — PRODUCT-WISE CLOSING
     # ==================================================
     st.subheader("📊 Matrix 3 — Product-wise Closing")
-
-    matrix_closing = df.pivot_table(
-        index="Product",
-        columns="Year-Month",
-        values="Closing",
-        aggfunc="sum",
-        fill_value=0
+    st.dataframe(
+        df.pivot_table(
+            index="Product",
+            columns="Year-Month",
+            values="Closing",
+            aggfunc="sum",
+            fill_value=0
+        ),
+        use_container_width=True
     )
-
-    st.dataframe(matrix_closing, use_container_width=True)
 
     # ==================================================
     # MATRIX 4 — ISSUE + CLOSING (COMBINED)
@@ -1206,54 +1206,22 @@ if st.session_state.get("engine_stage") == "reports":
         value_name="Value"
     )
 
-    matrix_issue_closing = df_long.pivot_table(
-        index="Product",
-        columns=["Year-Month", "Metric"],
-        values="Value",
-        aggfunc="sum",
-        fill_value=0
-    )
-
-    st.dataframe(matrix_issue_closing, use_container_width=True)
-
-    # ==================================================
-    # MATRIX 5 — ADMIN ONLY: PRODUCT-WISE SALES BY USER
-    # ==================================================
-    if role == "admin":
-
-        st.subheader("👤 Matrix 5 — Product-wise Sales by User")
-
-        user_map = {
-            u["id"]: u["username"]
-            for u in supabase.table("users")
-            .select("id, username")
-            .execute().data
-        }
-
-        df_admin = pd.DataFrame([
-            {
-                "Product": r["products"]["name"],
-                "User": user_map.get(r.get("user_id"), "Unknown"),
-                "Issue": r["total_issue"]
-            }
-            for r in summary_rows
-        ])
-
-        matrix_user_sales = df_admin.pivot_table(
+    st.dataframe(
+        df_long.pivot_table(
             index="Product",
-            columns="User",
-            values="Issue",
+            columns=["Year-Month", "Metric"],
+            values="Value",
             aggfunc="sum",
             fill_value=0
-        )
+        ),
+        use_container_width=True
+    )
 
-        st.dataframe(matrix_user_sales, use_container_width=True)
     # ==================================================
     # 📈 TREND CHARTS — LAST 6 MONTHS
     # ==================================================
     st.subheader("📈 Trend Charts — Last 6 Months")
 
-    # Prepare last 6 months list
     today = date.today()
     last_6 = []
     y, m = today.year, today.month
@@ -1267,68 +1235,57 @@ if st.session_state.get("engine_stage") == "reports":
 
     df_trend = df[df["Year-Month"].isin(last_6)]
 
-    if df_trend.empty:
-        st.info("No data available for last 6 months")
-    else:
-        products = sorted(df_trend["Product"].unique())
-
-        selected_product = st.selectbox(
+    if not df_trend.empty:
+        trend_product = st.selectbox(
             "Select Product for Trend",
-            products
+            sorted(df_trend["Product"].unique())
         )
 
-        df_p = df_trend[df_trend["Product"] == selected_product] \
+        chart_df = (
+            df_trend[df_trend["Product"] == trend_product]
             .sort_values("Year-Month")
-
-        chart_df = df_p.set_index("Year-Month")[["Issue", "Closing"]]
+            .set_index("Year-Month")[["Issue", "Closing"]]
+        )
 
         st.line_chart(chart_df)
+    else:
+        st.info("No trend data available")
 
     # ==================================================
-    # 🔮 FORECAST — NEXT 3 MONTHS (SEASONAL)
+    # 🔮 FORECAST — NEXT 3 MONTHS
     # ==================================================
-    st.subheader("🔮 Forecast — Next 3 Months (Seasonal Logic)")
+    st.subheader("🔮 Forecast — Next 3 Months")
 
     products_master = supabase.table("products") \
-        .select(
-            "id, name, peak_months, high_months, low_months, lowest_months"
-        ) \
+        .select("name, peak_months, high_months, low_months, lowest_months") \
         .execute().data
-
-    product_map = {p["name"]: p for p in products_master}
 
     forecast_rows = []
 
-    for product in products_master:
-
-        product_name = product["name"]
-        df_p = df[df["Product"] == product_name]
-
+    for p in products_master:
+        df_p = df[df["Product"] == p["name"]]
         if df_p.empty:
             continue
 
         last_issue = df_p.sort_values("Year-Month").iloc[-1]["Issue"]
 
-        # Start forecasting from next month
         fy, fm = today.year, today.month + 1
         if fm == 13:
             fm = 1
             fy += 1
 
-        for i in range(3):
-            month_no = fm
-
-            if month_no in (product["peak_months"] or []):
+        for _ in range(3):
+            if fm in (p["peak_months"] or []):
                 factor = 2
-            elif month_no in (product["high_months"] or []):
+            elif fm in (p["high_months"] or []):
                 factor = 1.5
-            elif month_no in (product["lowest_months"] or []):
+            elif fm in (p["lowest_months"] or []):
                 factor = 0.8
             else:
                 factor = 1
 
             forecast_rows.append({
-                "Product": product_name,
+                "Product": p["name"],
                 "Forecast Month": f"{fy}-{fm:02d}",
                 "Forecast Issue": round(last_issue * factor, 2)
             })
@@ -1339,124 +1296,64 @@ if st.session_state.get("engine_stage") == "reports":
                 fy += 1
 
     if forecast_rows:
-        forecast_df = pd.DataFrame(forecast_rows)
-
-        matrix_forecast = forecast_df.pivot_table(
-            index="Product",
-            columns="Forecast Month",
-            values="Forecast Issue",
-            aggfunc="sum",
-            fill_value=0
+        st.dataframe(
+            pd.DataFrame(forecast_rows).pivot_table(
+                index="Product",
+                columns="Forecast Month",
+                values="Forecast Issue",
+                fill_value=0
+            ),
+            use_container_width=True
         )
 
-        st.dataframe(matrix_forecast, use_container_width=True)
-    else:
-        st.info("Forecast not available")
     # ==================================================
-    # 📊 KPI CARDS — MoM CHANGE & GROWTH %
+    # 📊 KPI — MONTH-ON-MONTH
     # ==================================================
     st.subheader("📊 KPI — Month-on-Month Performance")
 
-    # Aggregate issue by Year-Month (respect filters)
     kpi_df = (
         df.groupby("Year-Month", as_index=False)["Issue"]
         .sum()
         .sort_values("Year-Month")
+        .tail(2)
     )
 
-# Take only last 2 months available in filtered data
-    kpi_df = kpi_df.tail(2)
-
-
-    if len(kpi_df) < 2:
-        st.info("Not enough data to calculate MoM growth")
-    else:
-        latest = kpi_df.iloc[-1]
-        previous = kpi_df.iloc[-2]
-
-        mom_change = latest["Issue"] - previous["Issue"]
-
-        if previous["Issue"] != 0:
-            growth_pct = (mom_change / previous["Issue"]) * 100
-        else:
-            growth_pct = 0
+    if len(kpi_df) == 2:
+        latest, previous = kpi_df.iloc[1], kpi_df.iloc[0]
+        mom = latest["Issue"] - previous["Issue"]
+        pct = (mom / previous["Issue"] * 100) if previous["Issue"] else 0
 
         c1, c2, c3 = st.columns(3)
+        c1.metric("Current Issue", round(latest["Issue"], 2))
+        c2.metric("MoM Change", round(mom, 2), round(mom, 2))
+        c3.metric("Growth %", f"{round(pct, 2)}%", f"{round(pct, 2)}%")
+    else:
+        st.info("Not enough data for KPI")
 
-        with c1:
-            st.metric(
-                label="📦 Current Month Issue",
-                value=round(latest["Issue"], 2)
-            )
-
-        with c2:
-            st.metric(
-                label="🔄 MoM Change",
-                value=round(mom_change, 2),
-                delta=round(mom_change, 2)
-            )
-
-        with c3:
-            st.metric(
-                label="📈 Growth %",
-                value=f"{round(growth_pct, 2)}%",
-                delta=f"{round(growth_pct, 2)}%"
-            )
     # ==================================================
-    # 📊 PRODUCT-LEVEL KPI CARDS
+    # 📊 PRODUCT KPI CARDS
     # ==================================================
     st.subheader("📊 Product-level KPI Cards")
 
-    products = sorted(df["Product"].unique())
-
-    selected_product = st.selectbox(
+    kpi_product = st.selectbox(
         "Select Product",
-        products
+        sorted(df["Product"].unique())
     )
 
-    df_p = df[df["Product"] == selected_product] \
-        .sort_values("Year-Month")
+    df_p = df[df["Product"] == kpi_product].sort_values("Year-Month")
 
-    if len(df_p) < 2:
-        st.info("Not enough data for product KPI")
-    else:
-        latest = df_p.iloc[-1]
-        previous = df_p.iloc[-2]
-
-        mom_change = latest["Issue"] - previous["Issue"]
-
-        if previous["Issue"] != 0:
-            growth_pct = (mom_change / previous["Issue"]) * 100
-        else:
-            growth_pct = 0
+    if len(df_p) >= 2:
+        latest, previous = df_p.iloc[-1], df_p.iloc[-2]
+        mom = latest["Issue"] - previous["Issue"]
+        pct = (mom / previous["Issue"] * 100) if previous["Issue"] else 0
 
         c1, c2, c3, c4 = st.columns(4)
-
-        with c1:
-            st.metric(
-                "📦 Latest Issue",
-                round(latest["Issue"], 2)
-            )
-
-        with c2:
-            st.metric(
-                "⏮ Previous Issue",
-                round(previous["Issue"], 2)
-            )
-
-        with c3:
-            st.metric(
-                "🔄 MoM Change",
-                round(mom_change, 2),
-                delta=round(mom_change, 2)
-            )
-
-        with c4:
-            st.metric(
-                "📈 Growth %",
-                f"{round(growth_pct, 2)}%",
-                delta=f"{round(growth_pct, 2)}%"
-            )
+        c1.metric("Latest Issue", round(latest["Issue"], 2))
+        c2.metric("Previous Issue", round(previous["Issue"], 2))
+        c3.metric("MoM Change", round(mom, 2), round(mom, 2))
+        c4.metric("Growth %", f"{round(pct, 2)}%", f"{round(pct, 2)}%")
+    else:
+        st.info("Not enough data for product KPI")
 
 `
 
