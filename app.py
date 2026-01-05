@@ -379,7 +379,7 @@ if (
 
     products = load_products_cached()
 
-    )
+    
 
     if idx >= len(products):
         st.session_state.engine_stage = "preview"
