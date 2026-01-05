@@ -206,54 +206,100 @@ if role == "user" and not st.session_state.statement_id:
         "Month",
         list(range(1, today.month + 1)) if year == today.year else list(range(1, 13))
     )
-if st.button("➕ Create / Resume"):
 
-    res = admin_supabase.table("statements").upsert(
-        {
-            "user_id": user_id,
-            "stockist_id": selected["stockist_id"],
-            "year": year,
-            "month": month,
-            "status": "draft",
-            "engine_stage": "edit",
-            "current_product_index": 0,
-            "updated_at": datetime.utcnow().isoformat()
-        },
-        on_conflict="stockist_id,year,month",
-        returning="representation"
-    ).execute()
-
-    stmt = res.data[0]
-
-    # 🚫 Hard lock by admin
-    if stmt["locked"] or stmt["status"] == "locked":
-        st.error("Statement already locked by admin")
-        st.stop()
-
-    # 🚫 Single active editor rule
-    if stmt["editing_by"] and stmt["editing_by"] != user_id:
-        st.error("Statement currently open on another device")
-        st.stop()
-
-    # ✅ Acquire edit lock
-    safe_exec(
+    # 🔁 Detect existing draft for resume
+    existing_draft = safe_exec(
         admin_supabase.table("statements")
-        .update({
-            "editing_by": user_id,
-            "editing_at": datetime.utcnow().isoformat(),
-            "last_saved_at": datetime.utcnow().isoformat()
-        })
-        .eq("id", stmt["id"])
+        .select("id, current_product_index, editing_by, status, locked")
+        .eq("user_id", user_id)
+        .eq("stockist_id", selected["stockist_id"])
+        .eq("year", year)
+        .eq("month", month)
+        .eq("status", "draft")
+        .limit(1)
     )
 
-    st.session_state.statement_id = stmt["id"]
-    st.session_state.product_index = stmt["current_product_index"] or 0
-    st.session_state.statement_year = year
-    st.session_state.statement_month = month
-    st.session_state.selected_stockist_id = selected["stockist_id"]
-    st.session_state.engine_stage = "edit"
+    if existing_draft:
+        draft = existing_draft[0]
 
-    st.rerun()
+        if draft["locked"]:
+            st.warning("Draft exists but is locked by admin")
+        else:
+            st.info("📝 You have an unfinished draft. Resume data entry.")
+
+            if st.button("▶ Resume Draft"):
+                # 🚫 Block if another device editing
+                if draft["editing_by"] and draft["editing_by"] != user_id:
+                    st.error("Statement currently open on another device")
+                    st.stop()
+
+                # ✅ Acquire edit lock
+                safe_exec(
+                    admin_supabase.table("statements")
+                    .update({
+                        "editing_by": user_id,
+                        "editing_at": datetime.utcnow().isoformat()
+                    })
+                    .eq("id", draft["id"])
+                )
+
+                st.session_state.statement_id = draft["id"]
+                st.session_state.product_index = draft["current_product_index"] or 0
+                st.session_state.statement_year = year
+                st.session_state.statement_month = month
+                st.session_state.selected_stockist_id = selected["stockist_id"]
+                st.session_state.engine_stage = "edit"
+
+                st.rerun()
+
+    if st.button("➕ Create / Resume"):
+
+        res = admin_supabase.table("statements").upsert(
+            {
+                "user_id": user_id,
+                "stockist_id": selected["stockist_id"],
+                "year": year,
+                "month": month,
+                "status": "draft",
+                "engine_stage": "edit",
+                "current_product_index": 0,
+                "updated_at": datetime.utcnow().isoformat()
+            },
+            on_conflict="stockist_id,year,month",
+            returning="representation"
+        ).execute()
+
+        stmt = res.data[0]
+
+        # 🚫 Hard lock by admin
+        if stmt["locked"] or stmt["status"] == "locked":
+            st.error("Statement already locked by admin")
+            st.stop()
+
+        # 🚫 Single active editor rule
+        if stmt["editing_by"] and stmt["editing_by"] != user_id:
+            st.error("Statement currently open on another device")
+            st.stop()
+
+        # ✅ Acquire edit lock
+        safe_exec(
+            admin_supabase.table("statements")
+            .update({
+                "editing_by": user_id,
+                "editing_at": datetime.utcnow().isoformat(),
+                "last_saved_at": datetime.utcnow().isoformat()
+            })
+            .eq("id", stmt["id"])
+        )
+
+        st.session_state.statement_id = stmt["id"]
+        st.session_state.product_index = stmt["current_product_index"] or 0
+        st.session_state.statement_year = year
+        st.session_state.statement_month = month
+        st.session_state.selected_stockist_id = selected["stockist_id"]
+        st.session_state.engine_stage = "edit"
+
+        st.rerun()
 
     
 
@@ -282,6 +328,14 @@ if (
     product = products[idx]
 
     st.subheader(f"Product {idx + 1} of {len(products)} — {product['name']}")
+    # 💾 Auto-save status
+    last_saved = row.get("updated_at") if row else None
+
+if last_saved:
+    st.caption(f"Last saved at {last_saved}")
+else:
+    st.caption("Not saved yet")
+
 
     # Fetch existing draft row (if any)
     row = safe_exec(
@@ -390,9 +444,13 @@ if (
         st.session_state.product_index += 1
         safe_exec(
             admin_supabase.table("statements")
-            .update({"current_product_index": st.session_state.product_index})
+            .update({
+                "current_product_index": st.session_state.product_index,
+                "last_saved_at": datetime.utcnow().isoformat()
+             })
             .eq("id", sid)
         )
+
 
         st.rerun()
 
