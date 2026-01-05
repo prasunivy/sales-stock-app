@@ -1047,7 +1047,7 @@ if st.button("Delete Stockist"):
     # --------------------------------------------------
     # PRODUCTS CRUD
     # --------------------------------------------------
-    elif section == "Products":
+    if section == "Products":
         st.subheader("📦 Products")
 
         name = st.text_input("Product Name")
