@@ -928,11 +928,20 @@ if role == "admin":
             format_func=lambda x: x["name"]
         )
 
-        edit_name = st.text_input("Edit Name", value=stockist["name"])
+                  st.divider()
+        st.markdown("### ✏️ Edit Stockist")
+
+        edit_name = st.text_input(
+            "Edit Name",
+            value=stockist["name"]
+        )
+
         edit_location = st.text_input(
             "Edit Location",
             value=stockist.get("location") or ""
         )
+
+        
         edit_phone = st.text_input(
             "Edit Phone",
             value=stockist.get("phone") or "9433245464"
@@ -973,18 +982,30 @@ if role == "admin":
             st.success("Stockist updated successfully")
             st.rerun()
 
-        # ===============================
+                # ===============================
         # 🗑 DELETE STOCKIST
         # ===============================
+        st.markdown("### 🗑 Delete Stockist")
+
         if st.button("Delete Stockist"):
-            used = supabase.table("statements") \
+            used_in_statements = supabase.table("statements") \
                 .select("id") \
                 .eq("stockist_id", stockist["id"]) \
                 .limit(1) \
                 .execute().data
 
-            if used:
-                st.error("Stockist is used in statements — cannot delete")
+            used_in_users = supabase.table("user_stockists") \
+                .select("id") \
+                .eq("stockist_id", stockist["id"]) \
+                .limit(1) \
+                .execute().data
+
+            if used_in_statements:
+                st.error("❌ Stockist is used in statements — cannot delete")
+
+            elif used_in_users:
+                st.error("❌ Stockist is assigned to users — unassign users first")
+
             else:
                 supabase.table("stockists") \
                     .delete() \
@@ -999,8 +1020,8 @@ if role == "admin":
                     "metadata": {"name": stockist["name"]}
                 }).execute()
 
-                st.cache_data.clear()   # 🔄 Clear cached stockists
-                st.success("Stockist deleted successfully")
+                st.cache_data.clear()
+                st.success("✅ Stockist deleted successfully")
                 st.rerun()
 
     # --------------------------------------------------
