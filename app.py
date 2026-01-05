@@ -1148,6 +1148,48 @@ if st.session_state.get("engine_stage") == "reports":
         }
         for r in summary_rows
     ])
+        # ==================================================
+    # 🚨 ALERT BANNERS (LATEST MONTH)
+    # ==================================================
+    st.subheader("🚨 Alerts Summary")
+
+    alert_messages = []
+
+    df_sorted = df.sort_values(["Product", "Year-Month"])
+
+    for product in df_sorted["Product"].unique():
+        df_p = df_sorted[df_sorted["Product"] == product]
+
+        if len(df_p) < 2:
+            continue
+
+        latest = df_p.iloc[-1]
+        previous = df_p.iloc[-2]
+
+        # 🔻 Degrowth
+        if latest["Issue"] < previous["Issue"]:
+            alert_messages.append(
+                f"🔻 **{product}**: Issue degrowth vs last month"
+            )
+
+        # ⚠️ Stock risk
+        if latest["Issue"] > 0 and latest["Closing"] >= 2 * latest["Issue"]:
+            alert_messages.append(
+                f"⚠️ **{product}**: Closing stock is very high"
+            )
+
+        # 📣 Promotion needed
+        if latest["Issue"] == 0 and latest["Closing"] == 0:
+            alert_messages.append(
+                f"📣 **{product}**: No sales and no stock — promotion required"
+            )
+
+    if alert_messages:
+        for msg in alert_messages:
+            st.warning(msg)
+    else:
+        st.success("✅ All products are healthy for the selected period")
+
 
     # ==================================================
     # MATRIX 1 — PRODUCT-WISE SALES (ISSUE)
