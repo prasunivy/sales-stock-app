@@ -332,8 +332,12 @@ if (
 
     product = products[idx]
 
+    # --------------------------------------------------
+    # HEADER
+    # --------------------------------------------------
     st.subheader(f"Product {idx + 1} of {len(products)} — {product['name']}")
-    # 💾 Last saved banner (statement-level)
+
+    # 💾 Last saved banner (statement-level ONLY)
     stmt_meta = safe_exec(
         admin_supabase.table("statements")
         .select("last_saved_at")
@@ -346,26 +350,9 @@ if (
     else:
         st.caption("💾 Not saved yet")
 
-    # 💾 Auto-save status
-    last_saved = row.get("updated_at") if row else None
-
-# 💾 Last saved banner (statement-level)
-stmt_meta = safe_exec(
-    admin_supabase.table("statements")
-    .select("last_saved_at")
-    .eq("id", sid)
-    .limit(1)
-)
-
-if stmt_meta and stmt_meta[0]["last_saved_at"]:
-    st.caption(f"💾 Last saved at {stmt_meta[0]['last_saved_at']}")
-else:
-    st.caption("💾 Not saved yet")
-
-
-
-
-    # Fetch existing draft row (if any)
+    # --------------------------------------------------
+    # FETCH EXISTING DRAFT ROW
+    # --------------------------------------------------
     row = safe_exec(
         admin_supabase.table("statement_products")
         .select("*")
@@ -375,7 +362,9 @@ else:
     )
     row = row[0] if row else {}
 
-    # Last month data
+    # --------------------------------------------------
+    # LAST MONTH DATA
+    # --------------------------------------------------
     last_closing, last_issue = fetch_last_month_data(
         st.session_state.selected_stockist_id,
         product["id"],
@@ -383,6 +372,9 @@ else:
         st.session_state.statement_month
     )
 
+    # --------------------------------------------------
+    # INPUT FIELDS
+    # --------------------------------------------------
     opening = st.number_input(
         "Opening",
         value=float(row.get("opening", last_closing)),
@@ -425,20 +417,14 @@ else:
         g1, g2, g3 = st.columns(3)
 
         with g1:
-            st.metric(
-                "📦 Suggested Order",
-                live_row.get("order_qty", 0)
-            )
+            st.metric("📦 Suggested Order", live_row.get("order_qty", 0))
 
         with g2:
-            st.info(
-                f"Issue Guidance: {live_row.get('issue_guidance', '—')}"
-            )
+            st.info(f"Issue Guidance: {live_row.get('issue_guidance', '—')}")
 
         with g3:
-            st.warning(
-                f"Stock Guidance: {live_row.get('stock_guidance', '—')}"
-            )
+            st.warning(f"Stock Guidance: {live_row.get('stock_guidance', '—')}")
+
     else:
         st.info("Save the product to see guidance and order suggestion")
 
@@ -470,17 +456,18 @@ else:
         )
 
         st.session_state.product_index += 1
+
         safe_exec(
             admin_supabase.table("statements")
             .update({
                 "current_product_index": st.session_state.product_index,
                 "last_saved_at": datetime.utcnow().isoformat()
-             })
+            })
             .eq("id", sid)
         )
 
-
         st.rerun()
+
 
 # ======================================================
 # ======================================================
