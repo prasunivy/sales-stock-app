@@ -862,17 +862,36 @@ if role == "admin":
 
             st.success("User created successfully")
 
-    # --------------------------------------------------
+       # --------------------------------------------------
     # STOCKISTS CRUD
     # --------------------------------------------------
     elif section == "Stockists":
         st.subheader("🏪 Stockists")
 
-        name = st.text_input("New Stockist Name")
+        # ===============================
+        # ➕ ADD STOCKIST
+        # ===============================
+        st.markdown("### ➕ Add Stockist")
+
+        name = st.text_input("Stockist Name *")
+        location = st.text_input("Location")
+        phone = st.text_input("Phone Number", value="9433245464")
+        payment_terms = st.number_input(
+            "Payment Terms (Days)",
+            min_value=0,
+            step=1
+        )
 
         if st.button("Add Stockist"):
+            if not name.strip():
+                st.error("Stockist name is required")
+                st.stop()
+
             supabase.table("stockists").insert({
-                "name": name,
+                "name": name.strip(),
+                "location": location.strip() or None,
+                "phone": phone.strip() or "9433245464",
+                "payment_terms": payment_terms or None,
                 "created_by": user_id
             }).execute()
 
@@ -880,30 +899,83 @@ if role == "admin":
                 "action": "create_stockist",
                 "target_type": "stockist",
                 "performed_by": user_id,
-                "metadata": {"name": name}
+                "metadata": {
+                    "name": name,
+                    "location": location,
+                    "phone": phone,
+                    "payment_terms": payment_terms
+                }
             }).execute()
 
-            st.success("Stockist added")
+            st.cache_data.clear()   # 🔄 Clear cached stockists
+            st.success("Stockist added successfully")
             st.rerun()
 
         st.divider()
 
-        stockists = supabase.table("stockists") \
-            .select("*") \
-            .order("name") \
-            .execute().data
+        # ===============================
+        # ✏️ EDIT STOCKIST
+        # ===============================
+        stockists = load_stockists_cached()
 
-        stockist = st.selectbox("Select Stockist", stockists, format_func=lambda x: x["name"])
+        if not stockists:
+            st.info("No stockists available")
+            st.stop()
+
+        stockist = st.selectbox(
+            "Select Stockist",
+            stockists,
+            format_func=lambda x: x["name"]
+        )
+
         edit_name = st.text_input("Edit Name", value=stockist["name"])
+        edit_location = st.text_input(
+            "Edit Location",
+            value=stockist.get("location") or ""
+        )
+        edit_phone = st.text_input(
+            "Edit Phone",
+            value=stockist.get("phone") or "9433245464"
+        )
+        edit_payment_terms = st.number_input(
+            "Edit Payment Terms (Days)",
+            min_value=0,
+            step=1,
+            value=stockist.get("payment_terms") or 0
+        )
 
         if st.button("Save Changes"):
+            if not edit_name.strip():
+                st.error("Stockist name cannot be empty")
+                st.stop()
+
             supabase.table("stockists").update({
-                "name": edit_name
+                "name": edit_name.strip(),
+                "location": edit_location.strip() or None,
+                "phone": edit_phone.strip() or "9433245464",
+                "payment_terms": edit_payment_terms or None
             }).eq("id", stockist["id"]).execute()
 
-            st.success("Stockist updated")
+            supabase.table("audit_logs").insert({
+                "action": "update_stockist",
+                "target_type": "stockist",
+                "target_id": stockist["id"],
+                "performed_by": user_id,
+                "metadata": {
+                    "name": edit_name,
+                    "location": edit_location,
+                    "phone": edit_phone,
+                    "payment_terms": edit_payment_terms
+                }
+            }).execute()
+
+            st.cache_data.clear()   # 🔄 Clear cached stockists
+            st.success("Stockist updated successfully")
             st.rerun()
 
+        # ===============================
+        # 🗑 DELETE STOCKIST
+        # ===============================
         if st.button("Delete Stockist"):
             used = supabase.table("statements") \
                 .select("id") \
@@ -912,14 +984,23 @@ if role == "admin":
                 .execute().data
 
             if used:
-                st.error("Stockist in use — cannot delete")
+                st.error("Stockist is used in statements — cannot delete")
             else:
                 supabase.table("stockists") \
                     .delete() \
                     .eq("id", stockist["id"]) \
                     .execute()
 
-                st.success("Stockist deleted")
+                supabase.table("audit_logs").insert({
+                    "action": "delete_stockist",
+                    "target_type": "stockist",
+                    "target_id": stockist["id"],
+                    "performed_by": user_id,
+                    "metadata": {"name": stockist["name"]}
+                }).execute()
+
+                st.cache_data.clear()   # 🔄 Clear cached stockists
+                st.success("Stockist deleted successfully")
                 st.rerun()
 
     # --------------------------------------------------
