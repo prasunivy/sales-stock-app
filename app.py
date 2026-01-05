@@ -160,6 +160,10 @@ if not st.session_state.auth_user:
 # SIDEBAR
 # ======================================================
 st.sidebar.title("Navigation")
+if st.sidebar.button("📊 Reports"):
+    st.session_state.engine_stage = "reports"
+    st.rerun()
+
 if st.sidebar.button("Logout"):
 
     if st.session_state.get("statement_id"):
@@ -1033,4 +1037,217 @@ if role == "admin":
             st.dataframe(df, use_container_width=True)
         else:
             st.warning("No data for selected period")
+    # ======================================================
+# REPORTS & MATRICES
+# ======================================================
+if st.session_state.get("engine_stage") == "reports":
+
+    st.title("📊 Reports & Matrices")
+
+    # --------------------------------------------------
+    # COMMON FILTERS
+    # --------------------------------------------------
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if role == "admin":
+            users = supabase.table("users") \
+                .select("id, username") \
+                .execute().data
+
+            selected_users = st.multiselect(
+                "Users",
+                users,
+                default=users,
+                format_func=lambda x: x["username"]
+            )
+            user_ids = [u["id"] for u in selected_users]
+        else:
+            user_ids = [user_id]
+            st.text_input("User", value="You", disabled=True)
+
+    with col2:
+        year_from = st.selectbox(
+            "Year From",
+            list(range(2020, date.today().year + 1))
+        )
+        month_from = st.selectbox(
+            "Month From",
+            list(range(1, 13))
+        )
+
+    with col3:
+        year_to = st.selectbox(
+            "Year To",
+            list(range(2020, date.today().year + 1))
+        )
+        month_to = st.selectbox(
+            "Month To",
+            list(range(1, 13))
+        )
+
+    # --------------------------------------------------
+    # STOCKIST FILTER
+    # --------------------------------------------------
+    if role == "admin":
+        stockists = supabase.table("stockists") \
+            .select("id, name") \
+            .order("name") \
+            .execute().data
+    else:
+        stockists = supabase.table("user_stockists") \
+            .select("stockist_id, stockists(name)") \
+            .eq("user_id", user_id) \
+            .execute().data
+
+        stockists = [
+            {"id": s["stockist_id"], "name": s["stockists"]["name"]}
+            for s in stockists
+        ]
+
+    selected_stockists = st.multiselect(
+        "Stockists",
+        stockists,
+        default=stockists,
+        format_func=lambda x: x["name"]
+    )
+
+    stockist_ids = [s["id"] for s in selected_stockists]
+
+    # --------------------------------------------------
+    # FETCH MONTHLY SUMMARY
+    # --------------------------------------------------
+    summary_rows = safe_exec(
+        admin_supabase.table("monthly_summary")
+        .select("""
+            year,
+            month,
+            total_issue,
+            total_closing,
+            total_order,
+            products(name),
+            stockist_id
+        """)
+        .in_("stockist_id", stockist_ids)
+    )
+
+    if not summary_rows:
+        st.info("No data for selected filters")
+        st.stop()
+
+    # --------------------------------------------------
+    # NORMALIZE DATA
+    # --------------------------------------------------
+    df = pd.DataFrame([
+        {
+            "Product": r["products"]["name"],
+            "Year-Month": f"{r['year']}-{r['month']:02d}",
+            "Issue": r["total_issue"],
+            "Closing": r["total_closing"],
+            "Order": r["total_order"]
+        }
+        for r in summary_rows
+    ])
+
+    # ==================================================
+    # MATRIX 1 — PRODUCT-WISE SALES (ISSUE)
+    # ==================================================
+    st.subheader("📦 Matrix 1 — Product-wise Sales (Issue)")
+
+    matrix_issue = df.pivot_table(
+        index="Product",
+        columns="Year-Month",
+        values="Issue",
+        aggfunc="sum",
+        fill_value=0
+    )
+
+    st.dataframe(matrix_issue, use_container_width=True)
+
+    # ==================================================
+    # MATRIX 2 — PRODUCT-WISE ORDER
+    # ==================================================
+    st.subheader("🧾 Matrix 2 — Product-wise Order")
+
+    matrix_order = df.pivot_table(
+        index="Product",
+        columns="Year-Month",
+        values="Order",
+        aggfunc="sum",
+        fill_value=0
+    )
+
+    st.dataframe(matrix_order, use_container_width=True)
+
+    # ==================================================
+    # MATRIX 3 — PRODUCT-WISE CLOSING
+    # ==================================================
+    st.subheader("📊 Matrix 3 — Product-wise Closing")
+
+    matrix_closing = df.pivot_table(
+        index="Product",
+        columns="Year-Month",
+        values="Closing",
+        aggfunc="sum",
+        fill_value=0
+    )
+
+    st.dataframe(matrix_closing, use_container_width=True)
+
+    # ==================================================
+    # MATRIX 4 — ISSUE + CLOSING (COMBINED)
+    # ==================================================
+    st.subheader("📦📊 Matrix 4 — Product-wise Issue & Closing")
+
+    df_long = df.melt(
+        id_vars=["Product", "Year-Month"],
+        value_vars=["Issue", "Closing"],
+        var_name="Metric",
+        value_name="Value"
+    )
+
+    matrix_issue_closing = df_long.pivot_table(
+        index="Product",
+        columns=["Year-Month", "Metric"],
+        values="Value",
+        aggfunc="sum",
+        fill_value=0
+    )
+
+    st.dataframe(matrix_issue_closing, use_container_width=True)
+
+    # ==================================================
+    # MATRIX 5 — ADMIN ONLY: PRODUCT-WISE SALES BY USER
+    # ==================================================
+    if role == "admin":
+
+        st.subheader("👤 Matrix 5 — Product-wise Sales by User")
+
+        user_map = {
+            u["id"]: u["username"]
+            for u in supabase.table("users")
+            .select("id, username")
+            .execute().data
+        }
+
+        df_admin = pd.DataFrame([
+            {
+                "Product": r["products"]["name"],
+                "User": user_map.get(r.get("user_id"), "Unknown"),
+                "Issue": r["total_issue"]
+            }
+            for r in summary_rows
+        ])
+
+        matrix_user_sales = df_admin.pivot_table(
+            index="Product",
+            columns="User",
+            values="Issue",
+            aggfunc="sum",
+            fill_value=0
+        )
+
+        st.dataframe(matrix_user_sales, use_container_width=True)
+
+`
 
