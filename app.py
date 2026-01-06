@@ -668,12 +668,9 @@ if role == "admin":
 
     st.title("Admin Dashboard")
 
-    # Admin navigation state
-    if "admin_section" not in st.session_state:
-        st.session_state["admin_section"] = "Statements"
-
+   
     
-    st.radio(
+    section = st.radio(
         "Admin Section",
         [
             "Statements",
@@ -686,9 +683,9 @@ if role == "admin":
             "Lock / Unlock Statements",
             "Analytics"
         ],
-        key="admin_section"
+        index=0
     )
-    section = st.session_state["admin_section"]
+    
 
    
     # --------------------------------------------------
