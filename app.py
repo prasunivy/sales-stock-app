@@ -867,192 +867,192 @@ if role == "admin":
 
             st.success("User created successfully")
 
-# --------------------------------------------------
-# STOCKISTS
-# --------------------------------------------------
-elif section == "Stockists":
+    # --------------------------------------------------
+    # STOCKISTS
+    # --------------------------------------------------
+    elif section == "Stockists":
 
-    st.subheader("🏪 Stockists")
+        st.subheader("🏪 Stockists")
 
-    # ===============================
-    # ➕ ADD STOCKIST
-    # ===============================
-    st.markdown("### ➕ Add Stockist")
+        # ===============================
+        # ➕ ADD STOCKIST
+        # ===============================
+        st.markdown("### ➕ Add Stockist")
 
-    name = st.text_input("Stockist Name *")
-    location = st.text_input("Location")
-    phone = st.text_input("Phone Number", value="9433245464")
-    payment_terms = st.number_input(
+        name = st.text_input("Stockist Name *")
+        location = st.text_input("Location")
+        phone = st.text_input("Phone Number", value="9433245464")
+        payment_terms = st.number_input(
         "Payment Terms (Days)",
         min_value=0,
         step=1
-    )
+        )
 
-    authorization_status = st.radio(
-        "Authorization Status",
-        ["AUTHORIZED", "NONAUTHORIZED"],
-        horizontal=True
-    )
+        authorization_status = st.radio(
+            "Authorization Status",
+            ["AUTHORIZED", "NONAUTHORIZED"],
+            horizontal=True
+        )
 
-    if st.button("Add Stockist"):
-        if not name.strip():
-            st.error("Stockist name is required")
-            st.stop()
+        if st.button("Add Stockist"):
+            if not name.strip():
+                st.error("Stockist name is required")
+                st.stop()
 
-        supabase.table("stockists").insert({
-            "name": name.strip(),
-            "location": location.strip() or None,
-            "phone": phone.strip() or "9433245464",
-            "payment_terms": payment_terms or None,
-            "authorization_status": authorization_status,
-            "created_by": user_id
-        }).execute()
-
-        supabase.table("audit_logs").insert({
-            "action": "create_stockist",
-            "target_type": "stockist",
-            "performed_by": user_id,
-            "metadata": {
-                "name": name,
-                "location": location,
-                "phone": phone,
-                "payment_terms": payment_terms,
-                "authorization_status": authorization_status
-            }
-        }).execute()
-
-        st.cache_data.clear()
-        st.success("Stockist added successfully")
-        st.session_state["admin_section"] = "Statements"
-        st.rerun()
-
-    st.divider()
-
-    # ===============================
-    # ✏️ EDIT STOCKIST
-    # ===============================
-    st.markdown("### ✏️ Edit Stockist")
-
-    stockists = load_stockists_cached()
-
-    if not stockists:
-        st.info("No stockists available")
-        st.stop()
-
-    stockist = st.selectbox(
-        "Select Stockist",
-        stockists,
-        format_func=lambda x: x["name"]
-    )
-
-    edit_name = st.text_input(
-        "Edit Name",
-        value=stockist["name"]
-    )
-
-    edit_location = st.text_input(
-        "Edit Location",
-        value=stockist.get("location") or ""
-    )
-
-    edit_phone = st.text_input(
-        "Edit Phone",
-        value=stockist.get("phone") or "9433245464"
-    )
-
-    edit_payment_terms = st.number_input(
-        "Edit Payment Terms (Days)",
-        min_value=0,
-        step=1,
-        value=stockist.get("payment_terms") or 0
-    )
-
-    edit_authorization_status = st.radio(
-        "Authorization Status",
-        ["AUTHORIZED", "NONAUTHORIZED"],
-        index=0 if stockist.get("authorization_status", "AUTHORIZED") == "AUTHORIZED" else 1,
-        horizontal=True,
-        key=f"edit_auth_status_{stockist['id']}"
-    )
-
-    if st.button("Save Changes"):
-        if not edit_name.strip():
-            st.error("Stockist name cannot be empty")
-            st.stop()
-
-        supabase.table("stockists").update({
-            "name": edit_name.strip(),
-            "location": edit_location.strip() or None,
-            "phone": edit_phone.strip() or "9433245464",
-            "payment_terms": edit_payment_terms or None,
-            "authorization_status": edit_authorization_status
-        }).eq("id", stockist["id"]).execute()
-
-        supabase.table("audit_logs").insert({
-            "action": "update_stockist",
-            "target_type": "stockist",
-            "target_id": stockist["id"],
-            "performed_by": user_id,
-            "metadata": {
-                "name": edit_name,
-                "location": edit_location,
-                "phone": edit_phone,
-                "payment_terms": edit_payment_terms,
-                "authorization_status": edit_authorization_status
-            }
-        }).execute()
-
-        st.cache_data.clear()
-        st.success("Stockist updated successfully")
-        st.session_state["admin_section"] = "Statements"
-        st.rerun()
-
-    st.divider()
-
-    # ===============================
-    # 🗑 DELETE STOCKIST
-    # ===============================
-    st.markdown("### 🗑 Delete Stockist")
-
-    if st.button("Delete Stockist"):
-        used_in_statements = supabase.table("statements") \
-            .select("id") \
-            .eq("stockist_id", stockist["id"]) \
-            .limit(1) \
-            .execute().data
-
-        used_in_users = supabase.table("user_stockists") \
-            .select("user_id") \
-            .eq("stockist_id", stockist["id"]) \
-            .limit(1) \
-            .execute().data
-
-        if used_in_statements:
-            st.error("❌ Stockist is used in statements — cannot delete")
-
-        elif used_in_users:
-            st.error("❌ Stockist is assigned to users — unassign users first")
-
-        else:
-            supabase.table("stockists") \
-                .delete() \
-                .eq("id", stockist["id"]) \
-                .execute()
+            supabase.table("stockists").insert({
+                "name": name.strip(),
+                "location": location.strip() or None,
+                "phone": phone.strip() or "9433245464",
+                "payment_terms": payment_terms or None,
+                "authorization_status": authorization_status,
+                "created_by": user_id
+            }).execute()
 
             supabase.table("audit_logs").insert({
-                "action": "delete_stockist",
+                "action": "create_stockist",
                 "target_type": "stockist",
-                "target_id": stockist["id"],
                 "performed_by": user_id,
                 "metadata": {
-                    "name": stockist["name"]
+                    "name": name,
+                    "location": location,
+                    "phone": phone,
+                    "payment_terms": payment_terms,
+                    "authorization_status": authorization_status
                 }
             }).execute()
 
             st.cache_data.clear()
-            st.success("✅ Stockist deleted successfully")
+            st.success("Stockist added successfully")
             st.session_state["admin_section"] = "Statements"
             st.rerun()
+
+        st.divider()
+
+        # ===============================
+        # ✏️ EDIT STOCKIST
+        # ===============================
+        st.markdown("### ✏️ Edit Stockist")
+
+        stockists = load_stockists_cached()
+
+        if not stockists:
+            st.info("No stockists available")
+            st.stop()
+
+        stockist = st.selectbox(
+            "Select Stockist",
+            stockists,
+            format_func=lambda x: x["name"]
+        )
+
+        edit_name = st.text_input(
+            "Edit Name",
+            value=stockist["name"]
+        )
+
+        edit_location = st.text_input(
+            "Edit Location",
+            value=stockist.get("location") or ""
+        )
+
+        edit_phone = st.text_input(
+            "Edit Phone",
+            value=stockist.get("phone") or "9433245464"
+        )
+
+        edit_payment_terms = st.number_input(
+            "Edit Payment Terms (Days)",
+            min_value=0,
+            step=1,
+            value=stockist.get("payment_terms") or 0
+        )
+
+        edit_authorization_status = st.radio(
+            "Authorization Status",
+            ["AUTHORIZED", "NONAUTHORIZED"],
+            index=0 if stockist.get("authorization_status", "AUTHORIZED") == "AUTHORIZED" else 1,
+            horizontal=True,
+            key=f"edit_auth_status_{stockist['id']}"
+        )
+
+        if st.button("Save Changes"):
+            if not edit_name.strip():
+                st.error("Stockist name cannot be empty")
+                st.stop()
+
+            supabase.table("stockists").update({
+                "name": edit_name.strip(),
+                "location": edit_location.strip() or None,
+                "phone": edit_phone.strip() or "9433245464",
+                "payment_terms": edit_payment_terms or None,
+                "authorization_status": edit_authorization_status
+            }).eq("id", stockist["id"]).execute()
+
+            supabase.table("audit_logs").insert({
+                "action": "update_stockist",
+                "target_type": "stockist",
+                "target_id": stockist["id"],
+                "performed_by": user_id,
+                "metadata": {
+                    "name": edit_name,
+                    "location": edit_location,
+                    "phone": edit_phone,
+                    "payment_terms": edit_payment_terms,
+                    "authorization_status": edit_authorization_status
+                }
+            }).execute()
+
+            st.cache_data.clear()
+            st.success("Stockist updated successfully")
+            st.session_state["admin_section"] = "Statements"
+            st.rerun()
+
+        st.divider()
+
+        # ===============================
+        # 🗑 DELETE STOCKIST
+        # ===============================
+        st.markdown("### 🗑 Delete Stockist")
+
+        if st.button("Delete Stockist"):
+            used_in_statements = supabase.table("statements") \
+                .select("id") \
+                .eq("stockist_id", stockist["id"]) \
+                .limit(1) \
+                .execute().data
+
+            used_in_users = supabase.table("user_stockists") \
+                .select("user_id") \
+                .eq("stockist_id", stockist["id"]) \
+                .limit(1) \
+                .execute().data
+
+            if used_in_statements:
+                st.error("❌ Stockist is used in statements — cannot delete")
+
+            elif used_in_users:
+                st.error("❌ Stockist is assigned to users — unassign users first")
+
+            else:
+                supabase.table("stockists") \
+                    .delete() \
+                    .eq("id", stockist["id"]) \
+                    .execute()
+
+                supabase.table("audit_logs").insert({
+                    "action": "delete_stockist",
+                    "target_type": "stockist",
+                    "target_id": stockist["id"],
+                    "performed_by": user_id,
+                    "metadata": {
+                        "name": stockist["name"]
+                    }
+                }).execute()
+
+                st.cache_data.clear()
+                st.success("✅ Stockist deleted successfully")
+                st.session_state["admin_section"] = "Statements"
+                st.rerun()
 
 
 
