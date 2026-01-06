@@ -672,8 +672,7 @@ if role == "admin":
     if "admin_section" not in st.session_state:
         st.session_state["admin_section"] = "Statements"
 
-    section = st.session_state["admin_section"]
-
+    
     st.radio(
         "Admin Section",
         [
