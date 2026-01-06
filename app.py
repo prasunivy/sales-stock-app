@@ -210,9 +210,16 @@ if not st.session_state.auth_user:
     st.stop()
 
 # ======================================================
+# AFTER LOGIN SUCCESS
+# ======================================================
+role = st.session_state.role
+user_id = st.session_state.auth_user.id
+
+# ======================================================
 # SIDEBAR
 # ======================================================
 st.sidebar.title("Navigation")
+
 if st.sidebar.button("📊 Reports"):
     st.session_state.engine_stage = "reports"
     st.rerun()
@@ -234,9 +241,6 @@ if st.sidebar.button("Logout"):
     st.session_state.clear()
     st.rerun()
 
-
-role = st.session_state.role
-user_id = st.session_state.auth_user.id
 
 # ======================================================
 # USER LANDING
