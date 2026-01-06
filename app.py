@@ -688,6 +688,7 @@ if role == "admin":
         ],
         key="admin_section"
     )
+    section = st.session_state["admin_section"]
 
    
     # --------------------------------------------------
