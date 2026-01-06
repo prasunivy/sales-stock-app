@@ -690,39 +690,7 @@ if role == "admin":
         key="admin_section"
     )
 
-    # --------------------------------------------------
-    # ROUTING
-    # --------------------------------------------------
-    if section == "Statements":
-        pass
-
-    elif section == "Users":
-        pass
-
-    elif section == "Create User":
-        pass
-
-    elif section == "Stockists":
-        pass
-
-    elif section == "Products":
-        pass
-
-    elif section == "Reset User Password":
-        pass
-
-    elif section == "Audit Logs":
-        pass
-
-    elif section == "Lock / Unlock Statements":
-        pass
-
-    elif section == "Analytics":
-        pass
-
-
-
-
+   
     # --------------------------------------------------
     # STATEMENTS
     # --------------------------------------------------
