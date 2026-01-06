@@ -1094,7 +1094,7 @@ elif section == "Stockists":
     # --------------------------------------------------
     # PRODUCTS CRUD
     # --------------------------------------------------
-    if section == "Products":
+    elif section == "Products":
         st.subheader("📦 Products")
 
         name = st.text_input("Product Name")
