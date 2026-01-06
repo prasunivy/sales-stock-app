@@ -382,6 +382,82 @@ if (
     idx = st.session_state.product_index
 
     products = load_products_cached()
+    # ======================================================
+    # 🧹 RESET STATEMENT (USER SAFETY ACTION)
+    # ======================================================
+    stmt_meta = safe_exec(
+        admin_supabase.table("statements")
+        .select("status, locked, stockist_id, year, month")
+        .eq("id", sid)
+        .limit(1)
+    )
+
+    stmt_meta = stmt_meta[0]
+
+    # Show reset option ONLY for editable drafts
+    if stmt_meta["status"] == "draft" and not stmt_meta["locked"]:
+
+        with st.expander("🧹 Reset Statement (start over)", expanded=False):
+
+            st.warning(
+                "⚠️ This will permanently delete the current statement and all entered "
+                "product data.\n\n"
+                "You will be returned to the Stockist / Year / Month selection screen.\n\n"
+                "**This action cannot be undone.**"
+            )
+
+            confirm_reset = st.checkbox(
+                "I understand and want to reset this statement"
+            )
+
+            if st.button(
+                "🧹 Reset Statement Now",
+                disabled=not confirm_reset,
+                type="primary"
+            ):
+
+                # 1️⃣ Delete statement products
+                safe_exec(
+                    admin_supabase.table("statement_products")
+                    .delete()
+                    .eq("statement_id", sid)
+                )
+
+                # 2️⃣ Delete statement itself
+                safe_exec(
+                    admin_supabase.table("statements")
+                    .delete()
+                    .eq("id", sid)
+                    .eq("user_id", user_id)
+                )
+
+                # 3️⃣ Audit log
+                safe_exec(
+                    supabase.table("audit_logs").insert({
+                        "action": "reset_statement",
+                        "target_type": "statement",
+                        "performed_by": user_id,
+                        "metadata": {
+                            "stockist_id": stmt_meta["stockist_id"],
+                            "year": stmt_meta["year"],
+                            "month": stmt_meta["month"]
+                        }
+                    })
+                )
+
+                # 4️⃣ Clear engine session state
+                for k in [
+                    "statement_id",
+                    "product_index",
+                    "statement_year",
+                    "statement_month",
+                    "selected_stockist_id",
+                    "engine_stage"
+                ]:
+                    st.session_state.pop(k, None)
+
+                st.success("✅ Statement reset successfully. You can start again.")
+                st.rerun()
 
     
 
