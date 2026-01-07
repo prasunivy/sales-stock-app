@@ -1273,44 +1273,44 @@ if role == "admin" and st.session_state.get("engine_stage") != "reports":
         st.dataframe(pd.DataFrame(logs), use_container_width=True)
 
     # --------------------------------------------------
-    # LOCK / UNLOCK STATEMENTS
-    # --------------------------------------------------
-    elif section == "Lock / Unlock Statements":
-        stmts = supabase.table("statements").select("*").execute().data
+# LOCK / UNLOCK STATEMENTS
+# --------------------------------------------------
+elif section == "Lock / Unlock Statements":
 
-        if not stmts:
-            st.info("No statements available")
-            st.stop()
+    stmts = supabase.table("statements").select("*").execute().data
 
-        s = st.selectbox(
-            "Statement",
-            stmts,
-            format_func=lambda x: f"{x['year']}-{x['month']} | {x['status']}"
-        )
+    if not stmts:
+        st.info("No statements available")
+        st.stop()
 
-if not s:
-    st.stop()
+    s = st.selectbox(
+        "Statement",
+        stmts,
+        format_func=lambda x: f"{x['year']}-{x['month']} | {x['status']}"
+    )
 
+    if not s:
+        st.stop()
 
-        if st.button("Lock"):
-            supabase.table("statements").update({
-                "status": "locked",
-                "locked_at": datetime.utcnow().isoformat(),
-                "locked_by": user_id
-            }).eq("id", s.get("id")).execute()
+    if st.button("Lock", key="lock_statement_btn"):
+        supabase.table("statements").update({
+            "status": "locked",
+            "locked_at": datetime.utcnow().isoformat(),
+            "locked_by": user_id
+        }).eq("id", s["id"]).execute()
 
-            st.success("Statement locked")
-            st.rerun()
+        st.success("Statement locked")
+        st.rerun()
 
-        if st.button("Unlock"):
-            supabase.table("statements").update({
-                "status": "draft",
-                "locked_at": None,
-                "locked_by": None
-            }).eq("id", s.get("id")).execute()
+    if st.button("Unlock", key="unlock_statement_btn"):
+        supabase.table("statements").update({
+            "status": "draft",
+            "locked_at": None,
+            "locked_by": None
+        }).eq("id", s["id"]).execute()
 
-            st.success("Statement unlocked")
-            st.rerun()
+        st.success("Statement unlocked")
+        st.rerun()
 
 
     # --------------------------------------------------
