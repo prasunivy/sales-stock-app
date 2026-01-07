@@ -34,7 +34,7 @@ for k in [
     "statement_year",
     "statement_month",
     "selected_stockist_id",
-    "engine_stage"
+    "engine_stage",
     "admin_section"
 
 ]:
@@ -224,63 +224,63 @@ st.sidebar.title("Navigation")
 # ------------------------------
 # COMMON NAVIGATION
 # ------------------------------
-if st.sidebar.button("📊 Reports"):
+if st.sidebar.button("📊 Reports", key="nav_reports"):
     st.session_state.engine_stage = "reports"
     st.session_state.admin_section = None
     st.rerun()
+
 if role == "admin":
 
     st.sidebar.markdown("### 🛠 Admin")
 
-    if st.sidebar.button("📄 Statements"):
+    if st.sidebar.button("📄 Statements", key="admin_nav_statements"):
         st.session_state.admin_section = "Statements"
         st.session_state.engine_stage = None
         st.rerun()
 
-    if st.sidebar.button("👤 Users"):
+    if st.sidebar.button("👤 Users", key="admin_nav_users"):
         st.session_state.admin_section = "Users"
         st.session_state.engine_stage = None
         st.rerun()
 
-    if st.sidebar.button("➕ Create User"):
+    if st.sidebar.button("➕ Create User", key="admin_nav_create_user"):
         st.session_state.admin_section = "Create User"
         st.session_state.engine_stage = None
         st.rerun()
 
-    if st.sidebar.button("🏪 Stockists"):
+    if st.sidebar.button("🏪 Stockists", key="admin_nav_stockists"):
         st.session_state.admin_section = "Stockists"
         st.session_state.engine_stage = None
         st.rerun()
 
-    if st.sidebar.button("📦 Products"):
+    if st.sidebar.button("📦 Products", key="admin_nav_products"):
         st.session_state.admin_section = "Products"
         st.session_state.engine_stage = None
         st.rerun()
 
-    if st.sidebar.button("🔐 Reset User Password"):
+    if st.sidebar.button("🔐 Reset User Password", key="admin_nav_reset_pwd"):
         st.session_state.admin_section = "Reset User Password"
         st.session_state.engine_stage = None
         st.rerun()
 
-    if st.sidebar.button("📜 Audit Logs"):
+    if st.sidebar.button("📜 Audit Logs", key="admin_nav_audit"):
         st.session_state.admin_section = "Audit Logs"
         st.session_state.engine_stage = None
         st.rerun()
 
-    if st.sidebar.button("🔒 Lock / Unlock Statements"):
+    if st.sidebar.button("🔒 Lock / Unlock Statements", key="admin_nav_lock"):
         st.session_state.admin_section = "Lock / Unlock Statements"
         st.session_state.engine_stage = None
         st.rerun()
 
-    if st.sidebar.button("📈 Analytics"):
+    if st.sidebar.button("📈 Analytics", key="admin_nav_analytics"):
         st.session_state.admin_section = "Analytics"
         st.session_state.engine_stage = None
         st.rerun()
 
 
-if st.sidebar.button("📊 Reports"):
-    st.session_state.engine_stage = "reports"
-    st.rerun()
+
+
 
 if st.sidebar.button("Logout"):
 
