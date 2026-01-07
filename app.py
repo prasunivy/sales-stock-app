@@ -667,8 +667,7 @@ if (
 # PREVIEW & EDIT JUMP
 # ======================================================
 if (
-    role == "user"
-    and st.session_state.statement_id
+    st.session_state.statement_id
     and st.session_state.engine_stage in ("preview", "view")
 ):
 
@@ -1279,27 +1278,40 @@ if role == "admin" and st.session_state.get("engine_stage") != "reports":
     elif section == "Lock / Unlock Statements":
         stmts = supabase.table("statements").select("*").execute().data
 
+        if not stmts:
+            st.info("No statements available")
+            st.stop()
+
         s = st.selectbox(
             "Statement",
             stmts,
             format_func=lambda x: f"{x['year']}-{x['month']} | {x['status']}"
         )
 
+if not s:
+    st.stop()
+
+
         if st.button("Lock"):
             supabase.table("statements").update({
                 "status": "locked",
                 "locked_at": datetime.utcnow().isoformat(),
                 "locked_by": user_id
-            }).eq("id", s["id"]).execute()
+            }).eq("id", s.get("id")).execute()
 
             st.success("Statement locked")
+            st.rerun()
 
         if st.button("Unlock"):
             supabase.table("statements").update({
-                "status": "draft"
-            }).eq("id", s["id"]).execute()
+                "status": "draft",
+                "locked_at": None,
+                "locked_by": None
+            }).eq("id", s.get("id")).execute()
 
             st.success("Statement unlocked")
+            st.rerun()
+
 
     # --------------------------------------------------
     # ANALYTICS
