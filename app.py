@@ -35,6 +35,8 @@ for k in [
     "statement_month",
     "selected_stockist_id",
     "engine_stage"
+    "admin_section"
+
 ]:
     if k not in st.session_state:
         st.session_state[k] = None
@@ -219,6 +221,62 @@ user_id = st.session_state.auth_user.id
 # SIDEBAR
 # ======================================================
 st.sidebar.title("Navigation")
+# ------------------------------
+# COMMON NAVIGATION
+# ------------------------------
+if st.sidebar.button("📊 Reports"):
+    st.session_state.engine_stage = "reports"
+    st.session_state.admin_section = None
+    st.rerun()
+if role == "admin":
+
+    st.sidebar.markdown("### 🛠 Admin")
+
+    if st.sidebar.button("📄 Statements"):
+        st.session_state.admin_section = "Statements"
+        st.session_state.engine_stage = None
+        st.rerun()
+
+    if st.sidebar.button("👤 Users"):
+        st.session_state.admin_section = "Users"
+        st.session_state.engine_stage = None
+        st.rerun()
+
+    if st.sidebar.button("➕ Create User"):
+        st.session_state.admin_section = "Create User"
+        st.session_state.engine_stage = None
+        st.rerun()
+
+    if st.sidebar.button("🏪 Stockists"):
+        st.session_state.admin_section = "Stockists"
+        st.session_state.engine_stage = None
+        st.rerun()
+
+    if st.sidebar.button("📦 Products"):
+        st.session_state.admin_section = "Products"
+        st.session_state.engine_stage = None
+        st.rerun()
+
+    if st.sidebar.button("🔐 Reset User Password"):
+        st.session_state.admin_section = "Reset User Password"
+        st.session_state.engine_stage = None
+        st.rerun()
+
+    if st.sidebar.button("📜 Audit Logs"):
+        st.session_state.admin_section = "Audit Logs"
+        st.session_state.engine_stage = None
+        st.rerun()
+
+    if st.sidebar.button("🔒 Lock / Unlock Statements"):
+        st.session_state.admin_section = "Lock / Unlock Statements"
+        st.session_state.engine_stage = None
+        st.rerun()
+
+    if st.sidebar.button("📈 Analytics"):
+        st.session_state.admin_section = "Analytics"
+        st.session_state.engine_stage = None
+        st.rerun()
+
 
 if st.sidebar.button("📊 Reports"):
     st.session_state.engine_stage = "reports"
@@ -744,27 +802,15 @@ if (
 # ======================================================
 # ADMIN PANEL — NAVIGATION ONLY
 # ======================================================
-if role == "admin":
+if role == "admin" and st.session_state.get("engine_stage") != "reports":
+
 
     st.title("Admin Dashboard")
+    section = st.session_state.admin_section
 
    
     
-    section = st.radio(
-        "Admin Section",
-        [
-            "Statements",
-            "Users",
-            "Create User",
-            "Stockists",
-            "Products",
-            "Reset User Password",
-            "Audit Logs",
-            "Lock / Unlock Statements",
-            "Analytics"
-        ],
-        index=0
-    )
+    
     
 
    
