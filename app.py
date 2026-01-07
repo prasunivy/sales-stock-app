@@ -703,9 +703,9 @@ if (
     )
 
     if "Product ID" in df.columns:
-    st.dataframe(df.drop(columns=["Product ID"]), use_container_width=True)
+        st.dataframe(df.drop(columns=["Product ID"]), use_container_width=True)
     else:
-    st.dataframe(df, use_container_width=True)
+        st.dataframe(df, use_container_width=True)
 
 
     # --------------------------------------------------
