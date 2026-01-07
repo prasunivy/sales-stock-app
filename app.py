@@ -570,7 +570,9 @@ if (
     # --------------------------------------------------
     opening = st.number_input(
         "Opening",
-        value=float(row.get("opening", last_closing)),
+        step=1,
+        format="%d",
+        value=int(row.get("opening", last_closing)),
         key=f"opening_{sid}_{product['id']}"
     )
 
@@ -578,13 +580,17 @@ if (
 
     purchase = st.number_input(
         "Purchase",
-        value=float(row.get("purchase", 0)),
+        step=1,
+        format="%d",
+        value=int(row.get("purchase", 0)),
         key=f"purchase_{sid}_{product['id']}"
     )
 
     issue = st.number_input(
         "Issue",
-        value=float(row.get("issue", 0)),
+        step=1,
+        format="%d",
+        value=int(row.get("issue", 0)),
         key=f"issue_{sid}_{product['id']}"
     )
 
@@ -592,9 +598,12 @@ if (
 
     closing = st.number_input(
         "Closing",
-        value=float(row.get("closing", calculated_closing)),
+        step=1,
+        format="%d",
+        value=int(row.get("closing", calculated_closing)),
         key=f"closing_{sid}_{product['id']}"
     )
+
 
     diff = calculated_closing - closing
     if diff != 0:
@@ -636,11 +645,11 @@ if (
                 {
                     "statement_id": sid,
                     "product_id": product["id"],
-                    "opening": opening,
-                    "last_month_issue": last_issue,
-                    "purchase": purchase,
-                    "issue": issue,
-                    "closing": closing,
+                    "opening": int(opening),
+                    "last_month_issue": int(last_issue),
+                    "purchase": int(purchase),
+                    "issue": int(issue),
+                    "closing": int(closing),
                     "calculated_closing": calculated_closing,
                     "updated_at": datetime.utcnow().isoformat()
                 },
