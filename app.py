@@ -797,9 +797,23 @@ if (
             )
         )
 
-        # 3️⃣ Move to read-only view
-        st.session_state.engine_stage = "view"
-        st.rerun()
+            # 3️⃣ Show success & allow safe return to dashboard
+        st.success("✅ Statement submitted successfully")
+
+        if st.button("⬅ Back to Dashboard"):
+
+            for k in [
+                "statement_id",
+                "product_index",
+                "statement_year",
+                "statement_month",
+                "selected_stockist_id",
+                "engine_stage"
+            ]:
+                st.session_state.pop(k, None)
+
+            st.rerun()
+
 
 
 # ======================================================
