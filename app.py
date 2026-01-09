@@ -1381,12 +1381,87 @@ if role == "admin" and st.session_state.get("engine_stage") != "reports":
     # AUDIT LOGS
     # --------------------------------------------------
     elif section == "Audit Logs":
-        logs = supabase.table("audit_logs") \
-            .select("*") \
-            .order("created_at", desc=True) \
-            .execute().data
+        st.subheader("📜 Audit Logs")
 
-        st.dataframe(pd.DataFrame(logs), use_container_width=True)
+        # --------------------------------------------------
+        # FILTERS
+        # --------------------------------------------------
+        f1, f2, f3 = st.columns(3)
+
+        with f1:
+            actions = (
+                supabase.table("audit_logs")
+                .select("action")
+                .execute()
+                .data
+            )
+            action_options = sorted(set(a["action"] for a in actions if a["action"]))
+            selected_actions = st.multiselect(
+                "Action",
+                action_options,
+                default=action_options
+            )
+
+        with f2:
+            users = supabase.table("users") \
+                .select("id, username") \
+                .order("username") \
+                .execute().data
+
+            user_map = {u["id"]: u["username"] for u in users}
+            selected_users = st.multiselect(
+                "Performed By",
+                users,
+                format_func=lambda x: x["username"]
+            )
+            selected_user_ids = [u["id"] for u in selected_users]
+
+        with f3:
+            days = st.selectbox(
+                "Time Range",
+                [1, 3, 7, 30, 90, 365],
+                index=3
+            )
+
+        # --------------------------------------------------
+        # FETCH LOGS
+        # --------------------------------------------------
+        query = supabase.table("audit_logs") \
+            .select("*") \
+            .gte("created_at", (datetime.utcnow() - timedelta(days=days)).isoformat()) \
+            .order("created_at", desc=True)
+
+        if selected_actions:
+            query = query.in_("action", selected_actions)
+
+        if selected_user_ids:
+            query = query.in_("performed_by", selected_user_ids)
+
+        logs = query.execute().data
+
+        if not logs:
+            st.info("No audit logs found for selected filters")
+            st.stop()
+
+        # --------------------------------------------------
+        # DISPLAY
+        # --------------------------------------------------
+        for log in logs:
+            with st.expander(
+                f"🕒 {log['created_at']} — {log['action']}",
+                expanded=False
+            ):
+                st.markdown(f"**Message:** {log.get('message', '—')}")
+                st.markdown(
+                    f"**Performed By:** {user_map.get(log['performed_by'], 'Unknown')}"
+                )
+                st.markdown(f"**Target Type:** {log.get('target_type')}")
+                st.markdown(f"**Target ID:** `{log.get('target_id')}`")
+
+                if log.get("metadata"):
+                st.markdown("**Metadata:**")
+                st.json(log["metadata"])
+
 
     # --------------------------------------------------
     # LOCK / UNLOCK STATEMENTS
