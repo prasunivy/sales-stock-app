@@ -900,6 +900,40 @@ if (
             .eq("id", st.session_state.statement_id)
         )
 
+        # 🧾 Audit log — statement submitted (non-blocking)
+        stmt_row = supabase.table("statements") \
+            .select("stockist_id, year, month") \
+            .eq("id", st.session_state.statement_id) \
+            .limit(1) \
+            .execute().data
+
+        if stmt_row:
+            stockist_row = supabase.table("stockists") \
+            .select("name") \
+            .eq("id", stmt_row[0]["stockist_id"]) \
+            .limit(1) \
+            .execute().data
+
+        stockist_name = stockist_row[0]["name"] if stockist_row else "Unknown Stockist"
+
+        log_audit(
+            action="statement_submitted",
+            target_type="statement",
+            target_id=st.session_state.statement_id,
+            performed_by=user_id,
+            message=(
+                f"Statement submitted for stockist "
+                f"{stockist_name} "
+                f"({stmt_row[0]['month']:02d}/{stmt_row[0]['year']})"
+            ),
+            metadata={
+                "stockist_id": stmt_row[0]["stockist_id"],
+                "stockist_name": stockist_name,
+                "year": stmt_row[0]["year"],
+                "month": stmt_row[0]["month"]
+            }
+        )
+
         # 2️⃣ Generate monthly summary (FINAL statements only)
         safe_exec(
             admin_supabase.rpc(
