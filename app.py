@@ -1138,18 +1138,22 @@ if role == "admin" and st.session_state.get("engine_stage") != "reports":
                 "created_by": user_id
             }).execute()
 
-            supabase.table("audit_logs").insert({
-                "action": "create_stockist",
-                "target_type": "stockist",
-                "performed_by": user_id,
-                "metadata": {
-                    "name": name,
-                    "location": location,
-                    "phone": phone,
-                    "payment_terms": payment_terms,
+            # Audit log (human + developer friendly, non-blocking)
+            log_audit(
+                action="create_stockist",
+                target_type="stockist",
+                target_id=None,  # created ID not needed for readability
+                performed_by=user_id,
+                message=f"Stockist '{name.strip()}' created",
+                metadata={
+                    "name": name.strip(),
+                    "location": location.strip() or None,
+                    "phone": phone.strip() or "9433245464",
+                    "payment_terms": payment_terms or None,
                     "authorization_status": authorization_status
                 }
-            }).execute()
+            )
+
 
             st.cache_data.clear()
             st.success("Stockist added successfully")
