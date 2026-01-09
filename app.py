@@ -201,14 +201,31 @@ def log_audit(
     target_id: str = None,
     metadata: dict = None
 ):
+    # Resolve username (best-effort)
+    username = None
+    try:
+        u = supabase.table("users") \
+            .select("username") \
+            .eq("id", performed_by) \
+            .limit(1) \
+            .execute().data
+        if u:
+            username = u[0]["username"]
+    except Exception:
+        pass
+
+    enriched_metadata = metadata or {}
+    enriched_metadata["performed_by_username"] = username
+
     supabase.table("audit_logs").insert({
         "action": action,
         "message": message,
         "performed_by": performed_by,
         "target_type": target_type,
         "target_id": target_id,
-        "metadata": metadata or {}
+        "metadata": enriched_metadata
     }).execute()
+
 
 # ======================================================
 # LOGIN
@@ -510,18 +527,33 @@ if (
                 )
 
                 # 3️⃣ Audit log
-                safe_exec(
-                    supabase.table("audit_logs").insert({
-                        "action": "reset_statement",
-                        "target_type": "statement",
-                        "performed_by": user_id,
-                        "metadata": {
-                            "stockist_id": stmt_meta["stockist_id"],
-                            "year": stmt_meta["year"],
-                            "month": stmt_meta["month"]
-                        }
-                    })
+                # 3️⃣ Audit log (human + developer friendly)
+                stockist_row = supabase.table("stockists") \
+                    .select("name") \
+                    .eq("id", stmt_meta["stockist_id"]) \
+                    .limit(1) \
+                    .execute().data
+
+                stockist_name = stockist_row[0]["name"] if stockist_row else "Unknown Stockist"
+
+                log_audit(
+                    action="reset_statement",
+                    target_type="statement",
+                    target_id=sid,
+                    performed_by=user_id,
+                    message=(
+                        f"Statement reset for stockist "
+                        f"{stockist_name} "
+                        f"({stmt_meta['month']:02d}/{stmt_meta['year']})"
+                    ),
+                    metadata={
+                        "stockist_id": stmt_meta["stockist_id"],
+                        "stockist_name": stockist_name,
+                        "year": stmt_meta["year"],
+                        "month": stmt_meta["month"]
+                    }
                 )
+
 
                 # 4️⃣ Clear engine session state
                 for k in [
