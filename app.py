@@ -456,6 +456,11 @@ if role == "user" and not st.session_state.statement_id:
                             st.success("Draft deleted successfully")
                             st.rerun()
 
+    # ======================================================
+    # ➕ CREATE / RESUME NEW STATEMENT
+    # ======================================================
+    st.divider()
+    st.subheader("➕ Create / Resume New Statement")
 
 
     stockists = safe_exec(
