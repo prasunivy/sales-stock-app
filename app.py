@@ -189,6 +189,26 @@ def load_profile(uid):
         .select("*")
         .eq("id", uid)
     )[0]
+# ======================================================
+# AUDIT LOG HELPER
+# ======================================================
+def log_audit(
+    *,
+    action: str,
+    message: str,
+    performed_by: str,
+    target_type: str = None,
+    target_id: str = None,
+    metadata: dict = None
+):
+    supabase.table("audit_logs").insert({
+        "action": action,
+        "message": message,
+        "performed_by": performed_by,
+        "target_type": target_type,
+        "target_id": target_id,
+        "metadata": metadata or {}
+    }).execute()
 
 # ======================================================
 # LOGIN
