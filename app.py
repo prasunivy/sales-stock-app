@@ -1593,8 +1593,8 @@ if role == "admin" and st.session_state.get("engine_stage") != "reports":
                 st.markdown(f"**Target ID:** `{log.get('target_id')}`")
 
                 if log.get("metadata"):
-                st.markdown("**Metadata:**")
-                st.json(log["metadata"])
+                    st.markdown("**Metadata:**")
+                    st.json(log["metadata"])
 
 
     # --------------------------------------------------
