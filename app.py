@@ -1057,16 +1057,23 @@ if role == "admin" and st.session_state.get("engine_stage") != "reports":
                     "stockist_id": s["id"]
                 }).execute()
 
-            supabase.table("audit_logs").insert({
-                "action": "update_user",
-                "target_type": "user",
-                "target_id": user["id"],
-                "performed_by": user_id,
-                "metadata": {
+            # Audit log (human + developer friendly, non-blocking)
+            log_audit(
+                action="update_user",
+                target_type="user",
+                target_id=user["id"],
+                performed_by=user_id,
+                message=(
+                    f"User '{user['username']}' updated "
+                    f"(active={is_active}, "
+                    f"stockists={', '.join(s['name'] for s in selected_stockists) or 'none'})"
+                ),
+                metadata={
                     "is_active": is_active,
-                    "stockists": [s["name"] for s in selected_stockists]
+                    "assigned_stockists": [s["name"] for s in selected_stockists]
                 }
-            }).execute()
+            )
+
 
             st.success("User updated successfully")
 
