@@ -431,6 +431,32 @@ if role == "user" and not st.session_state.statement_id:
         ).execute()
 
         stmt = res.data[0]
+        # 🧾 Audit log — statement created (non-blocking)
+        stockist_row = supabase.table("stockists") \
+            .select("name") \
+            .eq("id", stmt["stockist_id"]) \
+            .limit(1) \
+            .execute().data
+
+        stockist_name = stockist_row[0]["name"] if stockist_row else "Unknown Stockist"
+
+        log_audit(
+            action="statement_created",
+            target_type="statement",
+            target_id=stmt["id"],
+            performed_by=user_id,
+            message=(
+                f"Statement created for stockist "
+                f"{stockist_name} "
+                f"({month:02d}/{year})"
+            ),
+            metadata={
+                "stockist_id": stmt["stockist_id"],
+                "stockist_name": stockist_name,
+                "year": year,
+                "month": month
+            }
+        )
 
         # 🚫 Hard lock by admin
         if stmt["locked"] or stmt["status"] == "locked":
