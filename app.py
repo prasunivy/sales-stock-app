@@ -968,16 +968,41 @@ if role == "admin" and st.session_state.get("engine_stage") != "reports":
 
         with col4:
             if st.button("🗑 Delete"):
+
+                # 1️⃣ Delete statement products
                 safe_exec(
                     admin_supabase.table("statement_products")
                     .delete()
                     .eq("statement_id", stmt["id"])
                 )
+
+                # 2️⃣ Delete statement
                 safe_exec(
                     admin_supabase.table("statements")
                     .delete()
                     .eq("id", stmt["id"])
                 )
+
+                # 3️⃣ Audit log (human + developer friendly, non-blocking)
+                log_audit(
+                    action="delete_statement",
+                    target_type="statement",
+                    target_id=stmt["id"],
+                    performed_by=user_id,
+                    message=(
+                        f"Admin deleted statement for "
+                        f"{stmt['stockists']['name']} "
+                        f"({stmt['month']:02d}/{stmt['year']})"
+                    ),
+                    metadata={
+                        "stockist_id": stmt["stockist_id"],
+                        "stockist_name": stmt["stockists"]["name"],
+                        "month": stmt["month"],
+                        "year": stmt["year"],
+                        "status_before_delete": stmt["status"]
+                    }
+                )
+
                 st.success("Statement permanently deleted")
                 st.rerun()
 
