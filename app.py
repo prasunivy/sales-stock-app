@@ -352,20 +352,110 @@ if role == "user" and not st.session_state.statement_id:
         .order("month", desc=True) \
         .execute().data
 
-    if my_statements:
-        for s in my_statements:
-            status_badge = (
-                "📝 Draft" if s["status"] == "draft"
-                else "✅ Final" if s["status"] == "final"
-                else "🔒 Locked"
-            )
+    # 🔍 Search by stockist
+    search_text = st.text_input(
+        "Search by Stockist",
+        placeholder="Type stockist name..."
+    )
 
-            st.markdown(
-                f"- **{s['stockists']['name']}** "
-                f"({s['month']:02d}/{s['year']}) — {status_badge}"
-            )
-    else:
+    if not my_statements:
         st.info("No statements created yet.")
+    else:
+        filtered_statements = [
+            s for s in my_statements
+            if not search_text
+            or search_text.lower() in s["stockists"]["name"].lower()
+        ]
+
+        if not filtered_statements:
+            st.info("No statements match your search.")
+        else:
+            total_products = len(load_products_cached())
+
+            for s in filtered_statements:
+
+                # -------------------------------
+                # STATUS + PROGRESS
+                # -------------------------------
+                if s["locked"]:
+                    status_label = "🔒 Locked"
+                    action = "view"
+
+                elif s["status"] == "final":
+                    status_label = "✅ Submitted"
+                    action = "view"
+
+                else:
+                    progress = s.get("current_product_index") or 0
+                    status_label = f"📝 Draft ({progress} / {total_products} products)"
+                    action = "resume"
+
+                col1, col2, col3, col4 = st.columns([4, 2, 2, 2])
+
+                with col1:
+                    st.markdown(
+                        f"**{s['stockists']['name']}** "
+                        f"({s['month']:02d}/{s['year']})"
+                    )
+
+                with col2:
+                    st.markdown(status_label)
+
+                with col3:
+                    if st.button(
+                        "▶ Resume" if action == "resume" else "👁 View",
+                        key=f"open_stmt_{s['id']}"
+                    ):
+                        st.session_state.statement_id = s["id"]
+
+                        if action == "resume":
+                            st.session_state.engine_stage = "edit"
+                            st.session_state.product_index = (
+                                s.get("current_product_index") or 0
+                            )
+                        else:
+                            st.session_state.engine_stage = "view"
+
+                        st.rerun()
+
+                # -------------------------------
+                # DELETE DRAFT ONLY
+                # -------------------------------
+                with col4:
+                    if s["status"] == "draft" and not s["locked"]:
+                        if st.button(
+                            "🗑 Delete Draft",
+                            key=f"delete_stmt_{s['id']}"
+                        ):
+                            safe_exec(
+                                admin_supabase.table("statement_products")
+                                .delete()
+                                .eq("statement_id", s["id"])
+                            )
+
+                            safe_exec(
+                                admin_supabase.table("statements")
+                                .delete()
+                                .eq("id", s["id"])
+                                .eq("user_id", user_id)
+                            )
+
+                            log_audit(
+                                action="delete_draft_statement",
+                                target_type="statement",
+                                target_id=s["id"],
+                                performed_by=user_id,
+                                message=(
+                                    f"Draft statement deleted for "
+                                    f"{s['stockists']['name']} "
+                                    f"({s['month']:02d}/{s['year']})"
+                                ),
+                                metadata={}
+                            )
+
+                            st.success("Draft deleted successfully")
+                            st.rerun()
+
 
 
     stockists = safe_exec(
