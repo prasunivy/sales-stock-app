@@ -343,6 +343,30 @@ if st.sidebar.button("Logout"):
 if role == "user" and not st.session_state.statement_id:
 
     st.title("📊 Sales & Stock Statement")
+    st.subheader("🗂 My Statements")
+
+    my_statements = supabase.table("statements") \
+        .select("id, year, month, status, locked, stockists(name)") \
+        .eq("user_id", user_id) \
+        .order("year", desc=True) \
+        .order("month", desc=True) \
+        .execute().data
+
+    if my_statements:
+        for s in my_statements:
+            status_badge = (
+                "📝 Draft" if s["status"] == "draft"
+                else "✅ Final" if s["status"] == "final"
+                else "🔒 Locked"
+            )
+
+            st.markdown(
+                f"- **{s['stockists']['name']}** "
+                f"({s['month']:02d}/{s['year']}) — {status_badge}"
+            )
+    else:
+        st.info("No statements created yet.")
+
 
     stockists = safe_exec(
         supabase.table("user_stockists")
@@ -440,23 +464,35 @@ if role == "user" and not st.session_state.statement_id:
 
         stockist_name = stockist_row[0]["name"] if stockist_row else "Unknown Stockist"
 
-        log_audit(
-            action="statement_created",
-            target_type="statement",
-            target_id=stmt["id"],
-            performed_by=user_id,
-            message=(
-                f"Statement created for stockist "
-                f"{stockist_name} "
-                f"({month:02d}/{year})"
-            ),
-            metadata={
-                "stockist_id": stmt["stockist_id"],
-                "stockist_name": stockist_name,
-                "year": year,
-                "month": month
-            }
-        )
+        # 🧠 Log "statement_created" ONLY if this is a new statement
+        if stmt.get("created_at") == stmt.get("updated_at"):
+
+            stockist_row = supabase.table("stockists") \
+                .select("name") \
+                .eq("id", stmt["stockist_id"]) \
+                .limit(1) \
+                .execute().data
+
+            stockist_name = stockist_row[0]["name"] if stockist_row else "Unknown Stockist"
+
+            log_audit(
+                action="statement_created",
+                target_type="statement",
+                target_id=stmt["id"],
+                performed_by=user_id,
+                message=(
+                    f"Statement created for stockist "
+                    f"{stockist_name} "
+                    f"({stmt['month']:02d}/{stmt['year']})"
+                ),
+                metadata={
+                    "stockist_id": stmt["stockist_id"],
+                    "stockist_name": stockist_name,
+                    "year": stmt["year"],
+                    "month": stmt["month"]
+                }
+            )
+
 
         # 🚫 Hard lock by admin
         if stmt["locked"] or stmt["status"] == "locked":
@@ -1455,11 +1491,25 @@ if role == "admin" and st.session_state.get("engine_stage") != "reports":
         pwd = st.text_input("New Password", type="password")
 
         if st.button("Reset Password"):
-            admin_supabase.auth.admin.update_user_by_id(
-                u["id"],
-                {"password": pwd}
-            )
-            st.success("Password reset successfully")
+            if not pwd.strip():
+                st.error("Password cannot be empty")
+                st.stop()
+
+        admin_supabase.auth.admin.update_user_by_id(
+            u["id"],
+            {"password": pwd}
+        )
+
+        log_audit(
+            action="reset_user_password",
+            target_type="user",
+            target_id=u["id"],
+            performed_by=user_id,
+            message=f"Password reset for user '{u['username']}'",
+            metadata={}
+        )
+
+        st.success("Password reset successfully")
 
     # --------------------------------------------------
     # AUDIT LOGS
