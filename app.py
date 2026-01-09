@@ -265,6 +265,93 @@ if st.sidebar.button("📊 Reports", key="nav_reports"):
     st.session_state.engine_stage = "reports"
     st.session_state.admin_section = None
     st.rerun()
+# ======================================================
+# USER SIDEBAR — STATEMENTS
+# ======================================================
+if role == "user":
+
+    st.sidebar.divider()
+    st.sidebar.subheader("🗂 My Statements")
+
+    search_text = st.sidebar.text_input(
+        "Search Stockist",
+        placeholder="Type stockist name..."
+    )
+
+    my_statements = admin_supabase.table("statements") \
+        .select(
+            "id, year, month, status, locked, current_product_index, stockists(name)"
+        ) \
+        .eq("user_id", user_id) \
+        .order("year", desc=True) \
+        .order("month", desc=True) \
+        .execute().data
+
+    if not my_statements:
+        st.sidebar.info("No statements yet")
+    else:
+        total_products = len(load_products_cached())
+
+        for s in my_statements:
+
+            if search_text and search_text.lower() not in s["stockists"]["name"].lower():
+                continue
+
+            if s["locked"]:
+                status = "🔒 Locked"
+                action = "view"
+            elif s["status"] == "final":
+                status = "✅ Submitted"
+                action = "view"
+            else:
+                progress = s.get("current_product_index") or 0
+                status = f"📝 Draft ({progress}/{total_products})"
+                action = "edit"
+
+            if st.sidebar.button(
+                f"{s['stockists']['name']} "
+                f"({s['month']:02d}/{s['year']}) — {status}",
+                key=f"user_stmt_{s['id']}"
+            ):
+                st.session_state.statement_id = s["id"]
+                st.session_state.product_index = s.get("current_product_index") or 0
+                st.session_state.engine_stage = action
+                st.rerun()
+
+    # --------------------------------------------------
+    # ➕ CREATE / RESUME NEW STATEMENT
+    # --------------------------------------------------
+    st.sidebar.divider()
+    st.sidebar.subheader("➕ New Statement")
+
+    stockists = safe_exec(
+        supabase.table("user_stockists")
+        .select("stockist_id, stockists(name)")
+        .eq("user_id", user_id)
+    )
+
+    if stockists:
+        selected = st.sidebar.selectbox(
+            "Stockist",
+            stockists,
+            format_func=lambda x: x["stockists"]["name"]
+        )
+
+        today = date.today()
+        year = st.sidebar.selectbox("Year", [today.year - 1, today.year])
+        month = st.sidebar.selectbox(
+            "Month",
+            list(range(1, today.month + 1)) if year == today.year else list(range(1, 13))
+        )
+
+        if st.sidebar.button("➕ Create / Resume"):
+            st.session_state.selected_stockist_id = selected["stockist_id"]
+            st.session_state.statement_year = year
+            st.session_state.statement_month = month
+            st.session_state.engine_stage = None  # main page will handle creation
+            st.rerun()
+    else:
+        st.sidebar.warning("No stockists assigned")
 
 if role == "admin":
 
@@ -338,288 +425,36 @@ if st.sidebar.button("Logout"):
 
 
 # ======================================================
-# USER LANDING
+# USER LANDING (MAIN PAGE — USER)
 # ======================================================
 if role == "user" and not st.session_state.statement_id:
 
     st.title("📊 Sales & Stock Statement")
-    st.subheader("🗂 My Statements")
 
-    my_statements = supabase.table("statements") \
-        .select("id, year, month, status, locked, stockists(name)") \
-        .eq("user_id", user_id) \
-        .order("year", desc=True) \
-        .order("month", desc=True) \
-        .execute().data
+    st.markdown(
+        """
+        ### 👈 Start from the Sidebar
 
-    # 🔍 Search by stockist
-    search_text = st.text_input(
-        "Search by Stockist",
-        placeholder="Type stockist name..."
+        Use the **left sidebar** to manage your statements:
+
+        **You can:**
+        - ▶ Resume a draft statement
+        - 👁 View a submitted or locked statement
+        - ➕ Create a new statement by selecting:
+          - Stockist
+          - Year
+          - Month
+
+        ---
+        """
     )
 
-    if not my_statements:
-        st.info("No statements created yet.")
-    else:
-        filtered_statements = [
-            s for s in my_statements
-            if not search_text
-            or search_text.lower() in s["stockists"]["name"].lower()
-        ]
-
-        if not filtered_statements:
-            st.info("No statements match your search.")
-        else:
-            total_products = len(load_products_cached())
-
-            for s in filtered_statements:
-
-                # -------------------------------
-                # STATUS + PROGRESS
-                # -------------------------------
-                if s["locked"]:
-                    status_label = "🔒 Locked"
-                    action = "view"
-
-                elif s["status"] == "final":
-                    status_label = "✅ Submitted"
-                    action = "view"
-
-                else:
-                    progress = s.get("current_product_index") or 0
-                    status_label = f"📝 Draft ({progress} / {total_products} products)"
-                    action = "resume"
-
-                col1, col2, col3, col4 = st.columns([4, 2, 2, 2])
-
-                with col1:
-                    st.markdown(
-                        f"**{s['stockists']['name']}** "
-                        f"({s['month']:02d}/{s['year']})"
-                    )
-
-                with col2:
-                    st.markdown(status_label)
-
-                with col3:
-                    if st.button(
-                        "▶ Resume" if action == "resume" else "👁 View",
-                        key=f"open_stmt_{s['id']}"
-                    ):
-                        st.session_state.statement_id = s["id"]
-
-                        if action == "resume":
-                            st.session_state.engine_stage = "edit"
-                            st.session_state.product_index = (
-                                s.get("current_product_index") or 0
-                            )
-                        else:
-                            st.session_state.engine_stage = "view"
-
-                        st.rerun()
-
-                # -------------------------------
-                # DELETE DRAFT ONLY
-                # -------------------------------
-                with col4:
-                    if s["status"] == "draft" and not s["locked"]:
-                        if st.button(
-                            "🗑 Delete Draft",
-                            key=f"delete_stmt_{s['id']}"
-                        ):
-                            safe_exec(
-                                admin_supabase.table("statement_products")
-                                .delete()
-                                .eq("statement_id", s["id"])
-                            )
-
-                            safe_exec(
-                                admin_supabase.table("statements")
-                                .delete()
-                                .eq("id", s["id"])
-                                .eq("user_id", user_id)
-                            )
-
-                            log_audit(
-                                action="delete_draft_statement",
-                                target_type="statement",
-                                target_id=s["id"],
-                                performed_by=user_id,
-                                message=(
-                                    f"Draft statement deleted for "
-                                    f"{s['stockists']['name']} "
-                                    f"({s['month']:02d}/{s['year']})"
-                                ),
-                                metadata={}
-                            )
-
-                            st.success("Draft deleted successfully")
-                            st.rerun()
-
-    # ======================================================
-    # ➕ CREATE / RESUME NEW STATEMENT
-    # ======================================================
-    st.divider()
-    st.subheader("➕ Create / Resume New Statement")
-
-
-    stockists = safe_exec(
-        supabase.table("user_stockists")
-        .select("stockist_id, stockists(name)")
-        .eq("user_id", user_id)
+    st.info(
+        "ℹ️ Draft statements are saved automatically. "
+        "You can safely close the app and resume later."
     )
 
-    selected = st.selectbox(
-        "Stockist",
-        stockists,
-        format_func=lambda x: x["stockists"]["name"]
-    )
-
-    today = date.today()
-    year = st.selectbox("Year", [today.year - 1, today.year])
-    month = st.selectbox(
-        "Month",
-        list(range(1, today.month + 1)) if year == today.year else list(range(1, 13))
-    )
-
-    # 🔁 Detect existing draft for resume
-    existing_draft = safe_exec(
-        admin_supabase.table("statements")
-        .select("id, current_product_index, editing_by, status, locked")
-        .eq("user_id", user_id)
-        .eq("stockist_id", selected["stockist_id"])
-        .eq("year", year)
-        .eq("month", month)
-        .eq("status", "draft")
-        .limit(1)
-    )
-
-    if existing_draft:
-        draft = existing_draft[0]
-
-        if draft["locked"]:
-            st.warning("Draft exists but is locked by admin")
-        else:
-            st.info(
-                f"📝 You have an unfinished draft for {month}/{year}. "
-                f"Progress saved till product #{draft['current_product_index'] + 1}. "
-                "You can safely resume from where you left off."
-            )
-
-
-            if st.button("▶ Resume Draft"):
-                # 🚫 Block if another device editing
-                if draft["editing_by"] and draft["editing_by"] != user_id:
-                    st.error("Statement currently open on another device")
-                    st.stop()
-
-                # ✅ Acquire edit lock
-                safe_exec(
-                    admin_supabase.table("statements")
-                    .update({
-                        "editing_by": user_id,
-                        "editing_at": datetime.utcnow().isoformat()
-                    })
-                    .eq("id", draft["id"])
-                )
-
-                st.session_state.statement_id = draft["id"]
-                st.session_state.product_index = draft["current_product_index"] or 0
-                st.session_state.statement_year = year
-                st.session_state.statement_month = month
-                st.session_state.selected_stockist_id = selected["stockist_id"]
-                st.session_state.engine_stage = "edit"
-
-                st.rerun()
-
-    if st.button("➕ Create / Resume"):
-
-        res = admin_supabase.table("statements").upsert(
-            {
-                "user_id": user_id,
-                "stockist_id": selected["stockist_id"],
-                "year": year,
-                "month": month,
-                "status": "draft",
-                "engine_stage": "edit",
-                "current_product_index": 0,
-                "updated_at": datetime.utcnow().isoformat()
-            },
-            on_conflict="stockist_id,year,month",
-            returning="representation"
-        ).execute()
-
-        stmt = res.data[0]
-        # 🧾 Audit log — statement created (non-blocking)
-        stockist_row = supabase.table("stockists") \
-            .select("name") \
-            .eq("id", stmt["stockist_id"]) \
-            .limit(1) \
-            .execute().data
-
-        stockist_name = stockist_row[0]["name"] if stockist_row else "Unknown Stockist"
-
-        # 🧠 Log "statement_created" ONLY if this is a new statement
-        if stmt.get("created_at") == stmt.get("updated_at"):
-
-            stockist_row = supabase.table("stockists") \
-                .select("name") \
-                .eq("id", stmt["stockist_id"]) \
-                .limit(1) \
-                .execute().data
-
-            stockist_name = stockist_row[0]["name"] if stockist_row else "Unknown Stockist"
-
-            log_audit(
-                action="statement_created",
-                target_type="statement",
-                target_id=stmt["id"],
-                performed_by=user_id,
-                message=(
-                    f"Statement created for stockist "
-                    f"{stockist_name} "
-                    f"({stmt['month']:02d}/{stmt['year']})"
-                ),
-                metadata={
-                    "stockist_id": stmt["stockist_id"],
-                    "stockist_name": stockist_name,
-                    "year": stmt["year"],
-                    "month": stmt["month"]
-                }
-            )
-
-
-        # 🚫 Hard lock by admin
-        if stmt["locked"] or stmt["status"] == "locked":
-            st.error("Statement already locked by admin")
-            st.stop()
-
-        # 🚫 Single active editor rule
-        if stmt["editing_by"] and stmt["editing_by"] != user_id:
-            st.error("Statement currently open on another device")
-            st.stop()
-
-        # ✅ Acquire edit lock
-        safe_exec(
-            admin_supabase.table("statements")
-            .update({
-                "editing_by": user_id,
-                "editing_at": datetime.utcnow().isoformat(),
-                "last_saved_at": datetime.utcnow().isoformat()
-            })
-            .eq("id", stmt["id"])
-        )
-
-        st.session_state.statement_id = stmt["id"]
-        st.session_state.product_index = stmt["current_product_index"] or 0
-        st.session_state.statement_year = year
-        st.session_state.statement_month = month
-        st.session_state.selected_stockist_id = selected["stockist_id"]
-        st.session_state.engine_stage = "edit"
-
-        st.rerun()
-
-    
+    st.stop()
 
 # ======================================================
 # PRODUCT ENGINE
