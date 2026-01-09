@@ -724,7 +724,6 @@ if (
 
 
 # ======================================================
-# ======================================================
 # PREVIEW & EDIT JUMP
 # ======================================================
 if (
@@ -767,6 +766,31 @@ if (
         st.dataframe(df.drop(columns=["Product ID"]), use_container_width=True)
     else:
         st.dataframe(df, use_container_width=True)
+    # --------------------------------------------------
+    # 🕒 STATEMENT TIMELINE
+    # --------------------------------------------------
+    st.divider()
+    st.subheader("🕒 Statement Timeline")
+
+    timeline_logs = supabase.table("audit_logs") \
+        .select("action, message, created_at, metadata") \
+        .eq("target_type", "statement") \
+        .eq("target_id", sid) \
+        .order("created_at") \
+        .execute().data
+
+    if not timeline_logs:
+        st.info("No activity recorded for this statement yet.")
+    else:
+        for log in timeline_logs:
+            st.markdown(
+                f"🕒 **{log['created_at']}** — "
+                f"{log.get('message') or log['action']}"
+            )
+
+            if log.get("metadata"):
+                with st.expander("Details", expanded=False):
+                    st.json(log["metadata"])
 
 
     # --------------------------------------------------
