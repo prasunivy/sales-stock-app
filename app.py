@@ -330,6 +330,14 @@ if role == "user":
         .eq("user_id", user_id)
     )
 
+    if not stockists:
+        st.sidebar.error(
+            "❌ No stockists assigned to your user.\n\n"
+            "Please contact admin to assign stockists."
+        )
+        st.stop()
+
+
     if stockists:
         selected = st.sidebar.selectbox(
             "Stockist",
@@ -345,11 +353,51 @@ if role == "user":
         )
 
         if st.sidebar.button("➕ Create / Resume"):
-            st.session_state.selected_stockist_id = selected["stockist_id"]
-            st.session_state.statement_year = year
-            st.session_state.statement_month = month
-            st.session_state.engine_stage = None  # main page will handle creation
+
+            res = admin_supabase.table("statements").upsert(
+                {
+                    "user_id": user_id,
+                    "stockist_id": selected["stockist_id"],
+                    "year": year,
+                    "month": month,
+                    "status": "draft",
+                    "current_product_index": 0,
+                    "updated_at": datetime.utcnow().isoformat()
+                },
+                on_conflict="stockist_id,year,month",
+                returning="representation"
+            ).execute()
+
+            stmt = res.data[0]
+
+            # 🚫 Locked check
+            if stmt["locked"]:
+                st.sidebar.error("Statement is locked by admin")
+                st.stop()
+
+            # 🚫 Another editor check
+            if stmt.get("editing_by") and stmt["editing_by"] != user_id:
+                st.sidebar.error("Statement is open on another device")
+                st.stop()
+
+            # ✅ Acquire lock
+            safe_exec(
+                admin_supabase.table("statements")
+                .update({
+                    "editing_by": user_id,
+                    "editing_at": datetime.utcnow().isoformat(),
+                    "last_saved_at": datetime.utcnow().isoformat()
+                })
+                .eq("id", stmt["id"])
+            )
+
+            # ✅ Move user into editor
+            st.session_state.statement_id = stmt["id"]
+            st.session_state.product_index = stmt.get("current_product_index") or 0
+            st.session_state.engine_stage = "edit"
+
             st.rerun()
+
     else:
         st.sidebar.warning("No stockists assigned")
 
