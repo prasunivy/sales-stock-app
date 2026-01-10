@@ -391,10 +391,14 @@ if role == "user":
                 .eq("id", stmt["id"])
             )
 
-            # ✅ Move user into editor
+           # ✅ Move user into editor (SET ALL REQUIRED STATE)
             st.session_state.statement_id = stmt["id"]
             st.session_state.product_index = stmt.get("current_product_index") or 0
+            st.session_state.statement_year = stmt["year"]
+            st.session_state.statement_month = stmt["month"]
+            st.session_state.selected_stockist_id = stmt["stockist_id"]
             st.session_state.engine_stage = "edit"
+
 
             st.rerun()
 
@@ -507,6 +511,18 @@ if role == "user" and not st.session_state.statement_id:
 # ======================================================
 # PRODUCT ENGINE
 # ======================================================
+# SAFETY CHECK — REQUIRED STATE
+required_keys = [
+    "statement_id",
+    "statement_year",
+    "statement_month",
+    "selected_stockist_id"
+]
+
+if not all(st.session_state.get(k) is not None for k in required_keys):
+    st.error("❌ Statement context incomplete. Please restart from sidebar.")
+    st.stop()
+
 if (
     role == "user"
     and st.session_state.statement_id
