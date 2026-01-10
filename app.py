@@ -309,14 +309,17 @@ if role == "user":
                 action = "edit"
 
             if st.sidebar.button(
-                f"{s['stockists']['name']} "
-                f"({s['month']:02d}/{s['year']}) — {status}",
+                f"{s['stockists']['name']} ({s['month']:02d}/{s['year']}) — {status}",
                 key=f"user_stmt_{s['id']}"
             ):
                 st.session_state.statement_id = s["id"]
                 st.session_state.product_index = s.get("current_product_index") or 0
+                st.session_state.statement_year = s["year"]
+                st.session_state.statement_month = s["month"]
+                st.session_state.selected_stockist_id = s["stockist_id"]
                 st.session_state.engine_stage = action
                 st.rerun()
+
 
     # --------------------------------------------------
     # ➕ CREATE / RESUME NEW STATEMENT
