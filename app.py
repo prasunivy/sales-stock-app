@@ -296,7 +296,7 @@ if role == "user":
 
     my_statements = admin_supabase.table("statements") \
         .select(
-            "id, year, month, status, locked, current_product_index, stockists(name)"
+            "id, year, month, status, locked, current_product_index, stockist_id, stockists(name)"
         ) \
         .eq("user_id", user_id) \
         .order("year", desc=True) \
