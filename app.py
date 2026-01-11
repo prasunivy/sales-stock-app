@@ -374,7 +374,7 @@ if role == "user":
                     "current_product_index": 0,
                     "updated_at": datetime.utcnow().isoformat()
                 },
-                on_conflict="user_id,stockist_id,year,month"
+                on_conflict="user_id,stockist_id,year,month",
 
                 returning="representation"
             ).execute()
