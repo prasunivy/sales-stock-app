@@ -1552,9 +1552,9 @@ if role == "admin":
 
             try:
                 admin_supabase.auth.admin.update_user_by_id(
-                u["id"],
-                {"password": pwd}
-            )
+                    u["id"],
+                    {"password": pwd}
+                )
 
             log_audit(
                 action="reset_user_password",
@@ -1570,6 +1570,7 @@ if role == "admin":
         except Exception as e:
             st.error("❌ Password rejected by security policy")
             st.exception(e)
+
 
 
         
