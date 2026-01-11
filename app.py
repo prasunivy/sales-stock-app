@@ -352,13 +352,7 @@ if role == "user":
                 st.session_state.engine_stage = action
                 st.rerun()
 
-                st.session_state.statement_id = s["id"]
-                st.session_state.product_index = s.get("current_product_index") or 0
-                st.session_state.statement_year = s["year"]
-                st.session_state.statement_month = s["month"]
-                st.session_state.selected_stockist_id = s["stockist_id"]
-                st.session_state.engine_stage = action
-                st.rerun()
+                
 
 
     # --------------------------------------------------
@@ -434,7 +428,7 @@ if role == "user":
                 .eq("id", stmt["id"])
             )
 
-           # ✅ Move user into editor (SET ALL REQUIRED STATE)
+            # ✅ Move user into editor (SET ALL REQUIRED STATE)
             st.session_state.statement_id = stmt["id"]
             st.session_state.product_index = stmt.get("current_product_index") or 0
             st.session_state.statement_year = stmt["year"]
@@ -522,34 +516,37 @@ if st.sidebar.button("Logout"):
 # ======================================================
 # USER LANDING (MAIN PAGE — USER)
 # ======================================================
-if role == "user" and not st.session_state.statement_id:
+if role == "user":
 
-    st.title("📊 Sales & Stock Statement")
+    if not st.session_state.statement_id:
 
-    st.markdown(
-        """
-        ### 👈 Start from the Sidebar
+        st.title("📊 Sales & Stock Statement")
 
-        Use the **left sidebar** to manage your statements:
+        st.markdown(
+            """
+            ### 👈 Start from the Sidebar
 
-        **You can:**
-        - ▶ Resume a draft statement
-        - 👁 View a submitted or locked statement
-        - ➕ Create a new statement by selecting:
-          - Stockist
-          - Year
-          - Month
+            Use the **left sidebar** to manage your statements:
 
-        ---
-        """
-    )
+            **You can:**
+            - ▶ Resume a draft statement
+            - 👁 View a submitted or locked statement
+            - ➕ Create a new statement by selecting:
+              - Stockist
+              - Year
+              - Month
 
-    st.info(
-        "ℹ️ Draft statements are saved automatically. "
-        "You can safely close the app and resume later."
-    )
+            ---
+            """
+        )
 
-    st.stop()
+        st.info(
+            "ℹ️ Draft statements are saved automatically. "
+            "You can safely close the app and resume later."
+        )
+
+        st.stop()
+
 
 # ======================================================
 # PRODUCT ENGINE
