@@ -237,25 +237,25 @@ if not st.session_state.auth_user:
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
-    try:
-        auth = login(username, password)
-        profile = load_profile(auth.user.id)
+        try:
+            auth = login(username, password)
+            profile = load_profile(auth.user.id)
 
-        st.session_state.auth_user = auth.user
-        st.session_state.role = profile["role"]
+            st.session_state.auth_user = auth.user
+            st.session_state.role = profile["role"]
 
-        # 🔥 RESET ENGINE STATE ON LOGIN (CRITICAL FIX)
-        st.session_state.engine_stage = None
-        st.session_state.admin_section = None
-        st.session_state.statement_id = None
-        st.session_state.product_index = None
-        st.session_state.statement_year = None
-        st.session_state.statement_month = None
-        st.session_state.selected_stockist_id = None
+            # 🔥 RESET ENGINE STATE ON LOGIN (CRITICAL FIX)
+            st.session_state.engine_stage = None
+            st.session_state.admin_section = None
+            st.session_state.statement_id = None
+            st.session_state.product_index = None
+            st.session_state.statement_year = None
+            st.session_state.statement_month = None
+            st.session_state.selected_stockist_id = None
 
-        st.rerun()
-    except Exception as e:
-        st.error(str(e))
+            st.rerun()
+        except Exception as e:
+            st.error(str(e))
 
 
     st.stop()
