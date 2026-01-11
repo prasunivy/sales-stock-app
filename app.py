@@ -559,9 +559,13 @@ required_keys = [
     "selected_stockist_id"
 ]
 
-if not all(st.session_state.get(k) is not None for k in required_keys):
-    st.error("❌ Statement context incomplete. Please restart from sidebar.")
-    st.stop()
+# SAFETY CHECK — REQUIRED STATE (USER ONLY)
+if role == "user":
+
+    if not all(st.session_state.get(k) is not None for k in required_keys):
+        st.error("❌ Statement context incomplete. Please restart from sidebar.")
+        st.stop()
+
 
 if (
     role == "user"
