@@ -280,8 +280,8 @@ if role == "user":
 
     my_statements = admin_supabase.table("statements") \
         .select(
-            "id, year, month, status, locked, current_product_index, stockists(name)"
-        ) \
+            "id, year, month, status, locked, current_product_index, stockist_id, stockists(name)"
+        )\
         .eq("user_id", user_id) \
         .order("year", desc=True) \
         .order("month", desc=True) \
@@ -292,34 +292,41 @@ if role == "user":
     else:
         total_products = len(load_products_cached())
 
-        for s in my_statements:
+       
 
-            if search_text and search_text.lower() not in s["stockists"]["name"].lower():
-                continue
-
+        def stmt_label(s):
             if s["locked"]:
                 status = "🔒 Locked"
-                action = "view"
             elif s["status"] == "final":
                 status = "✅ Submitted"
-                action = "view"
             else:
-                progress = s.get("current_product_index") or 0
-                status = f"📝 Draft ({progress}/{total_products})"
-                action = "edit"
+                done = s.get("current_product_index") or 0
+                status = f"📝 Draft ({done}/{total_products})"
 
-            if st.sidebar.button(
-                f"{s['stockists']['name']} ({s['month']:02d}/{s['year']}) — {status}",
-                key=f"user_stmt_{s['id']}"
-            ):
-                st.session_state.statement_id = s["id"]
-                st.session_state.product_index = s.get("current_product_index") or 0
-                st.session_state.statement_year = s["year"]
-                st.session_state.statement_month = s["month"]
-                st.session_state.selected_stockist_id = s["stockist_id"]
-                st.session_state.engine_stage = action
-                st.rerun()
+            return f"{s['stockists']['name']} ({s['month']:02d}/{s['year']}) — {status}"
 
+        selected_stmt = st.sidebar.selectbox(
+            "Select Statement",
+            my_statements,
+            format_func=stmt_label
+        )
+
+        if st.sidebar.button("▶ Open Selected Statement"):
+            st.session_state.statement_id = selected_stmt["id"]
+            st.session_state.statement_year = selected_stmt["year"]
+            st.session_state.statement_month = selected_stmt["month"]
+            st.session_state.selected_stockist_id = selected_stmt["stockist_id"]
+
+            if selected_stmt["locked"] or selected_stmt["status"] == "final":
+                st.session_state.engine_stage = "view"
+            else:
+                st.session_state.engine_stage = "edit"
+                st.session_state.product_index = (
+                selected_stmt.get("current_product_index") or 0
+            )
+
+        st.rerun()
+ 
 
     # --------------------------------------------------
     # ➕ CREATE / RESUME NEW STATEMENT
@@ -367,7 +374,8 @@ if role == "user":
                     "current_product_index": 0,
                     "updated_at": datetime.utcnow().isoformat()
                 },
-                on_conflict="stockist_id,year,month",
+                on_conflict="user_id,stockist_id,year,month"
+
                 returning="representation"
             ).execute()
 
@@ -394,7 +402,7 @@ if role == "user":
                 .eq("id", stmt["id"])
             )
 
-           # ✅ Move user into editor (SET ALL REQUIRED STATE)
+            # ✅ Move user into editor (SET ALL REQUIRED STATE)
             st.session_state.statement_id = stmt["id"]
             st.session_state.product_index = stmt.get("current_product_index") or 0
             st.session_state.statement_year = stmt["year"]
