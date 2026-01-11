@@ -445,6 +445,18 @@ if role == "user":
 if role == "admin":
 
     st.sidebar.markdown("### 🛠 Admin")
+    # --------------------------------------------------
+    # 🧪 ADMIN DEBUG PANEL (TEMPORARY)
+    # --------------------------------------------------
+    with st.sidebar.expander("🧪 Debug (Session State)", expanded=False):
+        st.write("role:", st.session_state.get("role"))
+        st.write("engine_stage:", st.session_state.get("engine_stage"))
+        st.write("admin_section:", st.session_state.get("admin_section"))
+        st.write("statement_id:", st.session_state.get("statement_id"))
+        st.write("product_index:", st.session_state.get("product_index"))
+        st.write("statement_year:", st.session_state.get("statement_year"))
+        st.write("statement_month:", st.session_state.get("statement_month"))
+        st.write("selected_stockist_id:", st.session_state.get("selected_stockist_id"))
 
     if st.sidebar.button("📄 Statements", key="admin_nav_statements"):
         st.session_state.admin_section = "Statements"
