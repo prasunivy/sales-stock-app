@@ -1796,7 +1796,10 @@ if st.session_state.get("engine_stage") == "reports":
     # STOCKIST FILTER
     # --------------------------------------------------
     if role == "admin":
-        stockists = supabase.table("stockists").select("id, name").order("name").execute().data
+        stockists = supabase.table("stockists") \
+            .select("id, name") \
+            .order("name") \
+            .execute().data
     else:
         raw = supabase.table("user_stockists") \
             .select("stockist_id, stockists(name)") \
@@ -1832,121 +1835,129 @@ if st.session_state.get("engine_stage") == "reports":
 
     if not summary_rows:
         st.info("No data for selected filters")
+
     else:
-        # existing normalization, KPIs, matrices, charts continue here
+        # --------------------------------------------------
+        # NORMALIZE DATA
+        # --------------------------------------------------
+        df = pd.DataFrame([
+            {
+                "Product": r["products"]["name"],
+                "Year-Month": f"{r['year']}-{r['month']:02d}",
+                "Issue": r["total_issue"],
+                "Closing": r["total_closing"],
+                "Order": r["total_order"]
+            }
+            for r in summary_rows
+        ])
 
-
-    # --------------------------------------------------
-    # NORMALIZE DATA
-    # --------------------------------------------------
-    df = pd.DataFrame([
-        {
-            "Product": r["products"]["name"],
-            "Year-Month": f"{r['year']}-{r['month']:02d}",
-            "Issue": r["total_issue"],
-            "Closing": r["total_closing"],
-            "Order": r["total_order"]
-        }
-        for r in summary_rows
-    ])
-
-    # --------------------------------------------------
-    # APPLY DRILLDOWN FILTER
-    # --------------------------------------------------
-    if "drilldown_product" not in st.session_state:
-        st.session_state.drilldown_product = None
-
-    if st.session_state.drilldown_product:
-        df = df[df["Product"] == st.session_state.drilldown_product]
-
-    # ==================================================
-    # 🚨 ALERT BANNERS (CLICKABLE)
-    # ==================================================
-    st.subheader("🚨 Alerts Summary")
-
-    df_sorted = df.sort_values(["Product", "Year-Month"])
-    alert_found = False
-
-    for product in df_sorted["Product"].unique():
-        df_p = df_sorted[df_sorted["Product"] == product]
-        if len(df_p) < 2:
-            continue
-
-        latest, previous = df_p.iloc[-1], df_p.iloc[-2]
-
-        if latest["Issue"] < previous["Issue"]:
-            alert_found = True
-            if st.button(f"🔻 {product}: Issue degrowth", key=f"deg_{product}"):
-                st.session_state.drilldown_product = product
-                st.rerun()
-
-        if latest["Issue"] > 0 and latest["Closing"] >= 2 * latest["Issue"]:
-            alert_found = True
-            if st.button(f"⚠️ {product}: High closing stock", key=f"stk_{product}"):
-                st.session_state.drilldown_product = product
-                st.rerun()
-
-        if latest["Issue"] == 0 and latest["Closing"] == 0:
-            alert_found = True
-            if st.button(f"📣 {product}: Promotion needed", key=f"pro_{product}"):
-                st.session_state.drilldown_product = product
-                st.rerun()
-
-    if not alert_found:
-        st.success("✅ No alerts for selected period")
-
-    # --------------------------------------------------
-    # DRILLDOWN CONTEXT
-    # --------------------------------------------------
-    if st.session_state.drilldown_product:
-        st.info(f"🔍 Viewing detailed insights for **{st.session_state.drilldown_product}**")
-        if st.button("⬅️ Back to All Products"):
+        # --------------------------------------------------
+        # APPLY DRILLDOWN FILTER
+        # --------------------------------------------------
+        if "drilldown_product" not in st.session_state:
             st.session_state.drilldown_product = None
-            st.rerun()
 
-    # ==================================================
-    # MATRIX 1 — PRODUCT-WISE SALES
-    # ==================================================
-    st.subheader("📦 Matrix 1 — Product-wise Sales (Issue)")
-    st.dataframe(
-        df.pivot_table(index="Product", columns="Year-Month", values="Issue", fill_value=0),
-        use_container_width=True
-    )
+        if st.session_state.drilldown_product:
+            df = df[df["Product"] == st.session_state.drilldown_product]
 
-    # ==================================================
-    # MATRIX 2 — PRODUCT-WISE ORDER
-    # ==================================================
-    st.subheader("🧾 Matrix 2 — Product-wise Order")
-    st.dataframe(
-        df.pivot_table(index="Product", columns="Year-Month", values="Order", fill_value=0),
-        use_container_width=True
-    )
+        # ==================================================
+        # 🚨 ALERT BANNERS
+        # ==================================================
+        st.subheader("🚨 Alerts Summary")
 
-    # ==================================================
-    # MATRIX 3 — PRODUCT-WISE CLOSING
-    # ==================================================
-    st.subheader("📊 Matrix 3 — Product-wise Closing")
-    st.dataframe(
-        df.pivot_table(index="Product", columns="Year-Month", values="Closing", fill_value=0),
-        use_container_width=True
-    )
+        df_sorted = df.sort_values(["Product", "Year-Month"])
+        alert_found = False
 
-    # ==================================================
-    # MATRIX 4 — ISSUE + CLOSING
-    # ==================================================
-    st.subheader("📦📊 Matrix 4 — Issue & Closing")
-    st.dataframe(
-        df.melt(
-            id_vars=["Product", "Year-Month"],
-            value_vars=["Issue", "Closing"]
-        ).pivot_table(
-            index="Product",
-            columns=["Year-Month", "variable"],
-            values="value",
-            fill_value=0
-        ),
-        use_container_width=True
-    )
+        for product in df_sorted["Product"].unique():
+            df_p = df_sorted[df_sorted["Product"] == product]
+            if len(df_p) < 2:
+                continue
+
+            latest, previous = df_p.iloc[-1], df_p.iloc[-2]
+
+            if latest["Issue"] < previous["Issue"]:
+                alert_found = True
+                if st.button(f"🔻 {product}: Issue degrowth", key=f"deg_{product}"):
+                    st.session_state.drilldown_product = product
+                    st.rerun()
+
+            if latest["Issue"] > 0 and latest["Closing"] >= 2 * latest["Issue"]:
+                alert_found = True
+                if st.button(f"⚠️ {product}: High closing stock", key=f"stk_{product}"):
+                    st.session_state.drilldown_product = product
+                    st.rerun()
+
+            if latest["Issue"] == 0 and latest["Closing"] == 0:
+                alert_found = True
+                if st.button(f"📣 {product}: Promotion needed", key=f"pro_{product}"):
+                    st.session_state.drilldown_product = product
+                    st.rerun()
+
+        if not alert_found:
+            st.success("✅ No alerts for selected period")
+
+        # --------------------------------------------------
+        # DRILLDOWN CONTEXT
+        # --------------------------------------------------
+        if st.session_state.drilldown_product:
+            st.info(
+                f"🔍 Viewing detailed insights for "
+                f"**{st.session_state.drilldown_product}**"
+            )
+            if st.button("⬅️ Back to All Products"):
+                st.session_state.drilldown_product = None
+                st.rerun()
+
+        # ==================================================
+        # MATRICES
+        # ==================================================
+        st.subheader("📦 Matrix 1 — Product-wise Sales (Issue)")
+        st.dataframe(
+            df.pivot_table(
+                index="Product",
+                columns="Year-Month",
+                values="Issue",
+                fill_value=0
+            ),
+            use_container_width=True
+        )
+
+        st.subheader("🧾 Matrix 2 — Product-wise Order")
+        st.dataframe(
+            df.pivot_table(
+                index="Product",
+                columns="Year-Month",
+                values="Order",
+                fill_value=0
+            ),
+            use_container_width=True
+        )
+
+        st.subheader("📊 Matrix 3 — Product-wise Closing")
+        st.dataframe(
+            df.pivot_table(
+                index="Product",
+                columns="Year-Month",
+                values="Closing",
+                fill_value=0
+            ),
+            use_container_width=True
+        )
+
+        st.subheader("📦📊 Matrix 4 — Issue & Closing")
+        st.dataframe(
+            df.melt(
+                id_vars=["Product", "Year-Month"],
+                value_vars=["Issue", "Closing"]
+            ).pivot_table(
+                index="Product",
+                columns=["Year-Month", "variable"],
+                values="value",
+                fill_value=0
+            ),
+            use_container_width=True
+        )
+
     # ==================================================
     # 📈 TREND CHARTS — LAST 6 MONTHS
     # ==================================================
