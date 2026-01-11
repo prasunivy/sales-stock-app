@@ -517,7 +517,7 @@ if role == "user" and not st.session_state.statement_id:
         "You can safely close the app and resume later."
     )
 
-    st.stop()
+    
 
 # ======================================================
 # PRODUCT ENGINE
