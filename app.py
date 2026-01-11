@@ -273,25 +273,25 @@ if role == "user":
     st.sidebar.divider()
     st.sidebar.subheader("🗂 My Statements")
 
-        # --------------------------------------------------
-        # STOCKIST DROPDOWN FILTER (REPLACES SEARCH BOX)
-        # --------------------------------------------------
-        stockist_rows = safe_exec(
-            admin_supabase.table("statements")
-            .select("stockist_id, stockists(name)")
-            .eq("user_id", user_id)
-        )
+    # --------------------------------------------------
+    # STOCKIST DROPDOWN FILTER (REPLACES SEARCH BOX)
+    # --------------------------------------------------
+    stockist_rows = safe_exec(
+        admin_supabase.table("statements")
+        .select("stockist_id, stockists(name)")
+        .eq("user_id", user_id)
+    )
 
-        stockist_options = {
-            r["stockist_id"]: r["stockists"]["name"]
-            for r in stockist_rows
-        }
+    stockist_options = {
+        r["stockist_id"]: r["stockists"]["name"]
+        for r in stockist_rows
+    }
 
-        selected_stockist_id = st.sidebar.selectbox(
-            "Select Stockist",
-            options=[None] + list(stockist_options.keys()),
-            format_func=lambda x: "— All Stockists —" if x is None else stockist_options[x]
-        )
+    selected_stockist_id = st.sidebar.selectbox(
+        "Select Stockist",
+        options=[None] + list(stockist_options.keys()),
+        format_func=lambda x: "— All Stockists —" if x is None else stockist_options[x]
+    )
 
 
     my_statements = admin_supabase.table("statements") \
