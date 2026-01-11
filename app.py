@@ -273,10 +273,26 @@ if role == "user":
     st.sidebar.divider()
     st.sidebar.subheader("🗂 My Statements")
 
-    search_text = st.sidebar.text_input(
-        "Search Stockist",
-        placeholder="Type stockist name..."
-    )
+        # --------------------------------------------------
+        # STOCKIST DROPDOWN FILTER (REPLACES SEARCH BOX)
+        # --------------------------------------------------
+        stockist_rows = safe_exec(
+            admin_supabase.table("statements")
+            .select("stockist_id, stockists(name)")
+            .eq("user_id", user_id)
+        )
+
+        stockist_options = {
+            r["stockist_id"]: r["stockists"]["name"]
+            for r in stockist_rows
+        }
+
+        selected_stockist_id = st.sidebar.selectbox(
+            "Select Stockist",
+            options=[None] + list(stockist_options.keys()),
+            format_func=lambda x: "— All Stockists —" if x is None else stockist_options[x]
+        )
+
 
     my_statements = admin_supabase.table("statements") \
         .select(
@@ -294,8 +310,10 @@ if role == "user":
 
         for s in my_statements:
 
-            if search_text and search_text.lower() not in s["stockists"]["name"].lower():
+            # Filter by selected stockist
+            if selected_stockist_id and s["stockist_id"] != selected_stockist_id:
                 continue
+
 
             if s["locked"]:
                 status = "🔒 Locked"
@@ -308,10 +326,20 @@ if role == "user":
                 status = f"📝 Draft ({progress}/{total_products})"
                 action = "edit"
 
+            label = f"{s['month']:02d}/{s['year']} — {status}"
+
             if st.sidebar.button(
-                f"{s['stockists']['name']} ({s['month']:02d}/{s['year']}) — {status}",
+                f"👁 View • {label}",
                 key=f"user_stmt_{s['id']}"
             ):
+                st.session_state.statement_id = s["id"]
+                st.session_state.product_index = s.get("current_product_index") or 0
+                st.session_state.statement_year = s["year"]
+                st.session_state.statement_month = s["month"]
+                st.session_state.selected_stockist_id = s["stockist_id"]
+                st.session_state.engine_stage = action
+                st.rerun()
+
                 st.session_state.statement_id = s["id"]
                 st.session_state.product_index = s.get("current_product_index") or 0
                 st.session_state.statement_year = s["year"]
