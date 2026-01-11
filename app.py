@@ -1825,7 +1825,9 @@ if st.session_state.get("engine_stage") == "reports":
 
     if not summary_rows:
         st.info("No data for selected filters")
-        st.stop()
+    else:
+        # existing normalization, KPIs, matrices, charts continue here
+
 
     # --------------------------------------------------
     # NORMALIZE DATA
