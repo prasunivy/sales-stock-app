@@ -1545,21 +1545,33 @@ if role == "admin":
                 st.error("Password cannot be empty")
                 st.stop()
 
-        admin_supabase.auth.admin.update_user_by_id(
-            u["id"],
-            {"password": pwd}
-        )
+            if len(pwd) < 8:
+                st.error("❌ Password must be at least 8 characters long")
+                st.stop()
 
-        log_audit(
-            action="reset_user_password",
-            target_type="user",
-            target_id=u["id"],
-            performed_by=user_id,
-            message=f"Password reset for user '{u['username']}'",
-            metadata={}
-        )
+            try:
+                admin_supabase.auth.admin.update_user_by_id(
+                u["id"],
+                {"password": pwd}
+            )
 
-        st.success("Password reset successfully")
+            log_audit(
+                action="reset_user_password",
+                target_type="user",
+                target_id=u["id"],
+                performed_by=user_id,
+                message=f"Password reset for user '{u['username']}'",
+                metadata={}
+            )
+
+            st.success("✅ Password reset successfully")
+
+        except Exception as e:
+            st.error("❌ Password rejected by security policy")
+            st.exception(e)
+
+
+        
 
     # --------------------------------------------------
     # AUDIT LOGS
