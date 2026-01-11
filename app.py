@@ -1534,14 +1534,19 @@ if role == "admin":
     # RESET PASSWORD
     # --------------------------------------------------
     elif section == "Reset User Password":
+
+        st.subheader("🔐 Reset User Password")
+
         users = supabase.table("users") \
             .select("id, username") \
+            .order("username") \
             .execute().data
 
         u = st.selectbox("User", users, format_func=lambda x: x["username"])
         pwd = st.text_input("New Password", type="password")
 
         if st.button("Reset Password"):
+
             if not pwd.strip():
                 st.error("Password cannot be empty")
                 st.stop()
@@ -1556,20 +1561,21 @@ if role == "admin":
                     {"password": pwd}
                 )
 
-            log_audit(
-                action="reset_user_password",
-                target_type="user",
-                target_id=u["id"],
-                performed_by=user_id,
-                message=f"Password reset for user '{u['username']}'",
-                metadata={}
-            )
+                log_audit(
+                    action="reset_user_password",
+                    target_type="user",
+                    target_id=u["id"],
+                    performed_by=user_id,
+                    message=f"Password reset for user '{u['username']}'",
+                    metadata={}
+                )
 
-            st.success("✅ Password reset successfully")
+                st.success("✅ Password reset successfully")
 
-        except Exception as e:
-            st.error("❌ Password rejected by security policy")
-            st.exception(e)
+            except Exception as e:
+                st.error("❌ Password rejected by security policy")
+                st.exception(e)
+
 
 
 
