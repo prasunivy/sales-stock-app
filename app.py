@@ -535,7 +535,10 @@ if st.sidebar.button("Logout"):
 # ======================================================
 if role == "user":
 
-    if not st.session_state.statement_id:
+    if (
+        not st.session_state.statement_id
+        and st.session_state.get("engine_stage") != "reports"
+    ):
 
         st.title("📊 Sales & Stock Statement")
 
