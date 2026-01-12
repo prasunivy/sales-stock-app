@@ -1225,13 +1225,20 @@ if role == "admin":
             "Reports To",
             manager_options,
             format_func=lambda x: x["username"],
-            index=next(
-                (
-                    i for i, u in enumerate(manager_options)
-                    if u["id"] == user.get("report_to")
-                ),
-                0
+            report_to_ids = [u["id"] for u in manager_options]
+
+            if user.get("report_to") in report_to_ids:
+                default_index = report_to_ids.index(user["report_to"])
+            else:
+                default_index = None
+
+            report_to = st.selectbox(
+                "Reports To",
+                manager_options,
+                format_func=lambda x: x["username"],
+                index=default_index
             )
+
         )
 
 
