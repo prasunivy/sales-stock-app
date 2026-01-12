@@ -12,6 +12,22 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+st.markdown("""
+<style>
+thead th {
+    position: sticky;
+    top: 0;
+    background-color: #fafafa;
+    z-index: 2;
+}
+tbody td:first-child, thead th:first-child {
+    position: sticky;
+    left: 0;
+    background-color: #fafafa;
+    z-index: 1;
+}
+</style>
+""", unsafe_allow_html=True)
 
 supabase = create_client(
     st.secrets["SUPABASE_URL"],
@@ -145,6 +161,32 @@ def fetch_last_month_data(stockist_id, product_id, year, month):
         return 0.0, 0.0
 
     return float(row[0]["closing"]), float(row[0]["issue"])
+    
+def fetch_last_month_closing_only(stockist_id, product_id, year, month):
+    py, pm = get_previous_period(year, month)
+
+    stmt = safe_exec(
+        admin_supabase.table("statements")
+        .select("id")
+        .eq("stockist_id", stockist_id)
+        .eq("year", py)
+        .eq("month", pm)
+        .eq("status", "final")
+        .limit(1)
+    )
+
+    if not stmt:
+        return 0
+
+    row = safe_exec(
+        admin_supabase.table("statement_products")
+        .select("closing")
+        .eq("statement_id", stmt[0]["id"])
+        .eq("product_id", product_id)
+        .limit(1)
+    )
+
+    return float(row[0]["closing"]) if row else 0
 
 
 def fetch_statement_product(statement_id, product_id):
@@ -1990,6 +2032,89 @@ if st.session_state.get("engine_stage") == "reports":
         # ==================================================
         # MATRICES
         # ==================================================
+        
+        # ==================================================
+        # 📊 MATRIX — STOCKIST × MONTH × PRODUCT (STOCK CONTROL)
+        # ==================================================
+        st.subheader("📦 Stock Control Matrix")
+
+        # Select ONE stockist (mandatory for correctness)
+        stockist_for_matrix = st.selectbox(
+            "Select Stockist (Required)",
+            selected_stockists,
+            format_func=lambda x: x["name"]
+        )
+
+        # Select Year & Month
+        m_year = st.selectbox("Year", sorted(set(df["Year-Month"].str[:4])))
+        m_month = st.selectbox("Month", list(range(1, 13)))
+
+        if stockist_for_matrix:
+
+            # 1️⃣ Fetch FINAL statement
+            stmt = safe_exec(
+                admin_supabase.table("statements")
+                .select("id")
+                .eq("stockist_id", stockist_for_matrix["id"])
+                .eq("year", int(m_year))
+                .eq("month", int(m_month))
+                .eq("status", "final")
+                .limit(1)
+            )
+
+            if not stmt:
+                st.warning("No final statement for selected period")
+            else:
+                stmt_id = stmt[0]["id"]
+
+                rows = safe_exec(
+                    admin_supabase.table("statement_products")
+                    .select("""
+                        opening,
+                        purchase,
+                        issue,
+                        closing,
+                        difference,
+                        order_qty,
+                        issue_guidance,
+                        stock_guidance,
+                        product_id,
+                        products(name)
+                    """)
+                    .eq("statement_id", stmt_id)
+                )
+
+                matrix = []
+
+                for r in rows:
+                    last_closing = fetch_last_month_closing_only(
+                        stockist_for_matrix["id"],
+                        r["product_id"],
+                        int(m_year),
+                        int(m_month)
+                    )
+
+                    matrix.append({
+                        "Product": r["products"]["name"],
+                        "Last Month Closing": last_closing,
+                        "Opening": r["opening"],
+                        "Closing": r["closing"],
+                        "Issue Guidance": r["issue_guidance"],
+                        "Stock Guidance": r["stock_guidance"],
+                        "Order": r["order_qty"],
+                        "Difference": r["difference"]
+                    })
+
+                df_matrix = pd.DataFrame(matrix).sort_values("Product")
+
+                # 2️⃣ DISPLAY WITH FREEZE
+                st.dataframe(
+                    df_matrix,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        
         st.subheader("📦 Matrix 1 — Product-wise Sales (Issue)")
         st.dataframe(
             df.pivot_table(
