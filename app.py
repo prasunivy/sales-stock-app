@@ -1814,9 +1814,9 @@ if st.session_state.get("engine_stage") == "reports":
     col1, col2, col3 = st.columns(3)
 
     with col1:
-    # ----------------------------------------------
-    # USER VISIBILITY RESOLUTION (HIERARCHY AWARE)
-    # ----------------------------------------------
+        # ----------------------------------------------
+        # USER VISIBILITY RESOLUTION (HIERARCHY AWARE)
+        # ----------------------------------------------
         if role == "admin":
             users = supabase.table("users") \
                 .select("id, username") \
@@ -1842,7 +1842,7 @@ if st.session_state.get("engine_stage") == "reports":
 
             if my_profile["designation"] in ("manager", "senior_manager"):
                 # Get direct reports
-                    reps = supabase.table("users") \
+                reps = supabase.table("users") \
                     .select("id") \
                     .eq("report_to", user_id) \
                     .execute().data
