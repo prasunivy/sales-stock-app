@@ -1197,13 +1197,43 @@ if role == "admin":
         st.subheader("👤 Edit User & Assign Stockists")
 
         users = supabase.table("users") \
-            .select("id, username, role, is_active") \
+            .select("id, username, role, is_active, designation, report_to") \
             .order("username") \
             .execute().data
 
         user = st.selectbox("Select User", users, format_func=lambda x: x["username"])
 
         is_active = st.checkbox("Active", value=user["is_active"])
+        designation = st.radio(
+            "Designation",
+            ["representative", "manager", "senior_manager", "office_staff"],
+            index=[
+                "representative",
+                "manager",
+                "senior_manager",
+                "office_staff"
+            ].index(user.get("designation", "representative")),
+            horizontal=True
+        )
+        manager_options = [
+            u for u in users
+            if u["role"] == "admin"
+            or u.get("designation") in ("manager", "senior_manager")
+        ]
+
+        report_to = st.selectbox(
+            "Reports To",
+            manager_options,
+            format_func=lambda x: x["username"],
+            index=next(
+                (
+                    i for i, u in enumerate(manager_options)
+                    if u["id"] == user.get("report_to")
+                ),
+                0
+            )
+        )
+
 
         all_stockists = supabase.table("stockists") \
             .select("id, name") \
@@ -1227,6 +1257,8 @@ if role == "admin":
         if st.button("Save Changes"):
             supabase.table("users").update({
                 "is_active": is_active,
+                "designation": designation,
+                "report_to": report_to["id"],
                 "updated_at": datetime.utcnow().isoformat()
             }).eq("id", user["id"]).execute()
 
