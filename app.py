@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 # CONFIG
 # ======================================================
 st.set_page_config(
-    page_title="Ivy Pharmaceuticals — Sales & Stock",
+    page_title="Ivy Pharmaceuticals",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -233,6 +233,10 @@ def log_audit(
 # ======================================================
 if not st.session_state.auth_user:
     st.title("🔐 Login")
+    st.title("Ivy Pharmaceuticals")
+    st.caption("Sales & Stock Management System")
+    st.divider()
+    st.subheader("🔐 Login")
 
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
