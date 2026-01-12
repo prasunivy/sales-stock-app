@@ -1174,7 +1174,6 @@ if role == "admin":
                         f"({stmt['month']:02d}/{stmt['year']})"
                     ),
                     metadata={
-                        "stockist_id": stmt["stockist_id"],
                         "stockist_name": stmt["stockists"]["name"],
                         "month": stmt["month"],
                         "year": stmt["year"],
