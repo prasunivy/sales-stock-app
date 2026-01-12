@@ -1814,18 +1814,45 @@ if st.session_state.get("engine_stage") == "reports":
     col1, col2, col3 = st.columns(3)
 
     with col1:
+    # ----------------------------------------------
+    # USER VISIBILITY RESOLUTION (HIERARCHY AWARE)
+    # ----------------------------------------------
         if role == "admin":
-            users = supabase.table("users").select("id, username").execute().data
+            users = supabase.table("users") \
+                .select("id, username") \
+                .order("username") \
+                .execute().data
+
             selected_users = st.multiselect(
                 "Users",
                 users,
                 default=users,
                 format_func=lambda x: x["username"]
             )
-            user_ids = [u["id"] for u in selected_users]
+
+            visible_user_ids = [u["id"] for u in selected_users]
+
         else:
-            user_ids = [user_id]
-            st.text_input("User", value="You", disabled=True)
+            # Logged-in user profile (already loaded earlier)
+            my_profile = supabase.table("users") \
+                .select("id, designation") \
+                .eq("id", user_id) \
+                .limit(1) \
+                .execute().data[0]
+
+            if my_profile["designation"] in ("manager", "senior_manager"):
+                # Get direct reports
+                    reps = supabase.table("users") \
+                    .select("id") \
+                    .eq("report_to", user_id) \
+                    .execute().data
+
+                visible_user_ids = [user_id] + [r["id"] for r in reps]
+            else:
+                # Representative / office staff
+                visible_user_ids = [user_id]
+
+            st.text_input("User Scope", value="Auto (Hierarchy Based)", disabled=True)
 
     with col2:
         year_from = st.selectbox("Year From", list(range(2020, date.today().year + 1)))
@@ -1838,17 +1865,23 @@ if st.session_state.get("engine_stage") == "reports":
     # --------------------------------------------------
     # STOCKIST FILTER
     # --------------------------------------------------
-    if role == "admin":
-        stockists = supabase.table("stockists") \
-            .select("id, name") \
-            .order("name") \
-            .execute().data
-    else:
-        raw = supabase.table("user_stockists") \
-            .select("stockist_id, stockists(name)") \
-            .eq("user_id", user_id) \
-            .execute().data
-        stockists = [{"id": r["stockist_id"], "name": r["stockists"]["name"]} for r in raw]
+    # --------------------------------------------------
+    # STOCKISTS RESOLVED FROM VISIBLE USERS
+    # --------------------------------------------------
+    raw_stockists = supabase.table("user_stockists") \
+        .select("stockist_id, stockists(name)") \
+        .in_("user_id", visible_user_ids) \
+        .execute().data
+
+    stockists = [
+        {"id": r["stockist_id"], "name": r["stockists"]["name"]}
+        for r in raw_stockists
+    ]
+
+    if not stockists:
+        st.warning("No stockists available for your reporting scope")
+        st.stop()
+
 
     selected_stockists = st.multiselect(
         "Stockists",
