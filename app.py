@@ -1110,7 +1110,7 @@ if role == "admin":
                 st.rerun()
 
         with col2:
-            @@
+            
             if stmt["status"] == "final" and not stmt["locked"]:
                 if st.button("🔒 Lock"):
                     safe_exec(
