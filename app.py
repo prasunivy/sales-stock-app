@@ -1145,7 +1145,8 @@ if role == "admin":
                  st.rerun()
 
 
-        with col4:
+          with col4:
+          with col4:
             if st.button("🗑 Delete"):
 
                 # 1️⃣ Delete statement products
@@ -1183,6 +1184,7 @@ if role == "admin":
 
                 st.success("Statement permanently deleted")
                 st.rerun()
+   
 
     
 
