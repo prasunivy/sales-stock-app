@@ -1000,12 +1000,13 @@ if (
 
         if stmt_row:
             stockist_row = supabase.table("stockists") \
-            .select("name") \
-            .eq("id", stmt_row[0]["stockist_id"]) \
-            .limit(1) \
-            .execute().data
+                .select("name") \
+                .eq("id", stmt_row[0]["stockist_id"]) \
+                .limit(1) \
+                .execute().data
 
-        stockist_name = stockist_row[0]["name"] if stockist_row else "Unknown Stockist"
+            if stockist_row:
+                stockist_name = stockist_row[0]["name"]
 
         log_audit(
             action="statement_submitted",
