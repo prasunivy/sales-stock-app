@@ -994,6 +994,8 @@ if (
         # 🧾 Audit log — statement submitted (non-blocking)
         # ALWAYS define first (critical)
         stockist_name = "Unknown Stockist"
+        stmt_month = None
+        stmt_year = None
         stmt_row = supabase.table("statements") \
             .select("stockist_id, year, month") \
             .eq("id", st.session_state.statement_id) \
@@ -1001,6 +1003,8 @@ if (
             .execute().data
 
         if stmt_row:
+            stmt_month = stmt_row[0]["month"]
+            stmt_year = stmt_row[0]["year"]
             stockist_row = supabase.table("stockists") \
                 .select("name") \
                 .eq("id", stmt_row[0]["stockist_id"]) \
@@ -1018,7 +1022,8 @@ if (
             message=(
                 f"Statement submitted for stockist "
                 f"{stockist_name} "
-                f"({stmt_row[0]['month']:02d}/{stmt_row[0]['year']})"
+                f"({stmt_month:02d}/{stmt_year})" if stmt_month and stmt_year else "(period unknown)"
+
             ),
             metadata={
                 "stockist_id": stmt_row[0]["stockist_id"],
