@@ -1110,13 +1110,15 @@ if role == "admin":
                 st.rerun()
 
         with col2:
+            @@
             if stmt["status"] == "final" and not stmt["locked"]:
                 if st.button("🔒 Lock"):
                     safe_exec(
                         admin_supabase.table("statements")
                         .update({
-                            "locked": True,
-                            "status": "locked",
+-                           "locked": True,
+-                           "status": "locked",
++                           "locked": True,
                             "locked_at": datetime.utcnow().isoformat(),
                             "locked_by": user_id
                         })
@@ -1125,21 +1127,23 @@ if role == "admin":
                     st.success("Statement locked")
                     st.rerun()
 
-        with col3:
-            if stmt["locked"]:
-                if st.button("🔓 Unlock"):
-                    safe_exec(
-                        admin_supabase.table("statements")
-                        .update({
-                            "locked": False,
-                            "status": "final",
-                            "locked_at": None,
-                            "locked_by": None
-                        })
-                        .eq("id", stmt["id"])
-                    )
-                    st.success("Statement unlocked")
-                    st.rerun()
+         with col3:
+             if stmt["locked"]:
+                 if st.button("🔓 Unlock"):
+                     safe_exec(
+                         admin_supabase.table("statements")
+                         .update({
+-                            "locked": False,
+-                            "status": "final",
++                            "locked": False,
+                             "locked_at": None,
+                             "locked_by": None
+                         })
+                         .eq("id", stmt["id"])
+                 )
+                 st.success("Statement unlocked")
+                 st.rerun()
+
 
         with col4:
             if st.button("🗑 Delete"):
