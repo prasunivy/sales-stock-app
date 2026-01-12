@@ -2082,7 +2082,13 @@ if st.session_state.get("engine_stage") == "reports":
     # ==================================================
     st.subheader("📊 KPI — Month-on-Month")
 
-    kpi_df = df.groupby("Year-Month", as_index=False)["Issue"].sum().sort_values("Year-Month").tail(2)
+    # ✅ Aggregate issue strictly by MONTH (across selected stockists)
+    kpi_df = (
+        df.groupby("Year-Month", as_index=False)
+          .agg({"Issue": "sum"})
+          .sort_values("Year-Month")
+    )
+
 
     if len(kpi_df) == 2:
         cur, prev = kpi_df.iloc[1], kpi_df.iloc[0]
@@ -2104,7 +2110,14 @@ if st.session_state.get("engine_stage") == "reports":
     product_list = sorted(df["Product"].unique())
     selected_product = st.selectbox("Select Product", product_list)
 
-    df_p = df[df["Product"] == selected_product].sort_values("Year-Month")
+    # ✅ Aggregate product issue strictly by MONTH (across stockists)
+    df_p = (
+        df[df["Product"] == selected_product]
+        .groupby("Year-Month", as_index=False)
+        .agg({"Issue": "sum"})
+        .sort_values("Year-Month")
+    )
+
 
     if len(df_p) >= 2:
         latest, previous = df_p.iloc[-1], df_p.iloc[-2]
