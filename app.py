@@ -1928,6 +1928,7 @@ if st.session_state.get("engine_stage") == "reports":
                 index="Product",
                 columns="Year-Month",
                 values="Issue",
+                aggfunc="sum",
                 fill_value=0
             ),
             use_container_width=True
@@ -1939,6 +1940,7 @@ if st.session_state.get("engine_stage") == "reports":
                 index="Product",
                 columns="Year-Month",
                 values="Order",
+                aggfunc="sum",
                 fill_value=0
             ),
             use_container_width=True
@@ -1950,6 +1952,7 @@ if st.session_state.get("engine_stage") == "reports":
                 index="Product",
                 columns="Year-Month",
                 values="Closing",
+                aggfunc="sum",
                 fill_value=0
             ),
             use_container_width=True
@@ -1964,6 +1967,7 @@ if st.session_state.get("engine_stage") == "reports":
                 index="Product",
                 columns=["Year-Month", "variable"],
                 values="value",
+                aggfunc="sum",
                 fill_value=0
             ),
             use_container_width=True
