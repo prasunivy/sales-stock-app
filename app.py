@@ -1060,7 +1060,7 @@ if role == "admin":
     st.title("Admin Dashboard")
     section = st.session_state.get("admin_section")
 
-    if not section:
+    if not section and st.session_state.get("engine_stage") != "reports":
         st.info("Select an admin action from the sidebar")
         st.stop()
 
