@@ -2079,7 +2079,7 @@ if st.session_state.get("engine_stage") == "reports":
                         issue_guidance,
                         stock_guidance,
                         product_id,
-                        products(name)
+                        products!statement_products_product_id_fkey(name)
                     """)
                     .eq("statement_id", stmt_id)
                 )
