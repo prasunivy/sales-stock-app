@@ -993,6 +993,7 @@ if (
 
         # 🧾 Audit log — statement submitted (non-blocking)
         # ALWAYS define first (critical)
+        stockist_id = None
         stockist_name = "Unknown Stockist"
         stmt_month = None
         stmt_year = None
@@ -1003,6 +1004,7 @@ if (
             .execute().data
 
         if stmt_row:
+            stockist_id = stmt_row[0]["stockist_id"]
             stmt_month = stmt_row[0]["month"]
             stmt_year = stmt_row[0]["year"]
             stockist_row = supabase.table("stockists") \
@@ -1026,11 +1028,12 @@ if (
 
             ),
             metadata={
-                "stockist_id": stmt_row[0]["stockist_id"],
+                "stockist_id": stockist_id,
                 "stockist_name": stockist_name,
-                "year": stmt_row[0]["year"],
-                "month": stmt_row[0]["month"]
+                "year": stmt_year,
+                "month": stmt_month
             }
+
         )
 
         # 2️⃣ Generate monthly summary (FINAL statements only)
