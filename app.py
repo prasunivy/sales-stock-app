@@ -992,6 +992,8 @@ if (
         )
 
         # 🧾 Audit log — statement submitted (non-blocking)
+        # ALWAYS define first (critical)
+        stockist_name = "Unknown Stockist"
         stmt_row = supabase.table("statements") \
             .select("stockist_id, year, month") \
             .eq("id", st.session_state.statement_id) \
