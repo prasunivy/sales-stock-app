@@ -1686,7 +1686,11 @@ if role == "admin":
 
         edit_name = st.text_input("Edit Name", value=territory["name"])
         edit_desc = st.text_area("Edit Description", value=territory.get("description") or "")
-        edit_active = st.checkbox("Active", value=territory["is_active"])
+        edit_active = st.checkbox(
+            "Active",
+            value=territory["is_active"],
+            key=f"territory_active_{territory['id']}"
+        )
 
         if st.button("Save Territory Changes"):
             supabase.table("territories").update({
