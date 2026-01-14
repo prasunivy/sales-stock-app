@@ -209,6 +209,31 @@ def fetch_statement_product(statement_id, product_id):
         .limit(1)
     )
     return rows[0] if rows else {}
+def detect_red_flags(rows):
+    overstock = []
+    zero_issue = []
+    mismatch = []
+
+    for r in rows:
+        issue = r.get("issue", 0) or 0
+        closing = r.get("closing", 0) or 0
+        diff = r.get("difference", 0) or 0
+        product = r["products"]["name"]
+
+        if issue > 0 and closing >= 2 * issue:
+            overstock.append(product)
+
+        if issue == 0 and closing > 0:
+            zero_issue.append(product)
+
+        if diff != 0:
+            mismatch.append(product)
+
+    return {
+        "overstock": overstock,
+        "zero_issue": zero_issue,
+        "mismatch": mismatch
+    }
 
 
 # ======================================================
@@ -2647,12 +2672,12 @@ if st.session_state.get("engine_stage") == "reports":
                 f"📍 Territory: {territory_label}  |  "
                 f"🗓 Last Submitted: {stmt_month:02d}/{stmt_year}"
             )
-
             # 4️⃣ Fetch statement products
             rows = safe_exec(
                 admin_supabase.table("statement_products")
                 .select("""
                     opening,
+                    issue,
                     closing,
                     difference,
                     order_qty,
@@ -2667,6 +2692,71 @@ if st.session_state.get("engine_stage") == "reports":
             if not rows:
                 st.warning("No product data found for this statement.")
                 continue
+            
+            flags = detect_red_flags(rows)
+
+            if any(flags.values()):
+                st.error("🔴 Red Flags Detected")
+
+                if flags["overstock"]:
+                    st.markdown(
+                        f"• **Overstock ({len(flags['overstock'])})**: "
+                        + ", ".join(flags["overstock"])
+                    )
+
+                if flags["zero_issue"]:
+                    st.markdown(
+                        f"• **Zero Issue ({len(flags['zero_issue'])})**: "
+                        + ", ".join(flags["zero_issue"])
+                    )
+
+                if flags["mismatch"]:
+                    st.markdown(
+                        f"• **Data Mismatch ({len(flags['mismatch'])})**: "
+                        + ", ".join(flags["mismatch"])
+                    )
+            else:
+                st.success("🟢 No red flags detected")
+
+            st.info("🧠 AI Summary")
+
+            overstock_count = len(flags["overstock"])
+            zero_issue_count = len(flags["zero_issue"])
+
+            if overstock_count == 0 and zero_issue_count == 0:
+                summary = (
+                    f"{stockist['name']}'s last submitted statement "
+                    f"({stmt_month:02d}/{stmt_year}) shows a stable stock position. "
+                    f"Issue and closing levels are well aligned, and ordering appears balanced."
+                )
+
+            elif overstock_count > 0:
+                summary = (
+                    f"{stockist['name']}'s latest statement "
+                    f"({stmt_month:02d}/{stmt_year}) indicates overstocking in "
+                    f"{overstock_count} product(s). "
+                    f"Ordering should be restricted until stock movement improves."
+                )
+
+            elif zero_issue_count > 0:
+                summary = (
+                    f"Several products show zero issue despite available stock in "
+                    f"{stockist['name']}'s latest statement "
+                    f"({stmt_month:02d}/{stmt_year}). "
+                    f"Promotional or prescription support may be required."
+                )
+
+            else:
+                summary = (
+                    f"Data inconsistencies are present in the latest statement "
+                    f"({stmt_month:02d}/{stmt_year}). "
+                    f"A review is recommended before further planning."
+                )
+
+            st.markdown(summary)
+
+            
+            
 
             matrix = []
 
