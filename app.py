@@ -2619,34 +2619,34 @@ if st.session_state.get("engine_stage") == "reports":
     st.title("🏪 Authorized Stockists — Last Submitted Stock Control")
 
     # 1️⃣ Resolve AUTHORIZED stockists in USER SCOPE
-        if role == "admin":
-            authorized_stockists = safe_exec(
-                supabase.table("stockists")
-                .select("id, name")
-                .eq("authorization_status", "AUTHORIZED")
-                .order("name")
-            )
-        else:
-            # Stockists assigned to visible users only
-            scoped_stockists = safe_exec(
-                supabase.table("user_stockists")
-                .select("stockist_id, stockists(id, name, authorization_status)")
-                .in_("user_id", visible_user_ids)
-            )
+    if role == "admin":
+         authorized_stockists = safe_exec(
+            supabase.table("stockists")
+            .select("id, name")
+            .eq("authorization_status", "AUTHORIZED")
+            .order("name")
+        )
+    else:
+        # Stockists assigned to visible users only
+        scoped_stockists = safe_exec(
+            supabase.table("user_stockists")
+            .select("stockist_id, stockists(id, name, authorization_status)")
+            .in_("user_id", visible_user_ids)
+        )
 
-            authorized_stockists = [
-                {
-                    "id": r["stockists"]["id"],
-                    "name": r["stockists"]["name"]
-                }
-                for r in scoped_stockists
-                if r["stockists"]["authorization_status"] == "AUTHORIZED"
-            ]
+        authorized_stockists = [
+             {
+                "id": r["stockists"]["id"],
+                "name": r["stockists"]["name"]
+            }
+            for r in scoped_stockists
+            if r["stockists"]["authorization_status"] == "AUTHORIZED"
+        ]
 
-            # Remove duplicates safely
-            authorized_stockists = {
-                s["id"]: s for s in authorized_stockists
-            }.values()
+        # Remove duplicates safely
+        authorized_stockists = {
+            s["id"]: s for s in authorized_stockists
+        }.values()
 
 
     if not authorized_stockists:
