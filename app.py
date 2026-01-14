@@ -1455,8 +1455,8 @@ if role == "admin":
         )
         edit_remarks = st.text_area(
             "📝 Remarks (Admin only)",
-        value=stockist.get("remarks") or "",
-        height=120
+            value=stockist.get("remarks") or "",
+            height=120
         )
 
         edit_location = st.text_input(
