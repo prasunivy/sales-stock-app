@@ -529,6 +529,10 @@ if role == "admin":
         st.session_state.admin_section = "Products"
         st.session_state.engine_stage = None
         st.rerun()
+    if st.sidebar.button("📍 Territories", key="admin_nav_territories"):
+        st.session_state.admin_section = "Territories"
+        st.session_state.engine_stage = None
+        st.rerun()
 
     if st.sidebar.button("🔐 Reset User Password", key="admin_nav_reset_pwd"):
         st.session_state.admin_section = "Reset User Password"
@@ -1449,6 +1453,11 @@ if role == "admin":
             "Edit Name",
             value=stockist["name"]
         )
+        edit_remarks = st.text_area(
+            "📝 Remarks (Admin only)",
+        value=stockist.get("remarks") or "",
+        height=120
+        )
 
         edit_location = st.text_input(
             "Edit Location",
@@ -1485,6 +1494,7 @@ if role == "admin":
                 "location": edit_location.strip() or None,
                 "phone": edit_phone.strip() or "9433245464",
                 "payment_terms": edit_payment_terms or None,
+                "remarks": edit_remarks.strip() or None,
                 "authorization_status": edit_authorization_status
             }).eq("id", stockist["id"]).execute()
 
@@ -1618,6 +1628,154 @@ if role == "admin":
                 st.success("Product deleted")
                 st.rerun()
 
+    elif section == "Territories":
+
+        st.subheader("📍 Territory Management")
+
+        # --------------------------------------------------
+        # CREATE TERRITORY
+        # --------------------------------------------------
+        st.markdown("### ➕ Create Territory")
+
+        t_name = st.text_input("Territory Name *")
+        t_desc = st.text_area("Description")
+        t_active = st.checkbox("Active", value=True)
+
+        if st.button("Add Territory"):
+            if not t_name.strip():
+                st.error("Territory name is required")
+                st.stop()
+
+            supabase.table("territories").insert({
+                "name": t_name.strip(),
+                "description": t_desc.strip() or None,
+                "is_active": t_active,
+                "created_by": user_id
+            }).execute()
+
+            log_audit(
+                action="create_territory",
+                target_type="territory",
+                performed_by=user_id,
+                message=f"Territory '{t_name.strip()}' created"
+            )
+
+            st.success("Territory created")
+            st.rerun()
+
+        # --------------------------------------------------
+        # EDIT TERRITORY
+        # --------------------------------------------------
+        st.divider()
+        st.markdown("### ✏️ Edit Territory")
+
+        territories = supabase.table("territories") \
+            .select("*") \
+            .order("name") \
+            .execute().data
+
+        if not territories:
+            st.info("No territories available")
+            st.stop()
+
+        territory = st.selectbox(
+            "Select Territory",
+            territories,
+            format_func=lambda x: x["name"]
+        )
+
+        edit_name = st.text_input("Edit Name", value=territory["name"])
+        edit_desc = st.text_area("Edit Description", value=territory.get("description") or "")
+        edit_active = st.checkbox("Active", value=territory["is_active"])
+
+        if st.button("Save Territory Changes"):
+            supabase.table("territories").update({
+                "name": edit_name.strip(),
+                "description": edit_desc.strip() or None,
+                "is_active": edit_active,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", territory["id"]).execute()
+
+            log_audit(
+                action="update_territory",
+                target_type="territory",
+                target_id=territory["id"],
+                performed_by=user_id,
+                message=f"Territory '{edit_name.strip()}' updated"
+            )
+
+            st.success("Territory updated")
+            st.rerun()
+
+        # --------------------------------------------------
+        # ASSIGN USERS
+        # --------------------------------------------------
+        st.divider()
+        st.markdown("### 👤 Assign Users")
+
+        users = supabase.table("users").select("id, username").order("username").execute().data
+        assigned = supabase.table("user_territories") \
+            .select("user_id") \
+            .eq("territory_id", territory["id"]) \
+            .execute().data
+
+        assigned_ids = [a["user_id"] for a in assigned]
+
+        selected_users = st.multiselect(
+            "Users",
+            users,
+            default=[u for u in users if u["id"] in assigned_ids],
+            format_func=lambda x: x["username"]
+        )
+
+        if st.button("Save User Assignment"):
+            supabase.table("user_territories").delete() \
+                .eq("territory_id", territory["id"]).execute()
+
+            for u in selected_users:
+                supabase.table("user_territories").insert({
+                    "territory_id": territory["id"],
+                    "user_id": u["id"],
+                    "assigned_by": user_id
+                }).execute()
+
+            st.success("Users assigned")
+
+        # --------------------------------------------------
+        # ASSIGN STOCKISTS
+        # --------------------------------------------------
+        st.divider()
+        st.markdown("### 🏪 Assign Stockists")
+
+        stockists = supabase.table("stockists").select("id, name").order("name").execute().data
+        assigned_s = supabase.table("territory_stockists") \
+            .select("stockist_id") \
+            .eq("territory_id", territory["id"]) \
+            .execute().data
+
+        assigned_s_ids = [s["stockist_id"] for s in assigned_s]
+
+        selected_stockists = st.multiselect(
+            "Stockists",
+            stockists,
+            default=[s for s in stockists if s["id"] in assigned_s_ids],
+            format_func=lambda x: x["name"]
+        )
+
+        if st.button("Save Stockist Assignment"):
+            supabase.table("territory_stockists").delete() \
+                .eq("territory_id", territory["id"]).execute()
+
+            for s in selected_stockists:
+                supabase.table("territory_stockists").insert({
+                    "territory_id": territory["id"],
+                    "stockist_id": s["id"],
+                    "assigned_by": user_id
+                }).execute()
+
+            st.success("Stockists assigned")
+
+    
     # --------------------------------------------------
     # RESET PASSWORD
     # --------------------------------------------------
