@@ -128,13 +128,21 @@ def load_monthly_summary_cached(stockist_ids):
 # HELPERS
 # ======================================================
 def get_previous_period(year, month):
+    # 🛑 Defensive guard
+    if year is None or month is None:
+        return None, None
+
     if month == 1:
         return year - 1, 12
+
     return year, month - 1
 
 
 def fetch_last_month_data(stockist_id, product_id, year, month):
     py, pm = get_previous_period(year, month)
+    # 🛑 Defensive guard for admin edit / reruns
+    if py is None or pm is None:
+        return 0.0, 0.0
 
     stmt = safe_exec(
         admin_supabase.table("statements")
@@ -629,7 +637,11 @@ required_keys = [
     "statement_month",
     "selected_stockist_id"
 ]
-
+if (
+    st.session_state.get("engine_stage") == "edit"
+    and not all(st.session_state.get(k) is not None for k in required_keys)
+):
+    st.stop()
 # SAFETY CHECK — REQUIRED STATE (USER ONLY)
 if role == "user" and st.session_state.get("engine_stage") != "reports":
 
