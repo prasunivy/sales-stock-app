@@ -1225,15 +1225,34 @@ if role == "admin":
 
         with col2:
             if st.button("✏️ Admin Edit"):
-                admin_supabase.table("statements").update({
-                    "status": "admin_edit",
-                    "editing_by": user_id,
-                    "editing_at": datetime.utcnow().isoformat()
-                }).eq("id", stmt["id"]).execute()
 
+                # 1️⃣ Fetch statement context (CRITICAL)
+                stmt_ctx = safe_exec(
+                    admin_supabase.table("statements")
+                    .select("year, month, stockist_id")
+                    .eq("id", stmt["id"])
+                    .limit(1)
+                )[0]
+
+                # 2️⃣ Mark statement as admin_edit
+                safe_exec(
+                    admin_supabase.table("statements")
+                    .update({
+                        "status": "admin_edit",
+                        "editing_by": user_id,
+                        "editing_at": datetime.utcnow().isoformat()
+                    })
+                    .eq("id", stmt["id"])
+                )
+
+                # 3️⃣ Populate ALL required session state
                 st.session_state.statement_id = stmt["id"]
-                st.session_state.engine_stage = "edit"
+                st.session_state.statement_year = stmt_ctx["year"]
+                st.session_state.statement_month = stmt_ctx["month"]
+                st.session_state.selected_stockist_id = stmt_ctx["stockist_id"]
                 st.session_state.product_index = 0
+                st.session_state.engine_stage = "edit"
+
                 st.rerun()
 
 
