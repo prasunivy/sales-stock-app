@@ -459,6 +459,11 @@ if role == "user":
                 st.sidebar.error("Statement is locked by admin")
                 st.stop()
 
+            if stmt["status"] == "admin_edit":
+                st.sidebar.error("Statement is under admin correction")
+                st.stop()
+
+            
             # 🚫 Another editor check
             if stmt.get("editing_by") and stmt["editing_by"] != user_id:
                 st.sidebar.error("Statement is open on another device")
@@ -637,6 +642,10 @@ if (
     role == "user"
     and st.session_state.statement_id
     and st.session_state.engine_stage == "edit"
+    and (
+        role == "user"
+        or (role == "admin")
+    )
 ):
 
     sid = st.session_state.statement_id
@@ -1109,6 +1118,51 @@ if (
                 st.session_state.pop(k, None)
 
             st.rerun()
+# ======================================================
+# ADMIN FINALIZE (AFTER ADMIN EDIT)
+# ======================================================
+if (
+    role == "admin"
+    and st.session_state.statement_id
+    and st.session_state.engine_stage == "preview"
+):
+
+    if st.button("✅ Admin Finalize Changes", type="primary"):
+
+        safe_exec(
+            admin_supabase.table("statements")
+            .update({
+                "status": "final",
+                "editing_by": None,
+                "editing_at": None,
+                "updated_at": datetime.utcnow().isoformat()
+            })
+            .eq("id", st.session_state.statement_id)
+        )
+
+        log_audit(
+            action="admin_corrected_statement",
+            target_type="statement",
+            target_id=st.session_state.statement_id,
+            performed_by=user_id,
+            message="Admin corrected and finalized a submitted statement"
+        )
+
+        st.success("✅ Admin changes finalized successfully")
+
+        if st.button("⬅ Back to Dashboard"):
+
+            for k in [
+                "statement_id",
+                "product_index",
+                "statement_year",
+                "statement_month",
+                "selected_stockist_id",
+                "engine_stage"
+            ]:
+                st.session_state.pop(k, None)
+
+            st.rerun()
 
 
 
@@ -1161,7 +1215,7 @@ if role == "admin":
             )
         )
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
 
         with col1:
             if st.button("👁 View"):
@@ -1170,6 +1224,20 @@ if role == "admin":
                 st.rerun()
 
         with col2:
+            if st.button("✏️ Admin Edit"):
+                admin_supabase.table("statements").update({
+                    "status": "admin_edit",
+                    "editing_by": user_id,
+                    "editing_at": datetime.utcnow().isoformat()
+                }).eq("id", stmt["id"]).execute()
+
+                st.session_state.statement_id = stmt["id"]
+                st.session_state.engine_stage = "edit"
+                st.session_state.product_index = 0
+                st.rerun()
+
+
+        with col3:
             if stmt["status"] == "final" and not stmt["locked"]:
                 if st.button("🔒 Lock"):
                     safe_exec(
@@ -1184,7 +1252,7 @@ if role == "admin":
                     st.success("Statement locked")
                     st.rerun()
 
-        with col3:
+        with col4:
             if stmt["locked"]:
                 if st.button("🔓 Unlock"):
                     safe_exec(
@@ -1199,7 +1267,7 @@ if role == "admin":
                     st.success("Statement unlocked")
                     st.rerun()
 
-        with col4:
+        with col5:
             if st.button("🗑 Delete"):
 
                 safe_exec(
