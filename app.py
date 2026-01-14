@@ -2585,3 +2585,120 @@ if st.session_state.get("engine_stage") == "reports":
         c4.metric("Growth %", f"{round(pct, 2)}%", f"{round(pct, 2)}%")
     else:
         st.info("Not enough data for product KPI")
+
+    # ==================================================
+    # 🏪 AUTHORIZED STOCKISTS — LAST SUBMITTED STOCK CONTROL
+    # ==================================================
+
+    st.divider()
+    st.title("🏪 Authorized Stockists — Last Submitted Stock Control")
+
+    # 1️⃣ Fetch AUTHORIZED stockists
+    authorized_stockists = safe_exec(
+        supabase.table("stockists")
+        .select("id, name")
+        .eq("authorization_status", "AUTHORIZED")
+        .order("name")
+    )
+
+    if not authorized_stockists:
+        st.info("No authorized stockists found.")
+    else:
+        for stockist in authorized_stockists:
+
+            stockist_id = stockist["id"]
+
+            # 2️⃣ Fetch THIS stockist's last FINAL statement (own timeline)
+            last_stmt = safe_exec(
+                admin_supabase.table("statements")
+                .select("id, year, month")
+                .eq("stockist_id", stockist_id)
+                .eq("status", "final")
+                .order("year", desc=True)
+                .order("month", desc=True)
+                .limit(1)
+            )
+
+            if not last_stmt:
+                continue  # Stockist has no submitted statements
+
+            stmt_id = last_stmt[0]["id"]
+            stmt_year = last_stmt[0]["year"]
+            stmt_month = last_stmt[0]["month"]
+
+            # 3️⃣ Resolve Territory Name(s)
+            territory_rows = safe_exec(
+                supabase.table("territory_stockists")
+                .select("territories(name)")
+                .eq("stockist_id", stockist_id)
+            )
+
+            territory_names = sorted(
+                {t["territories"]["name"] for t in territory_rows if t.get("territories")}
+            )
+
+            territory_label = ", ".join(territory_names) if territory_names else "—"
+
+            # --------------------------------------------------
+            # 🏪 STOCKIST HEADER
+            # --------------------------------------------------
+            st.subheader(f"🏪 {stockist['name']}")
+            st.caption(
+                f"📍 Territory: {territory_label}  |  "
+                f"🗓 Last Submitted: {stmt_month:02d}/{stmt_year}"
+            )
+
+            # 4️⃣ Fetch statement products
+            rows = safe_exec(
+                admin_supabase.table("statement_products")
+                .select("""
+                    opening,
+                    closing,
+                    difference,
+                    order_qty,
+                    issue_guidance,
+                    stock_guidance,
+                    product_id,
+                    products!statement_products_product_id_fkey(name)
+                """)
+                .eq("statement_id", stmt_id)
+            )
+
+            if not rows:
+                st.warning("No product data found for this statement.")
+                continue
+
+            matrix = []
+
+            for r in rows:
+                last_closing = fetch_last_month_closing_only(
+                    stockist_id,
+                    r["product_id"],
+                    stmt_year,
+                    stmt_month
+                )
+
+                matrix.append({
+                    "Product": r["products"]["name"],
+                    "Last Month Closing": last_closing,
+                    "Opening": r["opening"],
+                    "Closing": r["closing"],
+                    "Issue Guidance": r["issue_guidance"],
+                    "Stock Guidance": r["stock_guidance"],
+                    "Order": r["order_qty"],
+                    "Difference": r["difference"]
+                })
+
+            df_matrix = (
+                pd.DataFrame(matrix)
+                .sort_values("Product")
+            )
+
+            st.dataframe(
+                df_matrix,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.divider()
+
