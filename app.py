@@ -639,8 +639,8 @@ if role == "user" and st.session_state.get("engine_stage") != "reports":
 
 
 if (
-    role == "user"
-    and st.session_state.statement_id
+    
+    st.session_state.statement_id
     and st.session_state.engine_stage == "edit"
     and (
         role == "user"
