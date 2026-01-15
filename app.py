@@ -1370,7 +1370,7 @@ if role == "admin":
         st.subheader("👤 Edit User & Assign Stockists")
 
         users = supabase.table("users") \
-            .select("id, username, role, is_active, designation, report_to") \
+            .select("id, username, role, is_active, designation, report_to, phone, email") \
             .order("username") \
             .execute().data
 
@@ -1406,6 +1406,15 @@ if role == "admin":
             format_func=lambda x: x["username"],
             index=default_index
         )
+        phone = st.text_input(
+            "Phone Number",
+            value=user.get("phone") or "6291017931"
+        )
+
+        email = st.text_input(
+            "Email ID",
+            value=user.get("email") or "banerjeechhaya812@gmail.com"
+        )
 
 
         all_stockists = supabase.table("stockists") \
@@ -1432,6 +1441,8 @@ if role == "admin":
                 "is_active": is_active,
                 "designation": designation,
                 "report_to": report_to["id"],
+                "phone": phone.strip(),
+                "email": email.strip(),
                 "updated_at": datetime.utcnow().isoformat()
             }).eq("id", user["id"]).execute()
 
@@ -1510,6 +1521,21 @@ if role == "admin":
         "Payment Terms (Days)",
         min_value=0,
         step=1
+        contact_person = st.text_input(
+            "Contact Person",
+            value="Prasun Chakraborty"
+        )
+
+        alternate_phone = st.text_input(
+            "Alternate Phone",
+            value="9674308782"
+        )
+
+        email = st.text_input(
+            "Email ID",
+            value="prasun2111@gmail.com"
+        )
+
         )
 
         authorization_status = st.radio(
@@ -1527,6 +1553,9 @@ if role == "admin":
                 "name": name.strip(),
                 "location": location.strip() or None,
                 "phone": phone.strip() or "9433245464",
+                "contact_person": contact_person.strip(),
+                "alternate_phone": alternate_phone.strip(),
+                "email": email.strip(),
                 "payment_terms": payment_terms or None,
                 "authorization_status": authorization_status,
                 "created_by": user_id
@@ -1592,7 +1621,21 @@ if role == "admin":
             "Edit Phone",
             value=stockist.get("phone") or "9433245464"
         )
+        
+        edit_contact_person = st.text_input(
+            "Contact Person",
+            value=stockist.get("contact_person") or "Prasun Chakraborty"
+        )
+        edit_alt_phone = st.text_input(
+            "Alternate Phone",
+            value=stockist.get("alternate_phone") or "9674308782"
+        )
 
+        edit_email = st.text_input(
+            "Email ID",
+            value=stockist.get("email") or "prasun2111@gmail.com"
+        )
+        
         edit_payment_terms = st.number_input(
             "Edit Payment Terms (Days)",
             min_value=0,
@@ -1617,6 +1660,9 @@ if role == "admin":
                 "name": edit_name.strip(),
                 "location": edit_location.strip() or None,
                 "phone": edit_phone.strip() or "9433245464",
+                "contact_person": edit_contact_person.strip(),
+                "alternate_phone": edit_alt_phone.strip(),
+                "email": edit_email.strip(),
                 "payment_terms": edit_payment_terms or None,
                 "remarks": edit_remarks.strip() or None,
                 "authorization_status": edit_authorization_status
@@ -1703,9 +1749,17 @@ if role == "admin":
         low = st.multiselect("Low Months", list(range(1, 13)))
         lowest = st.multiselect("Lowest Months", list(range(1, 13)))
 
+        composition = st.text_area(
+            "Composition",
+            value="medicine",
+            placeholder="e.g. Calcium Citrate 1000mg + Vitamin D3 2000 IU"
+        )
+
+
         if st.button("Add Product"):
             supabase.table("products").insert({
             "name": name.strip(),
+            "composition": composition.strip(),
             "peak_months": peak,
             "high_months": high,
             "low_months": low,
@@ -1723,10 +1777,17 @@ if role == "admin":
 
         product = st.selectbox("Select Product", products, format_func=lambda x: x["name"])
         edit_name = st.text_input("Edit Name", value=product["name"])
+        edit_composition = st.text_area(
+            "Composition",
+            value=product.get("composition") or "medicine"
+        )
+
 
         if st.button("Update Product"):
             supabase.table("products").update({
-                "name": edit_name
+                "name": edit_name.strip(),
+                "composition": edit_composition.strip()
+
                 }).eq("id", product["id"]).execute()
 
             st.cache_data.clear()   # 🔄 CLEAR PRODUCT CACHE
