@@ -1625,16 +1625,19 @@ if role == "admin":
         
         edit_contact_person = st.text_input(
             "Contact Person",
-            value=stockist.get("contact_person") or "Prasun Chakraborty"
+            value=stockist.get("contact_person") or "Prasun Chakraborty",
+            key=f"edit_contact_person_{stockist['id']}"
         )
         edit_alt_phone = st.text_input(
             "Alternate Phone",
-            value=stockist.get("alternate_phone") or "9674308782"
+            value=stockist.get("alternate_phone") or "9674308782",
+            key=f"edit_alt_phone_{stockist['id']}"
         )
 
         edit_email = st.text_input(
             "Email ID",
-            value=stockist.get("email") or "prasun2111@gmail.com"
+            value=stockist.get("email") or "prasun2111@gmail.com",
+            key=f"edit_email_{stockist['id']}"
         )
         
         edit_payment_terms = st.number_input(
