@@ -1,4 +1,11 @@
+import sys
+import os
 import streamlit as st
+
+# 🔧 FORCE PROJECT ROOT INTO PYTHON PATH
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from anchors.core_session import handle_login
 from anchors.core_router import route_module
@@ -11,3 +18,4 @@ st.set_page_config(
 
 handle_login()
 route_module()
+
