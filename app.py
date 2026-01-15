@@ -1544,6 +1544,12 @@ if role == "admin":
             ["AUTHORIZED", "NONAUTHORIZED"],
             horizontal=True
         )
+        otp_required = st.radio(
+            "OTP Requirement",
+            ["OTP NOT NECESSARY", "OTP NECESSARY"],
+            index=0,  # default = NOT NECESSARY
+            horizontal=True
+        )
 
         if st.button("Add Stockist"):
             if not name.strip():
@@ -1559,6 +1565,7 @@ if role == "admin":
                 "email": email.strip(),
                 "payment_terms": payment_terms or None,
                 "authorization_status": authorization_status,
+                "otp_required": otp_required == "OTP NECESSARY",
                 "created_by": user_id
             }).execute()
 
@@ -1655,6 +1662,15 @@ if role == "admin":
             key=f"edit_auth_status_{stockist['id']}"
         )
 
+        edit_otp_required = st.radio(
+            "OTP Requirement",
+            ["OTP NOT NECESSARY", "OTP NECESSARY"],
+            index=1 if stockist.get("otp_required") else 0,
+            horizontal=True,
+            key=f"edit_otp_required_{stockist['id']}"
+        )
+
+        
         if st.button("Save Changes"):
             if not edit_name.strip():
                 st.error("Stockist name cannot be empty")
@@ -1669,7 +1685,8 @@ if role == "admin":
                 "email": edit_email.strip(),
                 "payment_terms": edit_payment_terms or None,
                 "remarks": edit_remarks.strip() or None,
-                "authorization_status": edit_authorization_status
+                "authorization_status": edit_authorization_status,
+                "otp_required": edit_otp_required == "OTP NECESSARY"
             }).eq("id", stockist["id"]).execute()
 
             supabase.table("audit_logs").insert({
