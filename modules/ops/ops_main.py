@@ -1,4 +1,17 @@
 import streamlit as st
+def resolve_user_id():
+    user = st.session_state.get("auth_user")
+
+    # Supabase user object
+    if hasattr(user, "id"):
+        return user.id
+
+    # Dict-based test user
+    if isinstance(user, dict):
+        return user.get("id")
+
+    # Absolute fallback
+    return "system"
 
 
 def run_ops():
@@ -255,20 +268,27 @@ def run_ops():
 
                 # ---------- FINAL SUBMIT (TEMP ENABLED) ----------
                 if st.button("✅ Final Submit OPS", type="primary"):
-                    user_id = st.session_state.get("auth_user").id
+                    user_id = resolve_user_id()
 
-                    admin_supabase.table("ops_documents").insert({
-                        "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
-                        "ops_date": date,
-                        "ops_type": "ADJUSTMENT",
-                        "stock_as": "adjustment",
-                        "direction": "ADJUST",
-                        "narration": "OPS test submit from UI",
-                        "reference_no": reference_no,
-                        "created_by": user_id
-                    }).execute()
-    
-                    st.success("✅ OPS document saved successfully")
+                    try:
+                        admin_supabase.table("ops_documents").insert({
+                            "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                            "ops_date": date,
+                            "ops_type": "ADJUSTMENT",
+                            "stock_as": "adjustment",
+                            "direction": "ADJUST",
+                            "narration": "OPS test submit from UI",
+                            "reference_no": reference_no,
+                            "created_by": user_id
+                        }).execute()
+
+                        st.success("✅ OPS document saved successfully")
+
+                    except Exception as e:
+                        st.error("❌ OPS submission failed")
+                        st.exception(e)
+
+
 
 
 
