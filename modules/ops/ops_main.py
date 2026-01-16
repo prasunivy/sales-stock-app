@@ -273,7 +273,14 @@ def run_ops():
                 # ---------- FINAL SUBMIT (TEMP ENABLED) ----------
                 if st.button("✅ Final Submit OPS", type="primary"):
                     user_id = resolve_user_id()
+                    # ✅ UUID safety check (ADD THIS LINE)
+                    if isinstance(user_id, str) and len(user_id) < 36:
+                        st.error("❌ Invalid user ID. Please login again.")
+                        st.stop()
 
+                    if admin_supabase is None:
+                        st.error("❌ Supabase not configured. Contact admin.")
+                        st.stop()
                     try:
                         admin_supabase.table("ops_documents").insert({
                             "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
