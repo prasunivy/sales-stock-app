@@ -14,6 +14,15 @@ def run_ops():
         return
 
     st.success("✅ Admin access granted")
+    # =========================
+    # OPS FLOW STATE
+    # =========================
+    if "ops_master_confirmed" not in st.session_state:
+        st.session_state.ops_master_confirmed = False
+
+    if "ops_products_done" not in st.session_state:
+        st.session_state.ops_products_done = False
+
 
     # =========================
     # OPS INTERNAL NAVIGATION
@@ -145,9 +154,14 @@ def run_ops():
             stock_as = st.selectbox("Stock As", stock_as_options)
             reference_no = st.text_input("Reference Number")
 
-            submitted = st.form_submit_button("Preview")
+            preview_clicked = st.form_submit_button("Preview")
 
-        if submitted:
+            if preview_clicked:
+                st.session_state.ops_master_confirmed = True
+
+
+        if st.session_state.ops_master_confirmed:
+
             st.markdown("### 🔍 Preview — Stock Movement")
             st.write("Stock Direction:", stock_direction)
             st.write("From:", from_entity, "-", from_name)
