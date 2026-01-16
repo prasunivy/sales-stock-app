@@ -112,6 +112,9 @@ def run_ops():
     elif section == "STOCK_FLOW":
         st.subheader("🔁 Stock In / Stock Out (Master Form)")
 
+        # =========================
+        # MASTER FORM (INPUT ONLY)
+        # =========================
         with st.form("stock_flow_master_form"):
             stock_direction = st.radio(
                 "Stock Direction",
@@ -123,23 +126,14 @@ def run_ops():
                 from_options = ["Company", "CNF", "User"]
                 to_options = ["CNF", "User", "Stockist", "Destroyed", "Purchaser"]
                 stock_as_options = [
-                    "Invoice",
-                    "Sample",
-                    "Lot",
-                    "Destroyed",
-                    "Return to Purchaser"
+                    "Invoice", "Sample", "Lot", "Destroyed", "Return to Purchaser"
                 ]
             else:
                 from_options = ["CNF", "User", "Purchaser", "Stockist"]
                 to_options = ["Company", "CNF", "User"]
-                stock_as_options = [
-                    "Purchase",
-                    "Credit Note",
-                    "Return"
-                ]
+                stock_as_options = ["Purchase", "Credit Note", "Return"]
 
             col1, col2 = st.columns(2)
-
             with col1:
                 from_entity = st.selectbox("From", from_options)
                 from_name = st.text_input("Name of From")
@@ -159,20 +153,12 @@ def run_ops():
             if preview_clicked:
                 st.session_state.ops_master_confirmed = True
 
-
+        # =========================
+        # AFTER PREVIEW CONFIRMED
+        # =========================
         if st.session_state.ops_master_confirmed:
 
-            st.markdown("### 🔍 Preview — Stock Movement")
-            st.write("Stock Direction:", stock_direction)
-            st.write("From:", from_entity, "-", from_name)
-            st.write("To:", to_entity, "-", to_name)
-            st.write("Date:", date)
-            st.write("Stock As:", stock_as)
-            st.write("Reference No:", reference_no)
-            st.warning("⚠️ Preview only. Product details not added yet.")
-            # =========================
-            # PRODUCT BODY ENGINE (UI)
-            # =========================
+            # ---------- PRODUCT ENGINE ----------
             if "ops_products" not in st.session_state:
                 st.session_state.ops_products = []
 
@@ -182,10 +168,9 @@ def run_ops():
             st.divider()
             st.subheader("📦 Product Details")
 
-            current_index = st.session_state.ops_product_index
+            idx = st.session_state.ops_product_index
 
-            # Ensure current product slot exists
-            if len(st.session_state.ops_products) <= current_index:
+            if len(st.session_state.ops_products) <= idx:
                 st.session_state.ops_products.append({
                     "product": "",
                     "sale_qty": 0,
@@ -193,12 +178,12 @@ def run_ops():
                     "total_qty": 0
                 })
 
-            current = st.session_state.ops_products[current_index]
+            current = st.session_state.ops_products[idx]
 
             product_name = st.text_input(
                 "Product",
                 value=current["product"],
-                key=f"ops_product_{current_index}"
+                key=f"product_{idx}"
             )
 
             sale_qty = st.number_input(
@@ -206,17 +191,16 @@ def run_ops():
                 min_value=0,
                 step=1,
                 value=current["sale_qty"],
-                key=f"ops_sale_{current_index}"
+                key=f"sale_{idx}"
             )
 
-            # Free quantity only for Invoice / Return / Credit
             if stock_as in ["Invoice", "Return", "Credit Note"]:
                 free_qty = st.number_input(
                     "Free Quantity",
                     min_value=0,
                     step=1,
                     value=current["free_qty"],
-                    key=f"ops_free_{current_index}"
+                    key=f"free_{idx}"
                 )
             else:
                 free_qty = 0
@@ -224,7 +208,6 @@ def run_ops():
             total_qty = sale_qty + free_qty
             st.info(f"📊 Total Quantity: {total_qty}")
 
-            # Update current product
             current.update({
                 "product": product_name,
                 "sale_qty": sale_qty,
@@ -233,7 +216,6 @@ def run_ops():
             })
 
             st.divider()
-
             c1, c2, c3 = st.columns(3)
 
             with c1:
@@ -242,7 +224,7 @@ def run_ops():
                     st.rerun()
 
             with c2:
-                if st.button("⬅ Remove Product") and current_index > 0:
+                if st.button("⬅ Remove Product") and idx > 0:
                     st.session_state.ops_products.pop()
                     st.session_state.ops_product_index -= 1
                     st.rerun()
@@ -252,187 +234,41 @@ def run_ops():
                     st.session_state.ops_products_done = True
                     st.rerun()
 
-            # =========================
-            # PRODUCTS PREVIEW
-            # =========================
-            if st.session_state.get("ops_products_done"):
+            # ---------- PREVIEW (AFTER PRODUCTS) ----------
+            if st.session_state.ops_products_done:
                 st.divider()
-                st.subheader("🔍 Products Preview")
+                st.subheader("🔍 Preview — Stock Movement")
 
+                st.write("Direction:", stock_direction)
+                st.write("From:", from_entity, "-", from_name)
+                st.write("To:", to_entity, "-", to_name)
+                st.write("Date:", date)
+                st.write("Stock As:", stock_as)
+                st.write("Reference No:", reference_no)
+
+                st.divider()
+                st.subheader("📦 Products")
                 for i, p in enumerate(st.session_state.ops_products, start=1):
-                    st.markdown(
-                        f"""
-                        **Product {i}**
-                        - Name: {p['product']}
-                        - Sale Qty: {p['sale_qty']}
-                        - Free Qty: {p['free_qty']}
-                        - Total Qty: {p['total_qty']}
-                        """
-                    )
+                    st.write(f"{i}. {p['product']} — Qty: {p['total_qty']}")
 
-                st.warning("⚠️ Amounts, taxes and final submit will come next.")
-                # =========================
-                # AMOUNTS ENGINE (UI)
-                # =========================
-                if stock_as in ["Invoice", "Purchase", "Return", "Credit Note"]:
-                    st.divider()
-                    st.subheader("💰 Amount Details")
+                st.divider()
 
-                    if "ops_amounts" not in st.session_state:
-                        st.session_state.ops_amounts = {
-                            "gross": 0,
-                            "tax": 0,
-                            "discount": 0,
-                            "net": 0
-                        }
+                # ---------- FINAL SUBMIT (TEMP ENABLED) ----------
+                if st.button("✅ Final Submit OPS", type="primary"):
+                    user_id = st.session_state.get("auth_user").id
 
-                    gross = st.number_input(
-                        "Gross Amount",
-                        min_value=0.0,
-                        step=1.0,
-                        value=st.session_state.ops_amounts["gross"]
-                    )
-
-                    tax = st.number_input(
-                        "Tax Amount",
-                        min_value=0.0,
-                        step=1.0,
-                        value=st.session_state.ops_amounts["tax"]
-                    )
-
-                    discount = st.number_input(
-                        "Discount (Optional)",
-                        min_value=0.0,
-                        step=1.0,
-                        value=st.session_state.ops_amounts["discount"]
-                    )
-
-                    net = gross + tax - discount
-
-                    st.metric("Net Amount", f"{net:.2f}")
-
-                    st.session_state.ops_amounts.update({
-                        "gross": gross,
-                        "tax": tax,
-                        "discount": discount,
-                        "net": net
-                    })
-
-                    st.info("ℹ️ Net Amount = Gross + Tax − Discount")
-                    # =========================
-                    # FINAL PREVIEW GATE (UI ONLY)
-                    # =========================
-                    st.divider()
-                    st.subheader("🔍 Final Preview (Read-only)")
-
-                    st.markdown("#### 📦 Movement Summary")
-                    st.write("**Direction:**", stock_direction)
-                    st.write("**From:**", from_entity, "-", from_name)
-                    st.write("**To:**", to_entity, "-", to_name)
-                    st.write("**Date:**", date)
-                    st.write("**Stock As:**", stock_as)
-                    st.write("**Reference No:**", reference_no)
-
-                    st.divider()
-                    st.markdown("#### 📦 Products")
-                    for i, p in enumerate(st.session_state.get("ops_products", []), start=1):
-                        st.markdown(
-                            f"""
-                            **Product {i}**
-                            - Name: {p.get('product')}
-                            - Sale Qty: {p.get('sale_qty')}
-                            - Free Qty: {p.get('free_qty')}
-                            - Total Qty: {p.get('total_qty')}
-                            """
-                        )
-
-                    if stock_as in ["Invoice", "Purchase", "Return", "Credit Note"]:
-                        st.divider()
-                        st.markdown("#### 💰 Amounts")
-                        a = st.session_state.get("ops_amounts", {})
-                        st.write("Gross:", a.get("gross"))
-                        st.write("Tax:", a.get("tax"))
-                        st.write("Discount:", a.get("discount"))
-                        st.write("Net:", a.get("net"))
-
-                    st.divider()
-                    if st.button("✅ Final Submit OPS", type="primary"):
-
-                        # TEMP USER (already logged-in admin)
-                        user_id = st.session_state.get("auth_user").id
-
-                        # BASIC OPS HEADER INSERT (ONLY HEADER, NOTHING ELSE)
-                        admin_supabase.table("ops_documents").insert({
-                            "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
-                            "ops_date": date,
-                            "ops_type": "ADJUSTMENT",
-                            "stock_as": "adjustment",
-                            "direction": "ADJUST",
-                            "narration": "OPS test submit from UI",
-                            "reference_no": reference_no,
-                            "created_by": user_id
-                        }).execute()
-
-                        st.success("✅ OPS document saved successfully")
-
-                    st.caption("Final submit will be enabled after DB wiring & validations.")
-                    # =========================
-                    # VALIDATION CHECKS (UI ONLY)
-                    # =========================
-                    st.divider()
-                    st.subheader("✅ Validation Checklist (Read-only)")
-
-                    validations = []
-
-                    # Basic master validations
-                    validations.append((
-                        "From / To selected",
-                        bool(from_entity and to_entity and from_name and to_name)
-                    ))
-
-                    validations.append((
-                        "Stock As selected",
-                        bool(stock_as)
-                    ))
-
-                    validations.append((
-                        "At least one product added",
-                        len(st.session_state.get("ops_products", [])) > 0
-                    ))
-
-                    # Product-level validation
-                    all_products_valid = True
-                    for p in st.session_state.get("ops_products", []):
-                        if not p.get("product") or p.get("total_qty", 0) <= 0:
-                            all_products_valid = False
-                            break
-
-                    validations.append((
-                        "All products have name & quantity",
-                        all_products_valid
-                    ))
-
-                    # Amount validation (only when required)
-                    if stock_as in ["Invoice", "Purchase", "Return", "Credit Note"]:
-                        a = st.session_state.get("ops_amounts", {})
-                        validations.append((
-                            "Net amount calculated",
-                            a.get("net", 0) > 0
-                        ))
-
-                    # Display validations
-                    all_passed = True
-                    for label, passed in validations:
-                        if passed:
-                            st.success(f"✅ {label}")
-                        else:
-                            st.error(f"❌ {label}")
-                            all_passed = False
-
-                    if not all_passed:
-                        st.warning("⚠️ Fix the above items before final submit is enabled.")
-                    else:
-                        st.info("ℹ️ All validations passed. Submit will be enabled in next phase.")
+                    admin_supabase.table("ops_documents").insert({
+                        "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                        "ops_date": date,
+                        "ops_type": "ADJUSTMENT",
+                        "stock_as": "adjustment",
+                        "direction": "ADJUST",
+                        "narration": "OPS test submit from UI",
+                        "reference_no": reference_no,
+                        "created_by": user_id
+                    }).execute()
+    
+                    st.success("✅ OPS document saved successfully")
 
 
 
