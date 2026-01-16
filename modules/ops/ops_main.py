@@ -277,7 +277,7 @@ def run_ops():
                     try:
                         admin_supabase.table("ops_documents").insert({
                             "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
-                            "ops_date": date,
+                            "ops_date": date.isoformat(),
                             "ops_type": "ADJUSTMENT",
                             "stock_as": "adjustment",
                             "direction": "ADJUST",
