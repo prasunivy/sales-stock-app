@@ -303,9 +303,35 @@ def run_ops():
                         }).execute()
 
                         ops_document_id = response.data[0]["id"]
-                        # ---------- OPS LINES WILL BE INSERTED HERE ----------
+                        # ---------- INSERT OPS LINES ----------
                         for p in st.session_state.ops_products:
-                            st.info(f"ℹ OPS line ready for product: {p['product']}")
+
+                            # 🔎 Resolve product_id from products master
+                            product_resp = admin_supabase.table("products") \
+                                .select("id") \
+                                .eq("name", p["product"]) \
+                                .limit(1) \
+                                .execute()
+
+                            if not product_resp.data:
+                                st.error(f"❌ Product not found in master: {p['product']}")
+                                st.stop()
+
+                            product_id = product_resp.data[0]["id"]
+
+                            qty = p["total_qty"]
+                            rate = 0
+                            amount = qty * rate
+
+                            admin_supabase.table("ops_lines").insert({
+                                "ops_document_id": ops_document_id,
+                                "product_id": product_id,
+                                "qty": qty,
+                                "rate": rate,
+                                "amount": amount,
+                                "line_narration": "OPS auto line"
+                            }).execute()
+
 
                         st.success("✅ OPS document saved successfully")
                         st.session_state.ops_submit_done = True
