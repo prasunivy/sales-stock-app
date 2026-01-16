@@ -1,16 +1,23 @@
 import streamlit as st
 
+
 def run_ops():
     st.title("📥 Order / Purchase / Sales / Payment")
 
+    # =========================
+    # ADMIN CHECK
+    # =========================
     role = st.session_state.get("role")
+
     if role != "admin":
         st.error("❌ You are not authorized to access this module.")
         return
 
-    # ------------------------------
+    st.success("✅ Admin access granted")
+
+    # =========================
     # OPS INTERNAL NAVIGATION
-    # ------------------------------
+    # =========================
     st.sidebar.subheader("⚙ OPS Menu")
 
     if "ops_section" not in st.session_state:
@@ -38,16 +45,13 @@ def run_ops():
 
     section = st.session_state.ops_section
 
-    # ------------------------------
-    # LANDING
-    # ------------------------------
     if not section:
         st.info("👈 Select an OPS function from the sidebar")
         return
 
-    # ------------------------------
-    # OPENING STOCK (PREVIEW ONLY)
-    # ------------------------------
+    # =========================
+    # OPENING STOCK (PREVIEW)
+    # =========================
     if section == "OPENING_STOCK":
         st.subheader("📦 Opening Stock (Preview Only)")
 
@@ -56,7 +60,6 @@ def run_ops():
                 "Select Entity Type",
                 ["Company", "CNF", "User", "Stockist"]
             )
-
             entity_name = st.text_input("Entity Name")
             product = st.text_input("Product Name")
             quantity = st.number_input("Quantity", min_value=0, step=1)
@@ -69,12 +72,11 @@ def run_ops():
             st.write("Entity Name:", entity_name)
             st.write("Product:", product)
             st.write("Quantity:", quantity)
+            st.warning("⚠️ Preview only. Data not saved.")
 
-            st.warning("⚠️ Preview only. Data not saved yet.")
-
-    # ------------------------------
-    # OPENING BALANCE (PREVIEW ONLY)
-    # ------------------------------
+    # =========================
+    # OPENING BALANCE (PREVIEW)
+    # =========================
     elif section == "OPENING_BALANCE":
         st.subheader("💰 Opening Balance (Preview Only)")
 
@@ -83,7 +85,6 @@ def run_ops():
                 "Select Entity",
                 ["Stockist", "CNF"]
             )
-
             entity_name = st.text_input("Name")
             amount = st.number_input("Opening Balance Amount", step=1)
 
@@ -94,26 +95,21 @@ def run_ops():
             st.write("Entity Type:", entity_type)
             st.write("Name:", entity_name)
             st.write("Amount:", amount)
+            st.warning("⚠️ Preview only. Data not saved.")
 
-            st.warning("⚠️ Preview only. Data not saved yet.")
-
-    # ------------------------------
-    # PLACEHOLDERS (LOCKED FOR NOW)
-    # ------------------------------
+    # =========================
+    # STOCK IN / STOCK OUT
+    # =========================
     elif section == "STOCK_FLOW":
         st.subheader("🔁 Stock In / Stock Out (Master Form)")
 
-         with st.form("stock_flow_master_form"):
-
+        with st.form("stock_flow_master_form"):
             stock_direction = st.radio(
                 "Stock Direction",
                 ["Stock Out", "Stock In"],
                 horizontal=True
             )
 
-            # -------------------------
-            # FROM / TO LOGIC
-            # -------------------------
             if stock_direction == "Stock Out":
                 from_options = ["Company", "CNF", "User"]
                 to_options = ["CNF", "User", "Stockist", "Destroyed", "Purchaser"]
@@ -146,31 +142,24 @@ def run_ops():
             st.divider()
 
             date = st.date_input("Date")
-
-            stock_as = st.selectbox(
-                "Stock As",
-                stock_as_options
-            )
-
+            stock_as = st.selectbox("Stock As", stock_as_options)
             reference_no = st.text_input("Reference Number")
 
             submitted = st.form_submit_button("Preview")
 
-        # -------------------------
-        # PREVIEW (NO SAVE)
-        # -------------------------
         if submitted:
             st.markdown("### 🔍 Preview — Stock Movement")
-
-            st.write("**Stock Direction:**", stock_direction)
-            st.write("**From:**", from_entity, "-", from_name)
-            st.write("**To:**", to_entity, "-", to_name)
-            st.write("**Date:**", date)
-            st.write("**Stock As:**", stock_as)
-            st.write("**Reference No:**", reference_no)
-
+            st.write("Stock Direction:", stock_direction)
+            st.write("From:", from_entity, "-", from_name)
+            st.write("To:", to_entity, "-", to_name)
+            st.write("Date:", date)
+            st.write("Stock As:", stock_as)
+            st.write("Reference No:", reference_no)
             st.warning("⚠️ Preview only. Product details not added yet.")
 
+    # =========================
+    # PLACEHOLDERS
+    # =========================
     elif section == "ORDERS":
         st.info("🔧 Orders — coming next")
 
