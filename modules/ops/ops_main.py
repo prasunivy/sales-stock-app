@@ -257,6 +257,55 @@ def run_ops():
                     )
 
                 st.warning("⚠️ Amounts, taxes and final submit will come next.")
+                # =========================
+                # AMOUNTS ENGINE (UI)
+                # =========================
+                if stock_as in ["Invoice", "Purchase", "Return", "Credit Note"]:
+                    st.divider()
+                    st.subheader("💰 Amount Details")
+
+                    if "ops_amounts" not in st.session_state:
+                        st.session_state.ops_amounts = {
+                            "gross": 0,
+                            "tax": 0,
+                            "discount": 0,
+                            "net": 0
+                        }
+
+                    gross = st.number_input(
+                        "Gross Amount",
+                        min_value=0.0,
+                        step=1.0,
+                        value=st.session_state.ops_amounts["gross"]
+                    )
+
+                    tax = st.number_input(
+                        "Tax Amount",
+                        min_value=0.0,
+                        step=1.0,
+                        value=st.session_state.ops_amounts["tax"]
+                    )
+
+                    discount = st.number_input(
+                        "Discount (Optional)",
+                        min_value=0.0,
+                        step=1.0,
+                        value=st.session_state.ops_amounts["discount"]
+                    )
+
+                    net = gross + tax - discount
+
+                    st.metric("Net Amount", f"{net:.2f}")
+
+                    st.session_state.ops_amounts.update({
+                        "gross": gross,
+                        "tax": tax,
+                        "discount": discount,
+                        "net": net
+                    })
+
+                    st.info("ℹ️ Net Amount = Gross + Tax − Discount")
+
 
 
     # =========================
