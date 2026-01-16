@@ -344,6 +344,64 @@ def run_ops():
                     st.divider()
                     st.button("🚫 Final Submit (Disabled – UI Only)", disabled=True)
                     st.caption("Final submit will be enabled after DB wiring & validations.")
+                    # =========================
+                    # VALIDATION CHECKS (UI ONLY)
+                    # =========================
+                    st.divider()
+                    st.subheader("✅ Validation Checklist (Read-only)")
+
+                    validations = []
+
+                    # Basic master validations
+                    validations.append((
+                        "From / To selected",
+                        bool(from_entity and to_entity and from_name and to_name)
+                    ))
+
+                    validations.append((
+                        "Stock As selected",
+                        bool(stock_as)
+                    ))
+
+                    validations.append((
+                        "At least one product added",
+                        len(st.session_state.get("ops_products", [])) > 0
+                    ))
+
+                    # Product-level validation
+                    all_products_valid = True
+                    for p in st.session_state.get("ops_products", []):
+                        if not p.get("product") or p.get("total_qty", 0) <= 0:
+                            all_products_valid = False
+                            break
+
+                    validations.append((
+                        "All products have name & quantity",
+                        all_products_valid
+                    ))
+
+                    # Amount validation (only when required)
+                    if stock_as in ["Invoice", "Purchase", "Return", "Credit Note"]:
+                        a = st.session_state.get("ops_amounts", {})
+                        validations.append((
+                            "Net amount calculated",
+                            a.get("net", 0) > 0
+                        ))
+
+                    # Display validations
+                    all_passed = True
+                    for label, passed in validations:
+                        if passed:
+                            st.success(f"✅ {label}")
+                        else:
+                            st.error(f"❌ {label}")
+                            all_passed = False
+
+                    if not all_passed:
+                        st.warning("⚠️ Fix the above items before final submit is enabled.")
+                    else:
+                        st.info("ℹ️ All validations passed. Submit will be enabled in next phase.")
+
 
 
 
