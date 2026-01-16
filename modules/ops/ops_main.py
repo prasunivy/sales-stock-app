@@ -40,6 +40,10 @@ def run_ops():
     if "ops_products_done" not in st.session_state:
         st.session_state.ops_products_done = False
 
+    if "ops_submit_done" not in st.session_state:
+        st.session_state.ops_submit_done = False
+
+
 
     # =========================
     # OPS INTERNAL NAVIGATION
@@ -271,7 +275,12 @@ def run_ops():
                 st.divider()
 
                 # ---------- FINAL SUBMIT (TEMP ENABLED) ----------
-                if st.button("✅ Final Submit OPS", type="primary"):
+                if st.button(
+                    "✅ Final Submit OPS",
+                    type="primary",
+                    disabled=st.session_state.ops_submit_done
+                ):
+
                     user_id = resolve_user_id()
                     # ✅ UUID safety check (ADD THIS LINE)
                     if isinstance(user_id, str) and len(user_id) < 36:
@@ -294,11 +303,14 @@ def run_ops():
                         }).execute()
 
                         st.success("✅ OPS document saved successfully")
+                        st.session_state.ops_submit_done = True
 
                     except Exception as e:
                         st.error("❌ OPS submission failed")
                         st.exception(e)
 
+                if st.session_state.ops_submit_done:
+                    st.info("🔒 OPS already submitted. Start a new OPS to continue.")
 
 
 
