@@ -156,6 +156,108 @@ def run_ops():
             st.write("Stock As:", stock_as)
             st.write("Reference No:", reference_no)
             st.warning("⚠️ Preview only. Product details not added yet.")
+            # =========================
+            # PRODUCT BODY ENGINE (UI)
+            # =========================
+            if "ops_products" not in st.session_state:
+                st.session_state.ops_products = []
+
+            if "ops_product_index" not in st.session_state:
+                st.session_state.ops_product_index = 0
+
+            st.divider()
+            st.subheader("📦 Product Details")
+
+            current_index = st.session_state.ops_product_index
+
+            # Ensure current product slot exists
+            if len(st.session_state.ops_products) <= current_index:
+                st.session_state.ops_products.append({
+                    "product": "",
+                    "sale_qty": 0,
+                    "free_qty": 0,
+                    "total_qty": 0
+                })
+
+            current = st.session_state.ops_products[current_index]
+
+            product_name = st.text_input(
+                "Product",
+                value=current["product"],
+                key=f"ops_product_{current_index}"
+            )
+
+            sale_qty = st.number_input(
+                "Saleable Quantity",
+                min_value=0,
+                step=1,
+                value=current["sale_qty"],
+                key=f"ops_sale_{current_index}"
+            )
+
+            # Free quantity only for Invoice / Return / Credit
+            if stock_as in ["Invoice", "Return", "Credit Note"]:
+                free_qty = st.number_input(
+                    "Free Quantity",
+                    min_value=0,
+                    step=1,
+                    value=current["free_qty"],
+                    key=f"ops_free_{current_index}"
+                )
+            else:
+                free_qty = 0
+
+            total_qty = sale_qty + free_qty
+            st.info(f"📊 Total Quantity: {total_qty}")
+
+            # Update current product
+            current.update({
+                "product": product_name,
+                "sale_qty": sale_qty,
+                "free_qty": free_qty,
+                "total_qty": total_qty
+            })
+
+            st.divider()
+
+            c1, c2, c3 = st.columns(3)
+
+            with c1:
+                if st.button("➕ Add Product"):
+                    st.session_state.ops_product_index += 1
+                    st.rerun()
+
+            with c2:
+                if st.button("⬅ Remove Product") and current_index > 0:
+                    st.session_state.ops_products.pop()
+                    st.session_state.ops_product_index -= 1
+                    st.rerun()
+
+            with c3:
+                if st.button("✅ End Products"):
+                    st.session_state.ops_products_done = True
+                    st.rerun()
+
+            # =========================
+            # PRODUCTS PREVIEW
+            # =========================
+            if st.session_state.get("ops_products_done"):
+                st.divider()
+                st.subheader("🔍 Products Preview")
+
+                for i, p in enumerate(st.session_state.ops_products, start=1):
+                    st.markdown(
+                        f"""
+                        **Product {i}**
+                        - Name: {p['product']}
+                        - Sale Qty: {p['sale_qty']}
+                        - Free Qty: {p['free_qty']}
+                        - Total Qty: {p['total_qty']}
+                        """
+                    )
+
+                st.warning("⚠️ Amounts, taxes and final submit will come next.")
+
 
     # =========================
     # PLACEHOLDERS
