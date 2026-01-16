@@ -305,6 +305,45 @@ def run_ops():
                     })
 
                     st.info("ℹ️ Net Amount = Gross + Tax − Discount")
+                    # =========================
+                    # FINAL PREVIEW GATE (UI ONLY)
+                    # =========================
+                    st.divider()
+                    st.subheader("🔍 Final Preview (Read-only)")
+
+                    st.markdown("#### 📦 Movement Summary")
+                    st.write("**Direction:**", stock_direction)
+                    st.write("**From:**", from_entity, "-", from_name)
+                    st.write("**To:**", to_entity, "-", to_name)
+                    st.write("**Date:**", date)
+                    st.write("**Stock As:**", stock_as)
+                    st.write("**Reference No:**", reference_no)
+
+                    st.divider()
+                    st.markdown("#### 📦 Products")
+                    for i, p in enumerate(st.session_state.get("ops_products", []), start=1):
+                        st.markdown(
+                            f"""
+                            **Product {i}**
+                            - Name: {p.get('product')}
+                            - Sale Qty: {p.get('sale_qty')}
+                            - Free Qty: {p.get('free_qty')}
+                            - Total Qty: {p.get('total_qty')}
+                            """
+                        )
+
+                    if stock_as in ["Invoice", "Purchase", "Return", "Credit Note"]:
+                        st.divider()
+                        st.markdown("#### 💰 Amounts")
+                        a = st.session_state.get("ops_amounts", {})
+                        st.write("Gross:", a.get("gross"))
+                        st.write("Tax:", a.get("tax"))
+                        st.write("Discount:", a.get("discount"))
+                        st.write("Net:", a.get("net"))
+
+                    st.divider()
+                    st.button("🚫 Final Submit (Disabled – UI Only)", disabled=True)
+                    st.caption("Final submit will be enabled after DB wiring & validations.")
 
 
 
