@@ -101,7 +101,75 @@ def run_ops():
     # PLACEHOLDERS (LOCKED FOR NOW)
     # ------------------------------
     elif section == "STOCK_FLOW":
-        st.info("🔧 Stock In / Stock Out — coming next")
+        st.subheader("🔁 Stock In / Stock Out (Master Form)")
+
+         with st.form("stock_flow_master_form"):
+
+            stock_direction = st.radio(
+                "Stock Direction",
+                ["Stock Out", "Stock In"],
+                horizontal=True
+            )
+
+            # -------------------------
+            # FROM / TO LOGIC
+            # -------------------------
+            if stock_direction == "Stock Out":
+                from_options = ["Company", "CNF", "User"]
+                to_options = ["CNF", "User", "Stockist", "Destroyed", "Purchaser"]
+                stock_as_options = [
+                    "Invoice",
+                    "Sample",
+                    "Lot",
+                    "Destroyed",
+                    "Return to Purchaser"
+                ]
+            else:
+                from_options = ["CNF", "User", "Purchaser", "Stockist"]
+                to_options = ["Company", "CNF", "User"]
+                stock_as_options = [
+                    "Purchase",
+                    "Credit Note",
+                    "Return"
+                ]
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                from_entity = st.selectbox("From", from_options)
+                from_name = st.text_input("Name of From")
+
+            with col2:
+                to_entity = st.selectbox("To", to_options)
+                to_name = st.text_input("Name of To")
+
+            st.divider()
+
+            date = st.date_input("Date")
+
+            stock_as = st.selectbox(
+                "Stock As",
+                stock_as_options
+            )
+
+            reference_no = st.text_input("Reference Number")
+
+            submitted = st.form_submit_button("Preview")
+
+        # -------------------------
+        # PREVIEW (NO SAVE)
+        # -------------------------
+        if submitted:
+            st.markdown("### 🔍 Preview — Stock Movement")
+
+            st.write("**Stock Direction:**", stock_direction)
+            st.write("**From:**", from_entity, "-", from_name)
+            st.write("**To:**", to_entity, "-", to_name)
+            st.write("**Date:**", date)
+            st.write("**Stock As:**", stock_as)
+            st.write("**Reference No:**", reference_no)
+
+            st.warning("⚠️ Preview only. Product details not added yet.")
 
     elif section == "ORDERS":
         st.info("🔧 Orders — coming next")
