@@ -342,7 +342,25 @@ def run_ops():
                         st.write("Net:", a.get("net"))
 
                     st.divider()
-                    st.button("🚫 Final Submit (Disabled – UI Only)", disabled=True)
+                    if st.button("✅ Final Submit OPS", type="primary"):
+
+                        # TEMP USER (already logged-in admin)
+                        user_id = st.session_state.get("auth_user").id
+
+                        # BASIC OPS HEADER INSERT (ONLY HEADER, NOTHING ELSE)
+                        admin_supabase.table("ops_documents").insert({
+                            "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                            "ops_date": date,
+                            "ops_type": "ADJUSTMENT",
+                            "stock_as": "adjustment",
+                            "direction": "ADJUST",
+                            "narration": "OPS test submit from UI",
+                            "reference_no": reference_no,
+                            "created_by": user_id
+                        }).execute()
+
+                        st.success("✅ OPS document saved successfully")
+
                     st.caption("Final submit will be enabled after DB wiring & validations.")
                     # =========================
                     # VALIDATION CHECKS (UI ONLY)
