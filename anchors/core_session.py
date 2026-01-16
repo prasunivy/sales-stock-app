@@ -16,7 +16,7 @@ def handle_login():
     init_session()
 
     if TEST_MODE:
-        st.session_state.auth_user = {"id": "test-user"}
+        st.session_state.auth_user = {"id": "00000000-0000-0000-0000-000000000001"}
         st.session_state.role = "admin"
 
     if not st.session_state.auth_user:
