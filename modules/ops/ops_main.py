@@ -291,7 +291,7 @@ def run_ops():
                         st.error("❌ Supabase not configured. Contact admin.")
                         st.stop()
                     try:
-                        admin_supabase.table("ops_documents").insert({
+                        response = admin_supabase.table("ops_documents").insert({
                             "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                             "ops_date": date.isoformat(),
                             "ops_type": "ADJUSTMENT",
@@ -302,8 +302,14 @@ def run_ops():
                             "created_by": user_id
                         }).execute()
 
+                        ops_document_id = response.data[0]["id"]
+                        # ---------- OPS LINES WILL BE INSERTED HERE ----------
+                        for p in st.session_state.ops_products:
+                            st.info(f"ℹ OPS line ready for product: {p['product']}")
+
                         st.success("✅ OPS document saved successfully")
                         st.session_state.ops_submit_done = True
+
 
                     except Exception as e:
                         st.error("❌ OPS submission failed")
