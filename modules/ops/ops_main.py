@@ -4,18 +4,31 @@ from anchors.supabase_client import admin_supabase
 
 
 def resolve_user_id():
+    """
+    Always returns a valid users.id.
+    In TEST MODE, safely falls back to the first admin user.
+    """
     user = st.session_state.get("auth_user")
 
-    # Supabase user object
+    # Real Supabase-auth user
     if hasattr(user, "id"):
         return user.id
 
-    # Dict-based test user
-    if isinstance(user, dict):
-        return user.get("id")
+    # TEST MODE fallback — get one admin from users table
+    try:
+        resp = admin_supabase.table("users") \
+            .select("id") \
+            .eq("role", "admin") \
+            .limit(1) \
+            .execute()
 
-    # Absolute fallback
-    return "system"
+        if resp.data:
+            return resp.data[0]["id"]
+    except Exception:
+        pass
+
+    st.error("❌ No valid admin user found in users table")
+    st.stop()
 
 
 def run_ops():
