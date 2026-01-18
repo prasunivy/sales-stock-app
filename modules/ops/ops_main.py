@@ -61,6 +61,11 @@ def run_ops():
         st.session_state.ops_section = "OPENING_BALANCE"
         st.rerun()
 
+    if st.sidebar.button("🏢 CNF Master"):
+        st.session_state.ops_section = "CNF_MASTER"
+        st.rerun()
+
+
     if st.sidebar.button("🔁 Stock In / Stock Out"):
         st.session_state.ops_section = "STOCK_FLOW"
         st.rerun()
@@ -357,6 +362,68 @@ def run_ops():
     # =========================
     # PLACEHOLDERS
     # =========================
+    # =========================
+    # CNF MASTER (ADMIN ONLY)
+    # =========================
+    elif section == "CNF_MASTER":
+        st.subheader("🏢 CNF Master")
+
+        # ---------- LOAD CNFS (CACHED) ----------
+        if "cnf_master" not in st.session_state:
+            cnf_resp = admin_supabase.table("cnfs") \
+                .select("id, name, state, is_active") \
+                .order("name") \
+                .execute()
+            st.session_state.cnf_master = cnf_resp.data or []
+
+        # ---------- ADD CNF FORM ----------
+        with st.form("add_cnf_form"):
+            cnf_name = st.text_input("CNF Name")
+            cnf_state = st.text_input("State")
+            save_cnf = st.form_submit_button("➕ Add CNF")
+
+        if save_cnf:
+            if not cnf_name.strip():
+                st.error("CNF name is required")
+                st.stop()
+
+            try:
+                admin_supabase.table("cnfs").insert({
+                    "name": cnf_name.strip(),
+                    "state": cnf_state.strip(),
+                    "created_by": resolve_user_id()
+                }).execute()
+
+                st.success("✅ CNF added successfully")
+                st.session_state.pop("cnf_master", None)
+                st.rerun()
+
+            except Exception as e:
+                st.error("❌ CNF already exists or error occurred")
+                st.exception(e)
+
+        # ---------- SHOW CNF LIST ----------
+        st.divider()
+        st.subheader("📋 Existing CNFs")
+
+        if not st.session_state.cnf_master:
+            st.info("No CNFs found")
+        else:
+            for cnf in st.session_state.cnf_master:
+                col1, col2, col3 = st.columns([4, 3, 2])
+
+                with col1:
+                    st.write(cnf["name"])
+
+                with col2:
+                    st.write(cnf["state"] or "-")
+
+                with col3:
+                    status = "✅ Active" if cnf["is_active"] else "🚫 Inactive"
+                    st.write(status)
+
+    
+    
     elif section == "ORDERS":
         st.info("🔧 Orders — coming next")
 
