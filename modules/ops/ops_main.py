@@ -233,7 +233,7 @@ def run_ops():
         # =========================
         # MASTER FORM (INPUT ONLY)
         # =========================
-        with st.form("stock_flow_master_form"):
+        
             stock_direction = st.radio(
                 "Stock Direction",
                 ["Stock Out", "Stock In"],
@@ -327,8 +327,10 @@ def run_ops():
             date = st.date_input("Date")
             stock_as = st.selectbox("Stock As", stock_as_options)
             reference_no = st.text_input("Reference Number")
+            preview_clicked = st.button("Preview")
 
-            preview_clicked = st.form_submit_button("Preview")
+
+            
 
         if preview_clicked:
             st.session_state.ops_master_confirmed = True
