@@ -231,109 +231,105 @@ def run_ops():
         st.subheader("🔁 Stock In / Stock Out (Master Form)")
 
         # =========================
-        # MASTER FORM (INPUT ONLY)
-        # =========================
-        
-            stock_direction = st.radio(
-                "Stock Direction",
-                ["Stock Out", "Stock In"],
-                horizontal=True
-            )
+         # MASTER INPUT (NO FORM)
+         # =========================
 
-            # Line-1 entity universe (movement type only)
-            from_options = ["Company", "CNF", "User", "Stockist", "Purchaser"]
-            to_options = ["Company", "CNF", "User", "Stockist", "Purchaser", "Destroyed"]
+        stock_direction = st.radio(
+            "Stock Direction",
+            ["Stock Out", "Stock In"],
+            horizontal=True
+        )
 
-            if stock_direction == "Stock Out":
-                stock_as_options = [
-                    "Invoice", "Sample", "Lot", "Destroyed", "Return to Purchaser"
-                ]
-            else:
-                stock_as_options = ["Purchase", "Credit Note", "Return"]
+        # Line-1 entity universe
+        from_options = ["Company", "CNF", "User", "Stockist", "Purchaser"]
+        to_options = ["Company", "CNF", "User", "Stockist", "Purchaser", "Destroyed"]
 
+        if stock_direction == "Stock Out":
+            stock_as_options = [
+                "Invoice", "Sample", "Lot", "Destroyed", "Return to Purchaser"
+            ]
+        else:
+            stock_as_options = ["Purchase", "Credit Note", "Return"]
 
-            col1, col2 = st.columns(2)
-            with col1:
-                from_entity = st.selectbox("From", from_options)
+        col1, col2 = st.columns(2)
 
-                if from_entity == "Company":
-                    from_name = "Company"
-                    st.text_input("From Name", value="Company", disabled=True)
+        with col1:
+            from_entity = st.selectbox("From", from_options)
 
-                elif from_entity == "CNF":
-                    from_name = st.selectbox(
-                        "From CNF",
-                        [c["name"] for c in st.session_state.cnfs_master]
-                    )
+            if from_entity == "Company":
+                from_name = "Company"
+                st.text_input("From Name", value="Company", disabled=True)
 
-                elif from_entity == "User":
-                    from_name = st.selectbox(
-                        "From User",
-                        [u["username"] for u in st.session_state.users_master]
-                    )
+            elif from_entity == "CNF":
+                from_name = st.selectbox(
+                    "From CNF",
+                    [c["name"] for c in st.session_state.cnfs_master]
+                )
 
-                elif from_entity == "Stockist":
-                    from_name = st.selectbox(
-                        "From Stockist",
-                        [s["name"] for s in st.session_state.stockists_master]
-                    )
+            elif from_entity == "User":
+                from_name = st.selectbox(
+                    "From User",
+                    [u["username"] for u in st.session_state.users_master]
+                )
 
-                elif from_entity == "Purchaser":
-                    from_name = st.selectbox(
-                        "From Purchaser",
-                        [p["name"] for p in st.session_state.purchasers_master]
-                    )
+            elif from_entity == "Stockist":
+                from_name = st.selectbox(
+                    "From Stockist",
+                    [s["name"] for s in st.session_state.stockists_master]
+                )
 
+            elif from_entity == "Purchaser":
+                from_name = st.selectbox(
+                    "From Purchaser",
+                    [p["name"] for p in st.session_state.purchasers_master]
+                )
 
-            with col2:
-                to_entity = st.selectbox("To", to_options)
+        with col2:
+            to_entity = st.selectbox("To", to_options)
 
-                if to_entity == "Company":
-                    to_name = "Company"
-                    st.text_input("To Name", value="Company", disabled=True)
+            if to_entity == "Company":
+                to_name = "Company"
+                st.text_input("To Name", value="Company", disabled=True)
 
-                elif to_entity == "CNF":
-                    to_name = st.selectbox(
-                        "To CNF",
-                        [c["name"] for c in st.session_state.cnfs_master]
-                    )
+            elif to_entity == "CNF":
+                to_name = st.selectbox(
+                    "To CNF",
+                    [c["name"] for c in st.session_state.cnfs_master]
+                )
 
-                elif to_entity == "User":
-                    to_name = st.selectbox(
-                        "To User",
-                        [u["username"] for u in st.session_state.users_master]
-                    )
+            elif to_entity == "User":
+                to_name = st.selectbox(
+                    "To User",
+                    [u["username"] for u in st.session_state.users_master]
+                )
 
-                elif to_entity == "Stockist":
-                    to_name = st.selectbox(
-                        "To Stockist",
-                        [s["name"] for s in st.session_state.stockists_master]
-                    )
+            elif to_entity == "Stockist":
+                to_name = st.selectbox(
+                    "To Stockist",
+                    [s["name"] for s in st.session_state.stockists_master]
+                )
 
-                elif to_entity == "Purchaser":
-                    to_name = st.selectbox(
-                        "To Purchaser",
-                        [p["name"] for p in st.session_state.purchasers_master]
-                    )
+            elif to_entity == "Purchaser":
+                to_name = st.selectbox(
+                    "To Purchaser",
+                    [p["name"] for p in st.session_state.purchasers_master]
+                )
 
-                elif to_entity == "Destroyed":
-                    to_name = "Destroyed"
-                    st.text_input("To Name", value="Destroyed", disabled=True)
+            elif to_entity == "Destroyed":
+                to_name = "Destroyed"
+                st.text_input("To Name", value="Destroyed", disabled=True)
 
+        st.divider()
 
+        date = st.date_input("Date")
+        stock_as = st.selectbox("Stock As", stock_as_options)
+        reference_no = st.text_input("Reference Number")
 
-            st.divider()
-
-            date = st.date_input("Date")
-            stock_as = st.selectbox("Stock As", stock_as_options)
-            reference_no = st.text_input("Reference Number")
-            preview_clicked = st.button("Preview")
-
-
-            
+        preview_clicked = st.button("Preview")
 
         if preview_clicked:
             st.session_state.ops_master_confirmed = True
+
 
         # =========================
         # AFTER PREVIEW CONFIRMED
