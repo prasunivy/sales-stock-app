@@ -330,8 +330,8 @@ def run_ops():
 
             preview_clicked = st.form_submit_button("Preview")
 
-            if preview_clicked:
-                st.session_state.ops_master_confirmed = True
+        if preview_clicked:
+            st.session_state.ops_master_confirmed = True
 
         # =========================
         # AFTER PREVIEW CONFIRMED
