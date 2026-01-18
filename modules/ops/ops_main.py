@@ -56,6 +56,10 @@ def run_ops():
     if "ops_submit_done" not in st.session_state:
         st.session_state.ops_submit_done = False
 
+    if "cnf_user_edit_mode" not in st.session_state:
+        st.session_state.cnf_user_edit_mode = False
+
+
 
 
     # =========================
@@ -446,6 +450,19 @@ def run_ops():
     elif section == "CNF_USER_MAPPING":
         st.subheader("🔗 CNF – User Mapping")
 
+        col_edit, col_spacer = st.columns([2, 8])
+
+        with col_edit:
+            if not st.session_state.cnf_user_edit_mode:
+                if st.button("✏️ Edit Mapping"):
+                    st.session_state.cnf_user_edit_mode = True
+                    st.rerun()
+            else:
+                if st.button("❌ Cancel Edit"):
+                    st.session_state.cnf_user_edit_mode = False
+                    st.rerun()
+
+
         # ---------- LOAD CNFS ----------
         cnf_resp = admin_supabase.table("cnfs") \
             .select("id, name") \
@@ -496,34 +513,42 @@ def run_ops():
 
         # ---------- MULTISELECT ----------
         selected_users = st.multiselect(
-            "Assign Users to this CNF",
+            "Assigned Users",
             options=list(user_map.keys()),
-            default=default_users
+            default=default_users,
+            disabled=not st.session_state.cnf_user_edit_mode
         )
 
+
         # ---------- SAVE BUTTON ----------
-        if st.button("💾 Save CNF–User Mapping"):
-            try:
-                # Remove old mappings
-                admin_supabase.table("cnf_users") \
-                    .delete() \
-                    .eq("cnf_id", selected_cnf_id) \
-                    .execute()
+        if st.session_state.cnf_user_edit_mode:
+            if st.button("💾 Save CNF–User Mapping"):
+                try:
+                    # Remove old mappings for this CNF
+                    admin_supabase.table("cnf_users") \
+                        .delete() \
+                        .eq("cnf_id", selected_cnf_id) \
+                        .execute()
 
-                # Insert new mappings
-                rows = [
-                    {"cnf_id": selected_cnf_id, "user_id": user_map[u]}
-                    for u in selected_users
-                ]
+                    # Prepare new mappings
+                    rows = [
+                        {"cnf_id": selected_cnf_id, "user_id": user_map[u]}
+                        for u in selected_users
+                    ]
 
-                if rows:
-                    admin_supabase.table("cnf_users").insert(rows).execute()
+                    # Insert new mappings
+                    if rows:
+                        admin_supabase.table("cnf_users").insert(rows).execute()
 
-                st.success("✅ CNF–User mapping saved successfully")
+                    st.success("✅ CNF–User mapping saved successfully")
 
-            except Exception as e:
-                st.error("❌ Failed to save mapping")
-                st.exception(e)
+                    # Exit edit mode after save
+                    st.session_state.cnf_user_edit_mode = False
+                    st.rerun()
+
+                except Exception as e:
+                    st.error("❌ Failed to save mapping")
+                    st.exception(e)
 
     
     
