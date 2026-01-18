@@ -86,6 +86,10 @@ def run_ops():
         st.session_state.ops_section = "CNF_USER_MAPPING"
         st.rerun()
 
+    if st.sidebar.button("🏭 Purchaser Master"):
+        st.session_state.ops_section = "PURCHASER_MASTER"
+        st.rerun()
+
 
 
     if st.sidebar.button("🔁 Stock In / Stock Out"):
@@ -550,7 +554,66 @@ def run_ops():
                     st.error("❌ Failed to save mapping")
                     st.exception(e)
 
-    
+    # =========================
+    # PURCHASER MASTER (ADMIN ONLY)
+    # =========================
+    elif section == "PURCHASER_MASTER":
+        st.subheader("🏭 Purchaser Master")
+
+        # ---------- LOAD PURCHASERS (CACHED) ----------
+        if "purchaser_master" not in st.session_state:
+            purchaser_resp = admin_supabase.table("purchasers") \
+                .select("id, name, contact, is_active") \
+                .order("name") \
+                .execute()
+            st.session_state.purchaser_master = purchaser_resp.data or []
+
+        # ---------- ADD PURCHASER FORM ----------
+        with st.form("add_purchaser_form"):
+            purchaser_name = st.text_input("Purchaser Name")
+            purchaser_contact = st.text_input("Contact (optional)")
+            save_purchaser = st.form_submit_button("➕ Add Purchaser")
+
+        if save_purchaser:
+            if not purchaser_name.strip():
+                st.error("Purchaser name is required")
+                st.stop()
+
+            try:
+                admin_supabase.table("purchasers").insert({
+                    "name": purchaser_name.strip(),
+                    "contact": purchaser_contact.strip(),
+                    "created_by": resolve_user_id()
+                }).execute()
+
+                st.success("✅ Purchaser added successfully")
+                st.session_state.pop("purchaser_master", None)
+                st.rerun()
+
+            except Exception as e:
+                st.error("❌ Purchaser already exists or error occurred")
+                st.exception(e)
+
+        # ---------- SHOW PURCHASER LIST ----------
+        st.divider()
+        st.subheader("📋 Existing Purchasers")
+
+        if not st.session_state.purchaser_master:
+            st.info("No purchasers found")
+        else:
+            for p in st.session_state.purchaser_master:
+                col1, col2, col3 = st.columns([4, 3, 2])
+
+                with col1:
+                    st.write(p["name"])
+
+                with col2:
+                    st.write(p["contact"] or "-")
+
+                with col3:
+                    status = "✅ Active" if p["is_active"] else "🚫 Inactive"
+                    st.write(status)
+
     
     elif section == "ORDERS":
         st.info("🔧 Orders — coming next")
