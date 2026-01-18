@@ -319,18 +319,24 @@ def run_ops():
 
                             product_id = product_resp.data[0]["id"]
 
-                            qty = p["total_qty"]
-                            rate = 0
-                            amount = qty * rate
-
                             admin_supabase.table("ops_lines").insert({
                                 "ops_document_id": ops_document_id,
                                 "product_id": product_id,
-                                "qty": qty,
-                                "rate": rate,
-                                "amount": amount,
-                                "line_narration": "OPS auto line"
+
+                                # Operator-entered quantities (NO calculations)
+                                "sale_qty": p.get("sale_qty", 0),
+                                "free_qty": p.get("free_qty", 0),
+
+                                # Operator-entered financials (NO calculations)
+                                "gross_amount": p.get("gross_amount", 0),
+                                "tax_amount": p.get("tax_amount", 0),
+                                "discount_amount": p.get("discount_amount", 0),
+                                "net_amount": p.get("net_amount", 0),
+                                "net_rate": p.get("net_rate", 0),
+
+                                "line_narration": "OPS stock flow entry"
                             }).execute()
+
 
 
                         st.success("✅ OPS document saved successfully")
