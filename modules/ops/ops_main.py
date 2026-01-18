@@ -88,6 +88,21 @@ def run_ops():
             .execute()
         st.session_state.products_master = product_resp.data or []
 
+        # CNF → USER MAPPING CACHE
+        if "cnf_user_map" not in st.session_state:
+            resp = admin_supabase.table("cnf_users") \
+                .select("cnf_id, user_id") \
+                .execute()
+            st.session_state.cnf_user_map = resp.data or []
+
+        # USER → STOCKIST MAPPING CACHE
+        if "user_stockist_map" not in st.session_state:
+            resp = admin_supabase.table("user_stockists") \
+                .select("user_id, stockist_id") \
+                .execute()
+            st.session_state.user_stockist_map = resp.data or []
+
+
      # =========================
     # OPS FLOW STATE
     # =========================
@@ -239,7 +254,81 @@ def run_ops():
             col1, col2 = st.columns(2)
             with col1:
                 from_entity = st.selectbox("From", from_options)
-                from_name = st.text_input("Name of From")
+
+                from_name = None
+
+                if from_entity == "Company":
+                    from_name = "Company"
+                    st.text_input("From Name", value="Company", disabled=True)
+
+                elif from_entity == "CNF":
+                    cnf_names = [c["name"] for c in st.session_state.cnfs_master]
+                    from_name = st.selectbox("From CNF", cnf_names)
+
+                    st.session_state.selected_from_cnf_id = next(
+                        c["id"] for c in st.session_state.cnfs_master
+                        if c["name"] == from_name
+                    )
+
+                elif from_entity == "User":
+                    cnf_id = st.session_state.get("selected_from_cnf_id")
+
+                    if not cnf_id:
+                        st.warning("⚠️ Please select CNF first")
+                        st.stop()
+
+                    mapped_user_ids = [
+                        m["user_id"]
+                        for m in st.session_state.cnf_user_map
+                        if m["cnf_id"] == cnf_id
+                    ]
+
+                    user_names = [
+                        u["username"]
+                        for u in st.session_state.users_master
+                        if u["id"] in mapped_user_ids
+                    ]
+
+                    if not user_names:
+                        st.error("❌ No users mapped to this CNF")
+                        st.stop()
+
+                    from_name = st.selectbox("From User", user_names)
+
+                    st.session_state.selected_from_user_id = next(
+                        u["id"] for u in st.session_state.users_master
+                        if u["username"] == from_name
+                    )
+
+                elif from_entity == "Purchaser":
+                    purchaser_names = [p["name"] for p in st.session_state.purchasers_master]
+                    from_name = st.selectbox("From Purchaser", purchaser_names)
+
+                elif from_entity == "Stockist":
+                    user_id = st.session_state.get("selected_from_user_id")
+
+                    if not user_id:
+                        st.warning("⚠️ Please select User first")
+                        st.stop()
+
+                    mapped_stockist_ids = [
+                        m["stockist_id"]
+                        for m in st.session_state.user_stockist_map
+                        if m["user_id"] == user_id
+                    ]
+
+                    stockist_names = [
+                        s["name"]
+                        for s in st.session_state.stockists_master
+                        if s["id"] in mapped_stockist_ids
+                    ]
+
+                    if not stockist_names:
+                        st.error("❌ No stockists mapped to this user")
+                        st.stop()
+
+                    from_name = st.selectbox("From Stockist", stockist_names)
+
 
             with col2:
                 to_entity = st.selectbox("To", to_options)
