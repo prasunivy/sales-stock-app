@@ -56,6 +56,13 @@ def run_ops():
     if "ops_submit_done" not in st.session_state:
         st.session_state.ops_submit_done = False
 
+    if "purchaser_edit_mode" not in st.session_state:
+        st.session_state.purchaser_edit_mode = False
+
+    if "editing_purchaser_id" not in st.session_state:
+        st.session_state.editing_purchaser_id = None
+
+
     if "cnf_user_edit_mode" not in st.session_state:
         st.session_state.cnf_user_edit_mode = False
 
@@ -557,44 +564,85 @@ def run_ops():
     # =========================
     # PURCHASER MASTER (ADMIN ONLY)
     # =========================
+    # =========================
+    # PURCHASER MASTER (ADMIN ONLY)
+    # =========================
     elif section == "PURCHASER_MASTER":
         st.subheader("🏭 Purchaser Master")
 
         # ---------- LOAD PURCHASERS (CACHED) ----------
         if "purchaser_master" not in st.session_state:
             purchaser_resp = admin_supabase.table("purchasers") \
-                .select("id, name, contact, is_active") \
+                .select("id, name, contact, email, is_active") \
                 .order("name") \
                 .execute()
             st.session_state.purchaser_master = purchaser_resp.data or []
 
-        # ---------- ADD PURCHASER FORM ----------
-        with st.form("add_purchaser_form"):
-            purchaser_name = st.text_input("Purchaser Name")
-            purchaser_contact = st.text_input("Contact (optional)")
-            save_purchaser = st.form_submit_button("➕ Add Purchaser")
+        # ---------- ADD / EDIT FORM ----------
+        editing = st.session_state.purchaser_edit_mode
+        editing_id = st.session_state.editing_purchaser_id
 
-        if save_purchaser:
+        edit_row = None
+        if editing and editing_id:
+            edit_row = next(
+                (p for p in st.session_state.purchaser_master if p["id"] == editing_id),
+                None
+            )
+
+        with st.form("purchaser_form"):
+            purchaser_name = st.text_input(
+                "Purchaser Name",
+                value=edit_row["name"] if edit_row else ""
+            )
+            purchaser_contact = st.text_input(
+                "Contact",
+                value=edit_row["contact"] if edit_row else ""
+            )
+            purchaser_email = st.text_input(
+                "Email ID",
+                value=edit_row["email"] if edit_row else ""
+            )
+
+            if editing:
+                save_btn = st.form_submit_button("💾 Update Purchaser")
+            else:
+                save_btn = st.form_submit_button("➕ Add Purchaser")
+
+        if save_btn:
             if not purchaser_name.strip():
                 st.error("Purchaser name is required")
                 st.stop()
 
             try:
-                admin_supabase.table("purchasers").insert({
-                    "name": purchaser_name.strip(),
-                    "contact": purchaser_contact.strip(),
-                    "created_by": resolve_user_id()
-                }).execute()
+                if editing:
+                    admin_supabase.table("purchasers").update({
+                        "name": purchaser_name.strip(),
+                        "contact": purchaser_contact.strip(),
+                        "email": purchaser_email.strip()
+                    }).eq("id", editing_id).execute()
 
-                st.success("✅ Purchaser added successfully")
+                    st.success("✅ Purchaser updated successfully")
+                else:
+                    admin_supabase.table("purchasers").insert({
+                        "name": purchaser_name.strip(),
+                        "contact": purchaser_contact.strip(),
+                        "email": purchaser_email.strip(),
+                        "created_by": resolve_user_id()
+                    }).execute()
+
+                    st.success("✅ Purchaser added successfully")
+
+                # Reset state
+                st.session_state.purchaser_edit_mode = False
+                st.session_state.editing_purchaser_id = None
                 st.session_state.pop("purchaser_master", None)
                 st.rerun()
 
             except Exception as e:
-                st.error("❌ Purchaser already exists or error occurred")
+                st.error("❌ Failed to save purchaser")
                 st.exception(e)
 
-        # ---------- SHOW PURCHASER LIST ----------
+        # ---------- LIST ----------
         st.divider()
         st.subheader("📋 Existing Purchasers")
 
@@ -602,7 +650,7 @@ def run_ops():
             st.info("No purchasers found")
         else:
             for p in st.session_state.purchaser_master:
-                col1, col2, col3 = st.columns([4, 3, 2])
+                col1, col2, col3, col4, col5 = st.columns([3, 3, 3, 2, 2])
 
                 with col1:
                     st.write(p["name"])
@@ -611,8 +659,17 @@ def run_ops():
                     st.write(p["contact"] or "-")
 
                 with col3:
+                    st.write(p.get("email") or "-")
+
+                with col4:
                     status = "✅ Active" if p["is_active"] else "🚫 Inactive"
                     st.write(status)
+
+                with col5:
+                    if st.button("✏️ Edit", key=f"edit_purch_{p['id']}"):
+                        st.session_state.purchaser_edit_mode = True
+                        st.session_state.editing_purchaser_id = p["id"]
+                        st.rerun()
 
     
     elif section == "ORDERS":
