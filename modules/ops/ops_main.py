@@ -240,167 +240,86 @@ def run_ops():
                 horizontal=True
             )
 
+            # Line-1 entity universe (movement type only)
+            from_options = ["Company", "CNF", "User", "Stockist", "Purchaser"]
+            to_options = ["Company", "CNF", "User", "Stockist", "Purchaser", "Destroyed"]
+
             if stock_direction == "Stock Out":
-                from_options = ["Company", "CNF", "User"]
-                to_options = ["CNF", "User", "Stockist", "Destroyed", "Purchaser"]
                 stock_as_options = [
                     "Invoice", "Sample", "Lot", "Destroyed", "Return to Purchaser"
                 ]
             else:
-                from_options = ["CNF", "User", "Purchaser", "Stockist"]
-                to_options = ["Company", "CNF", "User"]
                 stock_as_options = ["Purchase", "Credit Note", "Return"]
+
 
             col1, col2 = st.columns(2)
             with col1:
                 from_entity = st.selectbox("From", from_options)
-
-                from_name = None
 
                 if from_entity == "Company":
                     from_name = "Company"
                     st.text_input("From Name", value="Company", disabled=True)
 
                 elif from_entity == "CNF":
-                    cnf_names = [c["name"] for c in st.session_state.cnfs_master]
-                    from_name = st.selectbox("From CNF", cnf_names)
-
-                    st.session_state.selected_from_cnf_id = next(
-                        c["id"] for c in st.session_state.cnfs_master
-                        if c["name"] == from_name
+                    from_name = st.selectbox(
+                        "From CNF",
+                        [c["name"] for c in st.session_state.cnfs_master]
                     )
 
                 elif from_entity == "User":
-                    cnf_id = st.session_state.get("selected_from_cnf_id")
+                    from_name = st.selectbox(
+                        "From User",
+                        [u["username"] for u in st.session_state.users_master]
+                    )
 
-                    if not cnf_id:
-                        st.warning("⚠️ Please select CNF first")
-                        st.stop()
-
-                    mapped_user_ids = [
-                        m["user_id"]
-                        for m in st.session_state.cnf_user_map
-                        if m["cnf_id"] == cnf_id
-                    ]
-
-                    user_names = [
-                        u["username"]
-                        for u in st.session_state.users_master
-                        if u["id"] in mapped_user_ids
-                    ]
-
-                    if not user_names:
-                        st.error("❌ No users mapped to this CNF")
-                        st.stop()
-
-                    from_name = st.selectbox("From User", user_names)
-
-                    st.session_state.selected_from_user_id = next(
-                        u["id"] for u in st.session_state.users_master
-                        if u["username"] == from_name
+                elif from_entity == "Stockist":
+                    from_name = st.selectbox(
+                        "From Stockist",
+                        [s["name"] for s in st.session_state.stockists_master]
                     )
 
                 elif from_entity == "Purchaser":
-                    purchaser_names = [p["name"] for p in st.session_state.purchasers_master]
-                    from_name = st.selectbox("From Purchaser", purchaser_names)
-
-                elif from_entity == "Stockist":
-                    user_id = st.session_state.get("selected_from_user_id")
-
-                    if not user_id:
-                        st.warning("⚠️ Please select User first")
-                        st.stop()
-
-                    mapped_stockist_ids = [
-                        m["stockist_id"]
-                        for m in st.session_state.user_stockist_map
-                        if m["user_id"] == user_id
-                    ]
-
-                    stockist_names = [
-                        s["name"]
-                        for s in st.session_state.stockists_master
-                        if s["id"] in mapped_stockist_ids
-                    ]
-
-                    if not stockist_names:
-                        st.error("❌ No stockists mapped to this user")
-                        st.stop()
-
-                    from_name = st.selectbox("From Stockist", stockist_names)
+                    from_name = st.selectbox(
+                        "From Purchaser",
+                        [p["name"] for p in st.session_state.purchasers_master]
+                    )
 
 
             with col2:
                 to_entity = st.selectbox("To", to_options)
 
-                to_name = None
-
-                # ---------- TO NAME LOGIC ----------
                 if to_entity == "Company":
                     to_name = "Company"
                     st.text_input("To Name", value="Company", disabled=True)
 
                 elif to_entity == "CNF":
-                    cnf_names = [c["name"] for c in st.session_state.cnfs_master]
-                    to_name = st.selectbox("To CNF", cnf_names)
+                    to_name = st.selectbox(
+                        "To CNF",
+                        [c["name"] for c in st.session_state.cnfs_master]
+                    )
 
                 elif to_entity == "User":
-                    # Users must belong to selected CNF (if any)
-                    cnf_id = st.session_state.get("selected_from_cnf_id")
-
-                    if cnf_id:
-                        mapped_user_ids = [
-                            m["user_id"]
-                            for m in st.session_state.cnf_user_map
-                            if m["cnf_id"] == cnf_id
-                        ]
-
-                        user_names = [
-                            u["username"]
-                            for u in st.session_state.users_master
-                            if u["id"] in mapped_user_ids
-                        ]
-                    else:
-                        user_names = [u["username"] for u in st.session_state.users_master]
-
-                    if not user_names:
-                        st.error("❌ No users available for selected CNF")
-                        st.stop()
-
-                    to_name = st.selectbox("To User", user_names)
+                    to_name = st.selectbox(
+                        "To User",
+                        [u["username"] for u in st.session_state.users_master]
+                    )
 
                 elif to_entity == "Stockist":
-                    user_id = st.session_state.get("selected_from_user_id")
-
-                    if not user_id:
-                        st.warning("⚠️ Select User first on From side")
-                        st.stop()
-
-                    mapped_stockist_ids = [
-                        m["stockist_id"]
-                        for m in st.session_state.user_stockist_map
-                        if m["user_id"] == user_id
-                    ]
-
-                    stockist_names = [
-                        s["name"]
-                        for s in st.session_state.stockists_master
-                        if s["id"] in mapped_stockist_ids
-                    ]
-
-                    if not stockist_names:
-                        st.error("❌ No stockists mapped to selected user")
-                        st.stop()
-
-                    to_name = st.selectbox("To Stockist", stockist_names)
+                    to_name = st.selectbox(
+                        "To Stockist",
+                        [s["name"] for s in st.session_state.stockists_master]
+                    )
 
                 elif to_entity == "Purchaser":
-                    purchaser_names = [p["name"] for p in st.session_state.purchasers_master]
-                    to_name = st.selectbox("To Purchaser", purchaser_names)
+                    to_name = st.selectbox(
+                        "To Purchaser",
+                        [p["name"] for p in st.session_state.purchasers_master]
+                    )
 
                 elif to_entity == "Destroyed":
                     to_name = "Destroyed"
                     st.text_input("To Name", value="Destroyed", disabled=True)
+
 
 
             st.divider()
