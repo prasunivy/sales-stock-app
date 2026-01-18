@@ -78,6 +78,11 @@ def run_ops():
         st.session_state.ops_section = "CNF_MASTER"
         st.rerun()
 
+    if st.sidebar.button("🔗 CNF–User Mapping"):
+        st.session_state.ops_section = "CNF_USER_MAPPING"
+        st.rerun()
+
+
 
     if st.sidebar.button("🔁 Stock In / Stock Out"):
         st.session_state.ops_section = "STOCK_FLOW"
@@ -434,6 +439,91 @@ def run_ops():
                 with col3:
                     status = "✅ Active" if cnf["is_active"] else "🚫 Inactive"
                     st.write(status)
+
+    # =========================
+    # CNF ↔ USER MAPPING (ADMIN ONLY)
+    # =========================
+    elif section == "CNF_USER_MAPPING":
+        st.subheader("🔗 CNF – User Mapping")
+
+        # ---------- LOAD CNFS ----------
+        cnf_resp = admin_supabase.table("cnfs") \
+            .select("id, name") \
+            .order("name") \
+            .execute()
+        cnfs = cnf_resp.data or []
+
+        if not cnfs:
+            st.warning("No CNFs found. Please create CNFs first.")
+            st.stop()
+
+        cnf_map = {c["name"]: c["id"] for c in cnfs}
+
+        selected_cnf_name = st.selectbox(
+            "Select CNF",
+            options=list(cnf_map.keys())
+        )
+
+        selected_cnf_id = cnf_map[selected_cnf_name]
+
+        st.divider()
+
+        # ---------- LOAD USERS ----------
+        users_resp = admin_supabase.table("users") \
+            .select("id, username") \
+            .order("username") \
+            .execute()
+        users = users_resp.data or []
+
+        if not users:
+            st.warning("No users found.")
+            st.stop()
+
+        user_map = {u["username"]: u["id"] for u in users}
+
+        # ---------- EXISTING MAPPINGS ----------
+        mapping_resp = admin_supabase.table("cnf_users") \
+            .select("user_id") \
+            .eq("cnf_id", selected_cnf_id) \
+            .execute()
+
+        mapped_user_ids = {m["user_id"] for m in (mapping_resp.data or [])}
+
+        default_users = [
+            name for name, uid in user_map.items()
+            if uid in mapped_user_ids
+        ]
+
+        # ---------- MULTISELECT ----------
+        selected_users = st.multiselect(
+            "Assign Users to this CNF",
+            options=list(user_map.keys()),
+            default=default_users
+        )
+
+        # ---------- SAVE BUTTON ----------
+        if st.button("💾 Save CNF–User Mapping"):
+            try:
+                # Remove old mappings
+                admin_supabase.table("cnf_users") \
+                    .delete() \
+                    .eq("cnf_id", selected_cnf_id) \
+                    .execute()
+
+                # Insert new mappings
+                rows = [
+                    {"cnf_id": selected_cnf_id, "user_id": user_map[u]}
+                    for u in selected_users
+                ]
+
+                if rows:
+                    admin_supabase.table("cnf_users").insert(rows).execute()
+
+                st.success("✅ CNF–User mapping saved successfully")
+
+            except Exception as e:
+                st.error("❌ Failed to save mapping")
+                st.exception(e)
 
     
     
