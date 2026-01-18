@@ -45,6 +45,50 @@ def run_ops():
 
     st.success("✅ Admin access granted")
     # =========================
+    # MASTER DATA CACHE (FAST)
+    # =========================
+
+    # USERS
+    if "users_master" not in st.session_state:
+        users_resp = admin_supabase.table("users") \
+            .select("id, username") \
+            .order("username") \
+            .execute()
+        st.session_state.users_master = users_resp.data or []
+
+    # CNFS
+    if "cnfs_master" not in st.session_state:
+        cnf_resp = admin_supabase.table("cnfs") \
+            .select("id, name") \
+            .order("name") \
+            .execute()
+        st.session_state.cnfs_master = cnf_resp.data or []
+
+    # STOCKISTS
+    if "stockists_master" not in st.session_state:
+        stockist_resp = admin_supabase.table("stockists") \
+            .select("id, name") \
+            .order("name") \
+            .execute()
+        st.session_state.stockists_master = stockist_resp.data or []
+
+    # PURCHASERS
+    if "purchasers_master" not in st.session_state:
+        purchaser_resp = admin_supabase.table("purchasers") \
+            .select("id, name, email") \
+            .order("name") \
+            .execute()
+        st.session_state.purchasers_master = purchaser_resp.data or []
+
+    # PRODUCTS
+    if "products_master" not in st.session_state:
+        product_resp = admin_supabase.table("products") \
+            .select("id, name") \
+            .order("name") \
+            .execute()
+        st.session_state.products_master = product_resp.data or []
+
+     # =========================
     # OPS FLOW STATE
     # =========================
     if "ops_master_confirmed" not in st.session_state:
