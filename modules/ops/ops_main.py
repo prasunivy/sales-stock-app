@@ -302,6 +302,15 @@ def run_ops():
             ["Stock Out", "Stock In"],
             horizontal=True
         )
+        # ✅ DEFINE STOCK AS OPTIONS EARLY (STREAMLIT SAFE)
+        if stock_direction == "Stock Out":
+            stock_as_options = [
+                "Invoice", "Sample", "Lot", "Destroyed", "Return to Purchaser"
+            ]
+        else:
+            stock_as_options = [
+                "Purchase", "Credit Note", "Return"
+            ]
 
         # Line-1 entity universe
         # 🔒 LOCK LINE-1 AFTER LINE-2 STARTS
