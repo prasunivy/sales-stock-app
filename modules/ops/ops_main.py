@@ -345,15 +345,7 @@ def run_ops():
         if st.session_state.ops_line2_phase == 1:
 
             st.subheader("🔹 From (Actual Entity)")
-            # Company → CNF
-            if from_entity == "Company" and to_entity == "CNF":
-                cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
-                selected = st.selectbox("Select CNF", list(cnf_map.keys()))
-                if st.button("Confirm"):
-                    st.session_state.ops_to_entity_type = "CNF"
-                    st.session_state.ops_to_entity_id = cnf_map[selected]
-                    st.session_state.ops_line2_complete = True
-                    st.rerun()
+            
 
 
             if from_entity == "Company":
@@ -436,24 +428,24 @@ def run_ops():
                     st.session_state.ops_line2_complete = True
                     st.rerun()
                     
-             # Stockist → Purchaser
-             elif from_entity == "Stockist" and to_entity == "Purchaser":
-                 allowed_purchasers = [
-                     m["purchaser_id"]
-                     for m in st.session_state.stockist_purchaser_map
-                     if m["stockist_id"] == st.session_state.ops_from_entity_id
-                 ]
-                 purchaser_map = {
-                     p["name"]: p["id"]
-                     for p in st.session_state.purchasers_master
-                     if p["id"] in allowed_purchasers
-                 }
-                 selected = st.selectbox("Select Purchaser", list(purchaser_map.keys()))
-                 if st.button("Confirm"):
-                     st.session_state.ops_to_entity_type = "Purchaser"
-                     st.session_state.ops_to_entity_id = purchaser_map[selected]
-                     st.session_state.ops_line2_complete = True
-                     st.rerun()
+            # Stockist → Purchaser
+            elif from_entity == "Stockist" and to_entity == "Purchaser":
+                allowed_purchasers = [
+                    m["purchaser_id"]
+                    for m in st.session_state.stockist_purchaser_map
+                    if m["stockist_id"] == st.session_state.ops_from_entity_id
+                ]
+                purchaser_map = {
+                    p["name"]: p["id"]
+                    for p in st.session_state.purchasers_master
+                    if p["id"] in allowed_purchasers
+                }
+                selected = st.selectbox("Select Purchaser", list(purchaser_map.keys()))
+                if st.button("Confirm"):
+                    st.session_state.ops_to_entity_type = "Purchaser"
+                    st.session_state.ops_to_entity_id = purchaser_map[selected]
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
 
         if not st.session_state.ops_line2_complete:
             st.warning("⛔ Complete Line-2 (From → To) to continue")
