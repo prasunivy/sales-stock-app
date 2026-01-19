@@ -424,6 +424,29 @@ def run_ops():
 
             st.subheader("🔹 To (Actual Entity)")
 
+            # Company → User (show all users)
+            if (
+                st.session_state.ops_from_entity_type == "Company"
+                and to_entity == "User"
+            ):
+                user_map = {
+                    u["username"]: u["id"]
+                    for u in st.session_state.users_master
+                }
+
+                if not user_map:
+                    st.warning("No users found")
+                    st.stop()
+
+                selected = st.selectbox("Select User", list(user_map.keys()))
+
+                if st.button("Confirm"):
+                    st.session_state.ops_to_entity_type = "User"
+                    st.session_state.ops_to_entity_id = user_map[selected]
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
+            
             # CNF → User
             if from_entity == "CNF" and to_entity == "User":
                 allowed_users = [
