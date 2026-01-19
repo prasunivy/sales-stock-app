@@ -441,6 +441,36 @@ def run_ops():
                     st.session_state.ops_line2_complete = True
                     st.rerun()
 
+            # Company → User → Stockist (via selected User)
+            elif (
+                st.session_state.ops_from_entity_type == "User"
+                and to_entity == "Stockist"
+            ):
+
+                allowed_stockists = [
+                    m["stockist_id"]
+                    for m in st.session_state.user_stockist_map
+                    if m["user_id"] == st.session_state.ops_from_entity_id
+                ]
+
+                stockist_map = {
+                    s["name"]: s["id"]
+                    for s in st.session_state.stockists_master
+                    if s["id"] in allowed_stockists
+                }
+
+                if not stockist_map:
+                    st.warning("No stockists mapped to this user")
+                    st.stop()
+
+                selected = st.selectbox("Select Stockist", list(stockist_map.keys()))
+
+                if st.button("Confirm"):
+                    st.session_state.ops_to_entity_type = "Stockist"
+                    st.session_state.ops_to_entity_id = stockist_map[selected]
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
             # User → Stockist
             elif from_entity == "User" and to_entity == "Stockist":
                                          
