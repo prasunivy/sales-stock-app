@@ -299,20 +299,6 @@ def run_ops():
 
         # Line-1 entity universe
         from_options = ["Company", "CNF", "User", "Stockist", "Purchaser"]
-        if stock_direction == "Stock Out":
-            to_options = STOCK_OUT_ROUTES.get(from_entity, [])
-        else:
-            to_options = STOCK_IN_ROUTES.get(from_entity, [])
-
-        if stock_direction == "Stock Out":
-            stock_as_options = [
-                "Invoice", "Sample", "Lot", "Destroyed", "Return to Purchaser"
-            ]
-        else:
-            stock_as_options = ["Purchase", "Credit Note", "Return"]
-
-        # 🔒 LOCK LINE-1 AFTER LINE-2 STARTS
-        line1_locked = st.session_state.ops_line2_phase >= 2
 
         col1, col2 = st.columns(2)
 
@@ -323,12 +309,19 @@ def run_ops():
                 disabled=line1_locked
             )
 
+        # ✅ Now from_entity EXISTS — safe to compute routes
+        if stock_direction == "Stock Out":
+            to_options = STOCK_OUT_ROUTES.get(from_entity, [])
+        else:
+            to_options = STOCK_IN_ROUTES.get(from_entity, [])
+
         with col2:
             to_entity = st.selectbox(
                 "To Entity Type",
                 to_options,
                 disabled=line1_locked
             )
+
 
         # 🔁 RESET LINE-2 ONLY WHEN LINE-1 TYPE CHANGES
         if (
