@@ -147,6 +147,17 @@ def run_ops():
 
     if "cnf_user_edit_mode" not in st.session_state:
         st.session_state.cnf_user_edit_mode = False
+    # =========================
+    # ALLOWED ROUTE MATRIX (LINE-1)
+    # =========================
+    ALLOWED_ROUTES = {
+        "Company": ["CNF"],
+        "CNF": ["User"],
+        "User": ["Stockist"],
+        "Stockist": ["Purchaser"],
+        "Purchaser": []
+    }
+
 
     
 
