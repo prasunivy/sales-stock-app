@@ -508,11 +508,18 @@ def run_ops():
 
             current = st.session_state.ops_products[idx]
 
-            product_name = st.text_input(
+            product_map = {
+                p["name"]: p["id"]
+                for p in st.session_state.products_master
+            }
+
+            selected_product = st.selectbox(
                 "Product",
-                value=current["product"],
-                key=f"product_{idx}"
+                list(product_map.keys()),
+                key=f"product_select_{st.session_state.ops_product_index}"
             )
+
+            product_id = product_map[selected_product]
 
             sale_qty = st.number_input(
                 "Saleable Quantity",
@@ -577,7 +584,7 @@ def run_ops():
                 st.divider()
                 st.subheader("📦 Products")
                 for i, p in enumerate(st.session_state.ops_products, start=1):
-                    st.write(f"{i}. {p['product']} — Qty: {p['total_qty']}")
+                    st.write(f"{i}. {p['product_name']} — Qty: {p['total_qty']}")
 
                 st.divider()
 
@@ -634,11 +641,11 @@ def run_ops():
                                 st.error(f"❌ Product not found in master: {p['product']}")
                                 st.stop()
 
-                            product_id = product_resp.data[0]["id"]
+                            
 
                             admin_supabase.table("ops_lines").insert({
                                 "ops_document_id": ops_document_id,
-                                "product_id": product_id,
+                                "product_id": p["product_id"],
 
                                 # Operator-entered quantities (NO calculations)
                                 "sale_qty": p.get("sale_qty", 0),
