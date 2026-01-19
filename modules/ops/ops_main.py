@@ -298,9 +298,12 @@ def run_ops():
 
             if from_entity == "Company":
                 st.info("Company selected automatically")
-                st.session_state.ops_from_entity_type = "Company"
-                st.session_state.ops_from_entity_id = "COMPANY"
-                st.session_state.ops_line2_phase = 2
+                if st.button("Save & Next"):
+                    st.session_state.ops_from_entity_type = "Company"
+                    st.session_state.ops_from_entity_id = "COMPANY"
+                    st.session_state.ops_line2_phase = 2
+                    st.rerun()
+
 
             elif from_entity == "CNF":
                 cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
