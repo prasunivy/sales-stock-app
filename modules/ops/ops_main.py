@@ -285,25 +285,26 @@ def run_ops():
 
         st.divider()
         # =========================
-        # LINE-2 : STEPWISE ENTITY SELECTION
+        # LINE-2 : STEPWISE INSTANCE SELECTION
         # =========================
 
-        # -------- PHASE 0 → INIT --------
-        if st.session_state.ops_line2_phase == 0:
-            st.session_state.ops_line2_phase = 1
+        # ---- INIT ----
+        if "ops_line2_phase" not in st.session_state:
+            st.session_state.ops_line2_phase = 1  # 1 = FROM, 2 = TO
 
-        # -------- PHASE 1 → FROM ACTUAL --------
+        if "ops_line2_complete" not in st.session_state:
+            st.session_state.ops_line2_complete = False
+
+        # ---------- LINE-2A : FROM (ACTUAL) ----------
         if st.session_state.ops_line2_phase == 1:
 
             st.subheader("🔹 From (Actual Entity)")
 
             if from_entity == "Company":
                 st.info("Company selected automatically")
-                if st.button("Save & Next"):
-                    st.session_state.ops_from_entity_type = "Company"
-                    st.session_state.ops_from_entity_id = "COMPANY"
-                    st.session_state.ops_line2_phase = 2
-                    st.rerun()
+                st.session_state.ops_from_entity_type = "Company"
+                st.session_state.ops_from_entity_id = "COMPANY"
+                st.session_state.ops_line2_phase = 2
 
             elif from_entity == "CNF":
                 cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
@@ -332,69 +333,46 @@ def run_ops():
                     st.session_state.ops_line2_phase = 2
                     st.rerun()
 
-            elif from_entity == "Purchaser":
-                purchaser_map = {p["name"]: p["id"] for p in st.session_state.purchasers_master}
-                selected = st.selectbox("Select Purchaser", list(purchaser_map.keys()))
-                if st.button("Save & Next"):
-                    st.session_state.ops_from_entity_type = "Purchaser"
-                    st.session_state.ops_from_entity_id = purchaser_map[selected]
-                    st.session_state.ops_line2_phase = 2
-                    st.rerun()
-
-        # -------- PHASE 2 → TO ACTUAL --------
+        # ---------- LINE-2B : TO (ACTUAL, FILTERED) ----------
         if st.session_state.ops_line2_phase == 2 and not st.session_state.ops_line2_complete:
 
             st.subheader("🔹 To (Actual Entity)")
 
-            if to_entity == "Company":
-                st.info("Company selected automatically")
-                if st.button("Confirm To Entity"):
-                    st.session_state.ops_to_entity_type = "Company"
-                    st.session_state.ops_to_entity_id = "COMPANY"
-                    st.session_state.ops_line2_complete = True
-                    st.rerun()
-
-            elif to_entity == "Destroyed":
-                st.info("Stock marked as Destroyed")
-                if st.button("Confirm To Entity"):
-                    st.session_state.ops_to_entity_type = "Destroyed"
-                    st.session_state.ops_to_entity_id = "DESTROYED"
-                    st.session_state.ops_line2_complete = True
-                    st.rerun()
-
-            elif to_entity == "CNF":
-                cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
-                selected = st.selectbox("Select CNF", list(cnf_map.keys()))
-                if st.button("Confirm To Entity"):
-                    st.session_state.ops_to_entity_type = "CNF"
-                    st.session_state.ops_to_entity_id = cnf_map[selected]
-                    st.session_state.ops_line2_complete = True
-                    st.rerun()
-
-            elif to_entity == "User":
-                user_map = {u["username"]: u["id"] for u in st.session_state.users_master}
+            # CNF → User
+            if from_entity == "CNF" and to_entity == "User":
+                allowed_users = [
+                    m["user_id"]
+                    for m in st.session_state.cnf_user_map
+                    if m["cnf_id"] == st.session_state.ops_from_entity_id
+                ]
+                user_map = {
+                    u["username"]: u["id"]
+                    for u in st.session_state.users_master
+                    if u["id"] in allowed_users
+                }
                 selected = st.selectbox("Select User", list(user_map.keys()))
-                if st.button("Confirm To Entity"):
+                if st.button("Confirm"):
                     st.session_state.ops_to_entity_type = "User"
                     st.session_state.ops_to_entity_id = user_map[selected]
                     st.session_state.ops_line2_complete = True
                     st.rerun()
 
-            elif to_entity == "Stockist":
-                stockist_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+            # User → Stockist
+            elif from_entity == "User" and to_entity == "Stockist":
+                allowed_stockists = [
+                    m["stockist_id"]
+                    for m in st.session_state.user_stockist_map
+                    if m["user_id"] == st.session_state.ops_from_entity_id
+                ]
+                stockist_map = {
+                    s["name"]: s["id"]
+                    for s in st.session_state.stockists_master
+                    if s["id"] in allowed_stockists
+                }
                 selected = st.selectbox("Select Stockist", list(stockist_map.keys()))
-                if st.button("Confirm To Entity"):
+                if st.button("Confirm"):
                     st.session_state.ops_to_entity_type = "Stockist"
                     st.session_state.ops_to_entity_id = stockist_map[selected]
-                    st.session_state.ops_line2_complete = True
-                    st.rerun()
-
-            elif to_entity == "Purchaser":
-                purchaser_map = {p["name"]: p["id"] for p in st.session_state.purchasers_master}
-                selected = st.selectbox("Select Purchaser", list(purchaser_map.keys()))
-                if st.button("Confirm To Entity"):
-                    st.session_state.ops_to_entity_type = "Purchaser"
-                    st.session_state.ops_to_entity_id = purchaser_map[selected]
                     st.session_state.ops_line2_complete = True
                     st.rerun()
 
