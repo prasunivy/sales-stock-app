@@ -274,7 +274,14 @@ def run_ops():
         else:
             stock_as_options = ["Purchase", "Credit Note", "Return"]
 
-        
+        col1, col2 = st.columns(2)
+
+        with col1:
+            from_entity = st.selectbox("From Entity Type", from_options)
+
+        with col2:
+            to_entity = st.selectbox("To Entity Type", to_options)
+
 
         st.divider()
         # =========================
@@ -392,9 +399,9 @@ def run_ops():
                     st.rerun()
 
 
-         if not st.session_state.ops_line2_complete:
-            st.warning("⛔ Complete Line-2 (From → To) to continue")
-            return
+            if not st.session_state.ops_line2_complete:
+                st.warning("⛔ Complete Line-2 (From → To) to continue")
+                return
 
         date = st.date_input("Date")
 
