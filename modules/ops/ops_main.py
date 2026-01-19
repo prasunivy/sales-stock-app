@@ -401,7 +401,7 @@ def run_ops():
 
         if not st.session_state.ops_line2_complete:
             st.warning("⛔ Complete Line-2 (From → To) to continue")
-            return
+            st.stop()
 
         date = st.date_input("Date")
 
