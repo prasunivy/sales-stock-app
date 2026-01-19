@@ -305,7 +305,9 @@ def run_ops():
 
         # Line-1 entity universe
         # 🔒 LOCK LINE-1 AFTER LINE-2 STARTS
-        line1_locked = st.session_state.ops_line2_phase >= 2
+        # 🔒 LOCK LINE-1 ONLY AFTER LINE-2 IS COMPLETE
+        line1_locked = st.session_state.ops_line2_complete is True
+
 
         from_options = ["Company", "CNF", "User", "Stockist", "Purchaser"]
 
