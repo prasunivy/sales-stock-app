@@ -305,6 +305,13 @@ def run_ops():
                 st.session_state.ops_from_entity_id = None
                 st.session_state.ops_to_entity_id = None
 
+        # 🚦 ENFORCE ALLOWED ROUTE (LINE-1)
+        allowed_to = ALLOWED_ROUTES.get(from_entity, [])
+
+        if to_entity not in allowed_to:
+            st.error(f"❌ Invalid route: {from_entity} → {to_entity}")
+            st.info("Allowed route(s): " + ", ".join(allowed_to) if allowed_to else "No further movement allowed")
+            st.stop()
 
 
 
