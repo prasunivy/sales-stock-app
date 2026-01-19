@@ -348,7 +348,7 @@ def run_ops():
             
 
 
-            if from_entity == "Company":
+            if from_entity == "Company" and not st.session_state.ops_from_entity_id:
                 st.info("Company selected automatically")
                 if st.button("Save & Next"):
                     st.session_state.ops_from_entity_type = "Company"
@@ -357,7 +357,7 @@ def run_ops():
                     st.rerun()
 
 
-            elif from_entity == "CNF":
+            elif from_entity == "CNF" and not st.session_state.ops_from_entity_id:
                 cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
                 selected = st.selectbox("Select CNF", list(cnf_map.keys()))
                 if st.button("Save & Next"):
@@ -366,7 +366,7 @@ def run_ops():
                     st.session_state.ops_line2_phase = 2
                     st.rerun()
 
-            elif from_entity == "User":
+            elif from_entity == "User" and not st.session_state.ops_from_entity_id:
                 user_map = {u["username"]: u["id"] for u in st.session_state.users_master}
                 selected = st.selectbox("Select User", list(user_map.keys()))
                 if st.button("Save & Next"):
@@ -375,7 +375,7 @@ def run_ops():
                     st.session_state.ops_line2_phase = 2
                     st.rerun()
 
-            elif from_entity == "Stockist":
+            elif from_entity == "Stockist" and not st.session_state.ops_from_entity_id:
                 stockist_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
                 selected = st.selectbox("Select Stockist", list(stockist_map.keys()))
                 if st.button("Save & Next"):
