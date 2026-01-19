@@ -108,7 +108,7 @@ def run_ops():
     # =========================
     # ---------- LINE-2 STEPWISE STATE ----------
     if "ops_line2_phase" not in st.session_state:
-        st.session_state.ops_line2_phase = 0
+        st.session_state.ops_line2_phase = 1
         # 0 = not started
         # 1 = from selected, waiting save
         # 2 = to selection active
@@ -289,13 +289,8 @@ def run_ops():
         # LINE-2 : STEPWISE INSTANCE SELECTION
         # =========================
 
-        # ---- INIT ----
-        if "ops_line2_phase" not in st.session_state:
-            st.session_state.ops_line2_phase = 1  # 1 = FROM, 2 = TO
-
-        if "ops_line2_complete" not in st.session_state:
-            st.session_state.ops_line2_complete = False
-
+        
+        
         # ---------- LINE-2A : FROM (ACTUAL) ----------
         if st.session_state.ops_line2_phase == 1:
 
