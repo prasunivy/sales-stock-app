@@ -275,23 +275,36 @@ def run_ops():
         else:
             stock_as_options = ["Purchase", "Credit Note", "Return"]
 
+        # 🔒 LOCK LINE-1 AFTER LINE-2 STARTS
+        line1_locked = st.session_state.ops_line2_phase >= 2
+
         col1, col2 = st.columns(2)
 
         with col1:
-            from_entity = st.selectbox("From Entity Type", from_options)
+            from_entity = st.selectbox(
+                "From Entity Type",
+                from_options,
+                disabled=line1_locked
+            )
 
         with col2:
-            to_entity = st.selectbox("To Entity Type", to_options)
+            to_entity = st.selectbox(
+                "To Entity Type",
+                to_options,
+                disabled=line1_locked
+            )
 
-                # 🔁 RESET LINE-2 WHEN LINE-1 CHANGES
-        if (
-            st.session_state.ops_from_entity_type != from_entity
-            or st.session_state.ops_to_entity_type != to_entity
-        ):
-            st.session_state.ops_line2_phase = 1
-            st.session_state.ops_line2_complete = False
-            st.session_state.ops_from_entity_id = None
-            st.session_state.ops_to_entity_id = None
+        # 🔁 RESET LINE-2 WHEN LINE-1 CHANGES (ONLY WHEN NOT LOCKED)
+        if not line1_locked:
+            if (
+                st.session_state.ops_from_entity_type != from_entity
+                or st.session_state.ops_to_entity_type != to_entity
+            ):
+                st.session_state.ops_line2_phase = 1
+                st.session_state.ops_line2_complete = False
+                st.session_state.ops_from_entity_id = None
+                st.session_state.ops_to_entity_id = None
+
 
 
 
