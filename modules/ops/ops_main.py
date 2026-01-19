@@ -148,15 +148,31 @@ def run_ops():
     if "cnf_user_edit_mode" not in st.session_state:
         st.session_state.cnf_user_edit_mode = False
     # =========================
-    # ALLOWED ROUTE MATRIX (LINE-1)
+    # BUSINESS-CORRECT ROUTE MATRIX (LINE-1)    
     # =========================
-    ALLOWED_ROUTES = {
-        "Company": ["CNF"],
-        "CNF": ["User"],
-        "User": ["Stockist"],
-        "Stockist": ["Purchaser"],
-        "Purchaser": []
+
+    # STOCK OUT — GOODS GOING OUT
+    STOCK_OUT_ROUTES = {
+        "Company": ["CNF", "User", "Stockist", "Purchaser", "Destroyed"],
+        "CNF": ["Company", "User", "Stockist"],
+        "User": ["Company", "CNF", "Stockist"],
+        "Stockist": ["Company", "CNF", "User", "Purchaser"],
+        "Purchaser": ["Company"],
+        "Destroyed": []
     }
+
+    # STOCK IN — GOODS COMING BACK
+    # (EXACT REVERSE OF STOCK OUT, EXCEPT DESTROYED)
+    STOCK_IN_ROUTES = {
+        "CNF": ["Company", "User", "Stockist"],
+        "User": ["Company", "CNF", "Stockist"],
+        "Stockist": ["Company", "CNF", "User"],
+        "Purchaser": ["Company"],
+        "Company": [],
+        "Destroyed": []
+    }
+
+    
     # ---------- LINE-1 TYPE TRACKING ----------
     if "ops_line1_from_type" not in st.session_state:
         st.session_state.ops_line1_from_type = None
@@ -283,7 +299,10 @@ def run_ops():
 
         # Line-1 entity universe
         from_options = ["Company", "CNF", "User", "Stockist", "Purchaser"]
-        to_options = ["Company", "CNF", "User", "Stockist", "Purchaser", "Destroyed"]
+        if stock_direction == "Stock Out":
+            to_options = STOCK_OUT_ROUTES.get(from_entity, [])
+        else:
+            to_options = STOCK_IN_ROUTES.get(from_entity, [])
 
         if stock_direction == "Stock Out":
             stock_as_options = [
@@ -325,13 +344,7 @@ def run_ops():
             st.session_state.ops_to_entity_id = None
 
         # 🚦 ENFORCE ALLOWED ROUTE (LINE-1)
-        allowed_to = ALLOWED_ROUTES.get(from_entity, [])
-
-        if to_entity not in allowed_to:
-            st.error(f"❌ Invalid route: {from_entity} → {to_entity}")
-            st.info("Allowed route(s): " + ", ".join(allowed_to) if allowed_to else "No further movement allowed")
-            st.stop()
-
+        
 
 
         st.divider()
