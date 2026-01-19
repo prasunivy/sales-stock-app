@@ -364,12 +364,12 @@ def run_ops():
 
 
             if from_entity == "Company" and not st.session_state.ops_from_entity_id:
-                st.info("Company selected automatically")
-                if st.button("Save & Next"):
-                    st.session_state.ops_from_entity_type = "Company"
-                    st.session_state.ops_from_entity_id = "COMPANY"
-                    st.session_state.ops_line2_phase = 2
-                    st.rerun()
+                # Auto-bind Company and move to Line-2B immediately
+                st.session_state.ops_from_entity_type = "Company"
+                st.session_state.ops_from_entity_id = "COMPANY"
+                st.session_state.ops_line2_phase = 2
+                st.rerun()
+
 
 
             elif from_entity == "CNF" and not st.session_state.ops_from_entity_id:
