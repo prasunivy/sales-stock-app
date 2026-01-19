@@ -399,9 +399,9 @@ def run_ops():
                     st.rerun()
 
 
-            if not st.session_state.ops_line2_complete:
-                st.warning("⛔ Complete Line-2 (From → To) to continue")
-                return
+        if not st.session_state.ops_line2_complete:
+            st.warning("⛔ Complete Line-2 (From → To) to continue")
+            return
 
         date = st.date_input("Date")
 
