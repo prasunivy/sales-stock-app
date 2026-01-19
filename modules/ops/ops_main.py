@@ -393,6 +393,24 @@ def run_ops():
                     st.session_state.ops_line2_phase = 2
                     st.rerun()
 
+        def get_stockists_visible_to_cnf(cnf_id):
+            # Users under this CNF
+            user_ids = [
+                m["user_id"]
+                for m in st.session_state.cnf_user_map
+                if m["cnf_id"] == cnf_id
+            ]
+
+            # Stockists under those users
+            stockist_ids = [
+                m["stockist_id"]
+                for m in st.session_state.user_stockist_map
+                if m["user_id"] in user_ids
+            ]
+
+            return stockist_ids
+
+
         # ---------- LINE-2B : TO (ACTUAL, FILTERED) ----------
         if st.session_state.ops_line2_phase == 2 and not st.session_state.ops_line2_complete:
 
@@ -455,6 +473,31 @@ def run_ops():
                     st.session_state.ops_to_entity_id = purchaser_map[selected]
                     st.session_state.ops_line2_complete = True
                     st.rerun()
+
+            elif from_entity == "CNF" and to_entity == "Stockist":
+
+                allowed_stockists = get_stockists_visible_to_cnf(
+                    st.session_state.ops_from_entity_id
+                )
+
+                stockist_map = {
+                    s["name"]: s["id"]
+                    for s in st.session_state.stockists_master
+                    if s["id"] in allowed_stockists
+                }
+
+                if not stockist_map:
+                    st.warning("No stockists available under this CNF")
+                    st.stop()
+
+                selected = st.selectbox("Select Stockist", list(stockist_map.keys()))
+
+                if st.button("Confirm"):
+                    st.session_state.ops_to_entity_type = "Stockist"
+                    st.session_state.ops_to_entity_id = stockist_map[selected]
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
 
         if not st.session_state.ops_line2_complete:
             st.warning("⛔ Complete Line-2 (From → To) to continue")
