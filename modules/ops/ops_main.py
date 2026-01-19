@@ -160,17 +160,23 @@ def run_ops():
         "Purchaser": ["Company"],
         "Destroyed": []
     }
+    # STOCK IN — AUTO-DERIVED (REVERSE OF STOCK OUT, DESTROYED EXCLUDED)
+    STOCK_IN_ROUTES = {}
 
-    # STOCK IN — GOODS COMING BACK
-    # (EXACT REVERSE OF STOCK OUT, EXCEPT DESTROYED)
-    STOCK_IN_ROUTES = {
-        "CNF": ["Company", "User", "Stockist"],
-        "User": ["Company", "CNF", "Stockist"],
-        "Stockist": ["Company", "CNF", "User"],
-        "Purchaser": ["Company"],
-        "Company": [],
-        "Destroyed": []
-    }
+    for from_entity, to_entities in STOCK_OUT_ROUTES.items():
+        for to_entity in to_entities:
+            # Destroyed is outbound-only
+            if to_entity == "Destroyed" or from_entity == "Destroyed":
+                continue
+
+            # Reverse the direction
+            STOCK_IN_ROUTES.setdefault(to_entity, []).append(from_entity)
+
+    # Ensure all known entities exist as keys
+    for entity in STOCK_OUT_ROUTES.keys():
+        STOCK_IN_ROUTES.setdefault(entity, [])
+
+    
 
     
     # ---------- LINE-1 TYPE TRACKING ----------
