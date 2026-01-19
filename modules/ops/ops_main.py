@@ -157,6 +157,12 @@ def run_ops():
         "Stockist": ["Purchaser"],
         "Purchaser": []
     }
+    # ---------- LINE-1 TYPE TRACKING ----------
+    if "ops_line1_from_type" not in st.session_state:
+        st.session_state.ops_line1_from_type = None
+
+    if "ops_line1_to_type" not in st.session_state:
+        st.session_state.ops_line1_to_type = None
 
 
     
@@ -305,16 +311,18 @@ def run_ops():
                 disabled=line1_locked
             )
 
-        # 🔁 RESET LINE-2 WHEN LINE-1 CHANGES (ONLY WHEN NOT LOCKED)
-        if not line1_locked:
-            if (
-                st.session_state.ops_from_entity_type != from_entity
-                or st.session_state.ops_to_entity_type != to_entity
-            ):
-                st.session_state.ops_line2_phase = 1
-                st.session_state.ops_line2_complete = False
-                st.session_state.ops_from_entity_id = None
-                st.session_state.ops_to_entity_id = None
+        # 🔁 RESET LINE-2 ONLY WHEN LINE-1 TYPE CHANGES
+        if (
+            st.session_state.ops_line1_from_type != from_entity
+            or st.session_state.ops_line1_to_type != to_entity
+        ):
+            st.session_state.ops_line1_from_type = from_entity
+            st.session_state.ops_line1_to_type = to_entity
+
+            st.session_state.ops_line2_phase = 1
+            st.session_state.ops_line2_complete = False
+            st.session_state.ops_from_entity_id = None
+            st.session_state.ops_to_entity_id = None
 
         # 🚦 ENFORCE ALLOWED ROUTE (LINE-1)
         allowed_to = ALLOWED_ROUTES.get(from_entity, [])
