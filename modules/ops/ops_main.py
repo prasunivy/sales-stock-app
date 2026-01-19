@@ -283,6 +283,17 @@ def run_ops():
         with col2:
             to_entity = st.selectbox("To Entity Type", to_options)
 
+                # 🔁 RESET LINE-2 WHEN LINE-1 CHANGES
+        if (
+            st.session_state.ops_from_entity_type != from_entity
+            or st.session_state.ops_to_entity_type != to_entity
+        ):
+            st.session_state.ops_line2_phase = 1
+            st.session_state.ops_line2_complete = False
+            st.session_state.ops_from_entity_id = None
+            st.session_state.ops_to_entity_id = None
+
+
 
         st.divider()
         # =========================
