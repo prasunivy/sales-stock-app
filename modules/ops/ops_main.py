@@ -466,6 +466,25 @@ def run_ops():
         # AFTER PREVIEW CONFIRMED
         # =========================
         if st.session_state.ops_master_confirmed:
+            # =========================
+            # BUILD OPS MASTER PAYLOAD
+            # =========================
+            ops_master = {
+                "stock_direction": stock_direction,
+                "from_entity_type": st.session_state.ops_from_entity_type,
+                "from_entity_id": st.session_state.ops_from_entity_id,
+                "to_entity_type": st.session_state.ops_to_entity_type,
+                "to_entity_id": st.session_state.ops_to_entity_id,
+                "stock_as": stock_as,
+                "reference_no": reference_no,
+                "date": str(date)
+            }
+
+            st.session_state.ops_master_payload = ops_master
+            st.subheader("🔍 OPS Master Payload (Preview)")
+            st.json(st.session_state.ops_master_payload)
+
+
 
             # ---------- PRODUCT ENGINE ----------
             if "ops_products" not in st.session_state:
@@ -578,6 +597,16 @@ def run_ops():
                     if admin_supabase is None:
                         st.error("❌ Supabase not configured. Contact admin.")
                         st.stop()
+                    # 🔒 SAFETY CHECK — Line-2 must be bound
+                    if not all([
+                        st.session_state.ops_from_entity_type,
+                        st.session_state.ops_from_entity_id,
+                        st.session_state.ops_to_entity_type,
+                        st.session_state.ops_to_entity_id
+                    ]):
+                        st.error("❌ OPS entity binding incomplete. Please restart OPS.")
+                        st.stop()
+
                     try:
                         response = admin_supabase.table("ops_documents").insert({
                             "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
