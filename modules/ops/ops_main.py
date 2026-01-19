@@ -103,9 +103,32 @@ def run_ops():
             st.session_state.user_stockist_map = resp.data or []
 
 
-     # =========================
+    # =========================
     # OPS FLOW STATE
     # =========================
+    # ---------- LINE-2 STEPWISE STATE ----------
+    if "ops_line2_phase" not in st.session_state:
+        st.session_state.ops_line2_phase = 0
+        # 0 = not started
+        # 1 = from selected, waiting save
+        # 2 = to selection active
+
+    if "ops_from_entity_id" not in st.session_state:
+        st.session_state.ops_from_entity_id = None
+
+    if "ops_from_entity_type" not in st.session_state:
+        st.session_state.ops_from_entity_type = None
+
+    if "ops_to_entity_id" not in st.session_state:
+        st.session_state.ops_to_entity_id = None
+
+    if "ops_to_entity_type" not in st.session_state:
+        st.session_state.ops_to_entity_type = None
+
+    if "ops_line2_complete" not in st.session_state:
+        st.session_state.ops_line2_complete = False
+
+    
     if "ops_master_confirmed" not in st.session_state:
         st.session_state.ops_master_confirmed = False
 
@@ -251,77 +274,130 @@ def run_ops():
         else:
             stock_as_options = ["Purchase", "Credit Note", "Return"]
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            from_entity = st.selectbox("From", from_options)
-
-            if from_entity == "Company":
-                from_name = "Company"
-                st.text_input("From Name", value="Company", disabled=True)
-
-            elif from_entity == "CNF":
-                from_name = st.selectbox(
-                    "From CNF",
-                    [c["name"] for c in st.session_state.cnfs_master]
-                )
-
-            elif from_entity == "User":
-                from_name = st.selectbox(
-                    "From User",
-                    [u["username"] for u in st.session_state.users_master]
-                )
-
-            elif from_entity == "Stockist":
-                from_name = st.selectbox(
-                    "From Stockist",
-                    [s["name"] for s in st.session_state.stockists_master]
-                )
-
-            elif from_entity == "Purchaser":
-                from_name = st.selectbox(
-                    "From Purchaser",
-                    [p["name"] for p in st.session_state.purchasers_master]
-                )
-
-        with col2:
-            to_entity = st.selectbox("To", to_options)
-
-            if to_entity == "Company":
-                to_name = "Company"
-                st.text_input("To Name", value="Company", disabled=True)
-
-            elif to_entity == "CNF":
-                to_name = st.selectbox(
-                    "To CNF",
-                    [c["name"] for c in st.session_state.cnfs_master]
-                )
-
-            elif to_entity == "User":
-                to_name = st.selectbox(
-                    "To User",
-                    [u["username"] for u in st.session_state.users_master]
-                )
-
-            elif to_entity == "Stockist":
-                to_name = st.selectbox(
-                    "To Stockist",
-                    [s["name"] for s in st.session_state.stockists_master]
-                )
-
-            elif to_entity == "Purchaser":
-                to_name = st.selectbox(
-                    "To Purchaser",
-                    [p["name"] for p in st.session_state.purchasers_master]
-                )
-
-            elif to_entity == "Destroyed":
-                to_name = "Destroyed"
-                st.text_input("To Name", value="Destroyed", disabled=True)
+        
 
         st.divider()
+        # =========================
+        # LINE-2 : STEPWISE ENTITY SELECTION
+        # =========================
+
+        # -------- PHASE 0 → INIT --------
+        if st.session_state.ops_line2_phase == 0:
+            st.session_state.ops_line2_phase = 1
+
+        # -------- PHASE 1 → FROM ACTUAL --------
+        if st.session_state.ops_line2_phase == 1:
+
+            st.subheader("🔹 From (Actual Entity)")
+
+            if from_entity == "Company":
+                st.info("Company selected automatically")
+                if st.button("Save & Next"):
+                    st.session_state.ops_from_entity_type = "Company"
+                    st.session_state.ops_from_entity_id = "COMPANY"
+                    st.session_state.ops_line2_phase = 2
+                    st.rerun()
+
+            elif from_entity == "CNF":
+                cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+                selected = st.selectbox("Select CNF", list(cnf_map.keys()))
+                if st.button("Save & Next"):
+                    st.session_state.ops_from_entity_type = "CNF"
+                    st.session_state.ops_from_entity_id = cnf_map[selected]
+                    st.session_state.ops_line2_phase = 2
+                    st.rerun()
+
+            elif from_entity == "User":
+                user_map = {u["username"]: u["id"] for u in st.session_state.users_master}
+                selected = st.selectbox("Select User", list(user_map.keys()))
+                if st.button("Save & Next"):
+                    st.session_state.ops_from_entity_type = "User"
+                    st.session_state.ops_from_entity_id = user_map[selected]
+                    st.session_state.ops_line2_phase = 2
+                    st.rerun()
+
+            elif from_entity == "Stockist":
+                stockist_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+                selected = st.selectbox("Select Stockist", list(stockist_map.keys()))
+                if st.button("Save & Next"):
+                    st.session_state.ops_from_entity_type = "Stockist"
+                    st.session_state.ops_from_entity_id = stockist_map[selected]
+                    st.session_state.ops_line2_phase = 2
+                    st.rerun()
+
+            elif from_entity == "Purchaser":
+                purchaser_map = {p["name"]: p["id"] for p in st.session_state.purchasers_master}
+                selected = st.selectbox("Select Purchaser", list(purchaser_map.keys()))
+                if st.button("Save & Next"):
+                    st.session_state.ops_from_entity_type = "Purchaser"
+                    st.session_state.ops_from_entity_id = purchaser_map[selected]
+                    st.session_state.ops_line2_phase = 2
+                    st.rerun()
+
+        # -------- PHASE 2 → TO ACTUAL --------
+        if st.session_state.ops_line2_phase == 2 and not st.session_state.ops_line2_complete:
+
+            st.subheader("🔹 To (Actual Entity)")
+
+            if to_entity == "Company":
+                st.info("Company selected automatically")
+                if st.button("Confirm To Entity"):
+                    st.session_state.ops_to_entity_type = "Company"
+                    st.session_state.ops_to_entity_id = "COMPANY"
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
+            elif to_entity == "Destroyed":
+                st.info("Stock marked as Destroyed")
+                if st.button("Confirm To Entity"):
+                    st.session_state.ops_to_entity_type = "Destroyed"
+                    st.session_state.ops_to_entity_id = "DESTROYED"
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
+            elif to_entity == "CNF":
+                cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+                selected = st.selectbox("Select CNF", list(cnf_map.keys()))
+                if st.button("Confirm To Entity"):
+                    st.session_state.ops_to_entity_type = "CNF"
+                    st.session_state.ops_to_entity_id = cnf_map[selected]
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
+            elif to_entity == "User":
+                user_map = {u["username"]: u["id"] for u in st.session_state.users_master}
+                selected = st.selectbox("Select User", list(user_map.keys()))
+                if st.button("Confirm To Entity"):
+                    st.session_state.ops_to_entity_type = "User"
+                    st.session_state.ops_to_entity_id = user_map[selected]
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
+            elif to_entity == "Stockist":
+                stockist_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+                selected = st.selectbox("Select Stockist", list(stockist_map.keys()))
+                if st.button("Confirm To Entity"):
+                    st.session_state.ops_to_entity_type = "Stockist"
+                    st.session_state.ops_to_entity_id = stockist_map[selected]
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
+            elif to_entity == "Purchaser":
+                purchaser_map = {p["name"]: p["id"] for p in st.session_state.purchasers_master}
+                selected = st.selectbox("Select Purchaser", list(purchaser_map.keys()))
+                if st.button("Confirm To Entity"):
+                    st.session_state.ops_to_entity_type = "Purchaser"
+                    st.session_state.ops_to_entity_id = purchaser_map[selected]
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
+
+         if not st.session_state.ops_line2_complete:
+            st.warning("⛔ Complete Line-2 (From → To) to continue")
+            return
 
         date = st.date_input("Date")
+
         stock_as = st.selectbox("Stock As", stock_as_options)
         reference_no = st.text_input("Reference Number")
 
