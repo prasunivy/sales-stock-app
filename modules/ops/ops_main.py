@@ -298,6 +298,9 @@ def run_ops():
         )
 
         # Line-1 entity universe
+        # 🔒 LOCK LINE-1 AFTER LINE-2 STARTS
+        line1_locked = st.session_state.ops_line2_phase >= 2
+
         from_options = ["Company", "CNF", "User", "Stockist", "Purchaser"]
 
         col1, col2 = st.columns(2)
@@ -336,7 +339,7 @@ def run_ops():
             st.session_state.ops_from_entity_id = None
             st.session_state.ops_to_entity_id = None
 
-        # 🚦 ENFORCE ALLOWED ROUTE (LINE-1)
+        
         
 
 
