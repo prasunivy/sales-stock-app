@@ -615,8 +615,54 @@ def run_ops():
                 st.subheader("🔍 Preview — Stock Movement")
 
                 st.write("Direction:", stock_direction)
-                st.write("From:", from_entity, "-", from_name)
-                st.write("To:", to_entity, "-", to_name)
+                # ---------- Resolve From / To display names safely ----------
+                def resolve_entity_name(entity_type, entity_id):
+                    if entity_type == "Company":
+                        return "Company"
+
+                    if entity_type == "CNF":
+                        return next(
+                            (c["name"] for c in st.session_state.cnfs_master if c["id"] == entity_id),
+                            "Unknown CNF"
+                        )
+
+                    if entity_type == "User":
+                        return next(
+                            (u["username"] for u in st.session_state.users_master if u["id"] == entity_id),
+                            "Unknown User"
+                        )
+
+                    if entity_type == "Stockist":
+                        return next(
+                            (s["name"] for s in st.session_state.stockists_master if s["id"] == entity_id),
+                            "Unknown Stockist"
+                        )
+
+                    if entity_type == "Purchaser":
+                        return next(
+                            (p["name"] for p in st.session_state.purchasers_master if p["id"] == entity_id),
+                            "Unknown Purchaser"
+                        )
+
+                    if entity_type == "Destroyed":
+                        return "Destroyed"
+
+                    return "Unknown"
+
+
+                from_display = resolve_entity_name(
+                    st.session_state.ops_from_entity_type,
+                    st.session_state.ops_from_entity_id
+                )
+
+                to_display = resolve_entity_name(
+                    st.session_state.ops_to_entity_type,
+                    st.session_state.ops_to_entity_id
+                )
+
+                st.write("From:", st.session_state.ops_from_entity_type, "-", from_display)
+                st.write("To:", st.session_state.ops_to_entity_type, "-", to_display)
+
                 st.write("Date:", date)
                 st.write("Stock As:", stock_as)
                 st.write("Reference No:", reference_no)
