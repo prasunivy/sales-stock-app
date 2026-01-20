@@ -705,6 +705,14 @@ def run_ops():
                 st.divider()
 
                 # ---------- FINAL SUBMIT (TEMP ENABLED) ----------
+
+                if st.button("🔄 Reset Products"):
+                    st.session_state.ops_products = []
+                    st.session_state.ops_product_index = 0
+                    st.session_state.ops_products_done = False
+                    st.rerun()
+
+                
                 if st.button(
                     "✅ Final Submit OPS",
                     type="primary",
