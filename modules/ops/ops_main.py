@@ -777,19 +777,10 @@ def run_ops():
                     st.write("Discount:", a["discount"])
                     st.write("Net Amount:", a["net"])
 
-                    c1, c2 = st.columns(2)
+                    if st.button("✏️ Edit Amounts"):
+                        st.session_state.ops_amounts = None
+                        st.rerun()
 
-                    with c1:
-                        if st.button("✏️ Edit Amounts"):
-                            st.session_state.ops_amounts = None
-                            st.rerun()
-
-                    with c2:
-                        final_submit = st.button(
-                            "✅ Final Submit OPS",
-                            type="primary",
-                            disabled=st.session_state.ops_submit_done
-                        )
 
                                 
 
