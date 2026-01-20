@@ -670,7 +670,7 @@ def run_ops():
                 st.divider()
                 st.subheader("📦 Products")
                 for i, p in enumerate(st.session_state.ops_products, start=1):
-                    st.write(f"{i}. {p['product_name']} — Qty: {p['total_qty']}")
+                    st.write(f"{i}. {p['product']} — Qty: {p['total_qty']}")
 
                 st.divider()
 
