@@ -644,11 +644,13 @@ def run_ops():
             st.info(f"📊 Total Quantity: {total_qty}")
 
             current.update({
-                "product": product_name,
+                "product": selected_product,
+                "product_id": product_id,
                 "sale_qty": sale_qty,
                 "free_qty": free_qty,
                 "total_qty": total_qty
             })
+
 
             st.divider()
             c1, c2, c3 = st.columns(3)
