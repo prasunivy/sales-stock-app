@@ -173,6 +173,10 @@ def run_ops():
     if "ops_products_done" not in st.session_state:
         st.session_state.ops_products_done = False
 
+    if "ops_amounts" not in st.session_state:
+        st.session_state.ops_amounts = None
+
+    
     if "ops_submit_done" not in st.session_state:
         st.session_state.ops_submit_done = False
 
