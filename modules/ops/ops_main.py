@@ -842,6 +842,8 @@ def run_ops():
                         ops_document_id = response.data[0]["id"]
                         # ---------- INSERT OPS LINES ----------
                         for p in st.session_state.ops_products:
+                            a = st.session_state.ops_amounts
+
 
                             # 🔎 Resolve product_id from products master
                             product_resp = admin_supabase.table("products") \
@@ -865,14 +867,33 @@ def run_ops():
                                 "free_qty": p.get("free_qty", 0),
 
                                 # Operator-entered financials (NO calculations)
-                                "gross_amount": p.get("gross_amount", 0),
-                                "tax_amount": p.get("tax_amount", 0),
-                                "discount_amount": p.get("discount_amount", 0),
-                                "net_amount": p.get("net_amount", 0),
-                                "net_rate": p.get("net_rate", 0),
+                                "gross_amount": a["gross"],
+                                "tax_amount": a["tax"],
+                                "discount_amount": a["discount"],
+                                "net_amount": a["net"],
+                                "net_rate": 0,
+
 
                                 "line_narration": "OPS stock flow entry"
                             }).execute()
+                        
+                        # ---------- FINANCIAL LEDGER INSERT ----------
+                        a = st.session_state.ops_amounts
+                        net = a["net"]
+
+                        debit = net if net > 0 else 0
+                        credit = abs(net) if net < 0 else 0
+
+                        admin_supabase.table("financial_ledger").insert({
+                            "ops_document_id": ops_document_id,
+                            "party_id": st.session_state.ops_to_entity_id,
+                            "txn_date": date.isoformat(),
+                            "debit": debit,
+                            "credit": credit,
+                            "closing_balance": 0,
+                            "narration": "OPS stock posting"
+                        }).execute()
+
 
 
 
