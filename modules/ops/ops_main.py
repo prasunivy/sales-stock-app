@@ -530,6 +530,13 @@ def run_ops():
             st.session_state.ops_master_payload = ops_master
             st.subheader("🔍 OPS Master Payload (Preview)")
             st.json(st.session_state.ops_master_payload)
+            if st.button("🔄 Reset OPS Master Details"):
+                st.session_state.ops_master_confirmed = False
+                st.session_state.ops_products_done = False
+                st.session_state.ops_products = []
+                st.session_state.ops_product_index = 0
+                st.rerun()
+
 
 
 
