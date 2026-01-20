@@ -723,6 +723,75 @@ def run_ops():
                     st.write(f"{i}. {p['product']} — Qty: {p['total_qty']}")
 
                 st.divider()
+                # =========================
+                # DOCUMENT LEVEL AMOUNTS
+                # =========================
+                st.subheader("💰 Document Amounts")
+
+                if st.session_state.ops_amounts is None:
+
+                    gross_amt = st.number_input(
+                        "Gross Amount",
+                        min_value=0.0,
+                        step=0.01
+                    )
+
+                    tax_amt = st.number_input(
+                        "Tax Amount",
+                        min_value=0.0,
+                        step=0.01
+                    )
+
+                    discount_amt = st.number_input(
+                        "Discount Amount (Optional)",
+                        min_value=0.0,
+                        step=0.01
+                    )
+
+                    net_amt = st.number_input(
+                        "Net Amount",
+                        min_value=0.0,
+                        step=0.01
+                    )
+
+                    if st.button("💾 Save & Next"):
+                        st.session_state.ops_amounts = {
+                            "gross": gross_amt,
+                            "tax": tax_amt,
+                            "discount": discount_amt,
+                            "net": net_amt
+                        }
+                        st.rerun()
+                # =========================
+                # FINAL PREVIEW — AMOUNTS
+                # =========================
+                if st.session_state.ops_amounts:
+
+                    st.divider()
+                    st.subheader("🔍 Final Preview — Stock + Accounts")
+
+                    a = st.session_state.ops_amounts
+
+                    st.write("Gross Amount:", a["gross"])
+                    st.write("Tax Amount:", a["tax"])
+                    st.write("Discount:", a["discount"])
+                    st.write("Net Amount:", a["net"])
+
+                    c1, c2 = st.columns(2)
+
+                    with c1:
+                        if st.button("✏️ Edit Amounts"):
+                            st.session_state.ops_amounts = None
+                            st.rerun()
+
+                    with c2:
+                        final_submit = st.button(
+                            "✅ Final Submit OPS",
+                            type="primary",
+                            disabled=st.session_state.ops_submit_done
+                        )
+
+                                
 
                 # ---------- FINAL SUBMIT (TEMP ENABLED) ----------
 
