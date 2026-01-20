@@ -488,6 +488,15 @@ def run_ops():
             st.warning("⛔ Complete entity binding (From → To) to continue")
             st.stop()
 
+        if st.button("🔄 Reset Entity Selection"):
+            st.session_state.ops_line2_complete = False
+            st.session_state.ops_line3_complete = False
+            st.session_state.ops_from_entity_type = None
+            st.session_state.ops_from_entity_id = None
+            st.session_state.ops_to_entity_type = None
+            st.session_state.ops_to_entity_id = None
+            st.session_state.ops_master_confirmed = False
+            st.rerun()
 
         date = st.date_input("Date")
 
