@@ -896,8 +896,9 @@ def run_ops():
                         st.error("❌ OPS submission failed")
                         st.exception(e)
 
-                if st.session_state.ops_submit_done:
-                    st.info("🔒 OPS already submitted. Start a new OPS to continue.")
+                if st.session_state.ops_submit_done and st.session_state.ops_amounts is not None:
+                    st.warning("🔒 OPS already submitted. Start a new OPS to continue...")
+
 
 
 
