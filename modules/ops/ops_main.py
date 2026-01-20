@@ -481,7 +481,10 @@ def run_ops():
 
 
 
-        if not (st.session_state.ops_line2_complete and st.session_state.ops_line3_complete):
+        if not (
+            st.session_state.ops_line2_complete
+            and st.session_state.ops_line3_complete
+        ):
             st.warning("⛔ Complete entity binding (From → To) to continue")
             st.stop()
 
