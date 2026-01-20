@@ -551,14 +551,14 @@ def run_ops():
         if st.session_state.ops_master_confirmed:
             from_display = resolve_entity_name(
                 st.session_state.ops_from_entity_type,
-                st.session_state.ops_from_entity_id,
-                st.session_state
+                st.session_state.ops_from_entity_id
+                
             )
 
             to_display = resolve_entity_name(
                 st.session_state.ops_to_entity_type,
-                st.session_state.ops_to_entity_id,
-                st.session_state
+                st.session_state.ops_to_entity_id
+                
             )
 
             # =========================
