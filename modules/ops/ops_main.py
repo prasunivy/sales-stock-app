@@ -518,14 +518,20 @@ def run_ops():
             # =========================
             ops_master = {
                 "stock_direction": stock_direction,
+
                 "from_entity_type": st.session_state.ops_from_entity_type,
+                "from_entity_name": from_display,
                 "from_entity_id": st.session_state.ops_from_entity_id,
+
                 "to_entity_type": st.session_state.ops_to_entity_type,
+                "to_entity_name": to_display,
                 "to_entity_id": st.session_state.ops_to_entity_id,
+
                 "stock_as": stock_as,
                 "reference_no": reference_no,
                 "date": str(date)
             }
+
 
             st.session_state.ops_master_payload = ops_master
             st.subheader("🔍 OPS Master Payload (Preview)")
