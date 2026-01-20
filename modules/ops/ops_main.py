@@ -802,6 +802,11 @@ def run_ops():
                     type="primary",
                     disabled=st.session_state.ops_submit_done
                 ):
+                    # 🔒 SAFETY — Amounts must be saved before submit
+                    if st.session_state.ops_amounts is None:
+                        st.error("❌ Please enter amounts and click 'Save & Next' before Final Submit.")
+                        st.stop()
+
 
                     user_id = resolve_user_id()
                     # ✅ UUID safety check (ADD THIS LINE)
