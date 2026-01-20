@@ -128,6 +128,10 @@ def run_ops():
     if "ops_line2_complete" not in st.session_state:
         st.session_state.ops_line2_complete = False
 
+    if "ops_line3_complete" not in st.session_state:
+        st.session_state.ops_line3_complete = False
+
+
     
     if "ops_master_confirmed" not in st.session_state:
         st.session_state.ops_master_confirmed = False
@@ -353,8 +357,12 @@ def run_ops():
 
             st.session_state.ops_line2_phase = 1
             st.session_state.ops_line2_complete = False
+            st.session_state.ops_line3_complete = False
+
             st.session_state.ops_from_entity_id = None
+            st.session_state.ops_from_entity_type = None
             st.session_state.ops_to_entity_id = None
+            st.session_state.ops_to_entity_type = None
 
         
         
@@ -368,47 +376,46 @@ def run_ops():
         
         
         # ---------- LINE-2A : FROM (ACTUAL) ----------
-        if st.session_state.ops_line2_phase == 1:
+        if not st.session_state.ops_line2_complete:
 
             st.subheader("🔹 From (Actual Entity)")
-            
 
+            if from_entity == "Company":
+                if st.button("Confirm Company"):
+                    st.session_state.ops_from_entity_type = "Company"
+                    st.session_state.ops_from_entity_id = "COMPANY"
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
 
-            if from_entity == "Company" and not st.session_state.ops_from_entity_id:
-                # Auto-bind Company and move to Line-2B immediately
-                st.session_state.ops_from_entity_type = "Company"
-                st.session_state.ops_from_entity_id = "COMPANY"
-                st.session_state.ops_line2_phase = 2
-                st.rerun()
-
-
-
-            elif from_entity == "CNF" and not st.session_state.ops_from_entity_id:
+            elif from_entity == "CNF":
                 cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
                 selected = st.selectbox("Select CNF", list(cnf_map.keys()))
-                if st.button("Save & Next"):
+                if st.button("Confirm CNF"):
                     st.session_state.ops_from_entity_type = "CNF"
                     st.session_state.ops_from_entity_id = cnf_map[selected]
-                    st.session_state.ops_line2_phase = 2
+                    st.session_state.ops_line2_complete = True
                     st.rerun()
 
-            elif from_entity == "User" and not st.session_state.ops_from_entity_id:
+            elif from_entity == "User":
                 user_map = {u["username"]: u["id"] for u in st.session_state.users_master}
                 selected = st.selectbox("Select User", list(user_map.keys()))
-                if st.button("Save & Next"):
+                if st.button("Confirm User"):
                     st.session_state.ops_from_entity_type = "User"
                     st.session_state.ops_from_entity_id = user_map[selected]
-                    st.session_state.ops_line2_phase = 2
+                    st.session_state.ops_line2_complete = True
                     st.rerun()
 
-            elif from_entity == "Stockist" and not st.session_state.ops_from_entity_id:
+            elif from_entity == "Stockist":
                 stockist_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
                 selected = st.selectbox("Select Stockist", list(stockist_map.keys()))
-                if st.button("Save & Next"):
+                if st.button("Confirm Stockist"):
                     st.session_state.ops_from_entity_type = "Stockist"
                     st.session_state.ops_from_entity_id = stockist_map[selected]
-                    st.session_state.ops_line2_phase = 2
+                    st.session_state.ops_line2_complete = True
                     st.rerun()
+
+            st.stop()
+
 
         def get_stockists_visible_to_cnf(cnf_id):
             # Users under this CNF
@@ -427,129 +434,57 @@ def run_ops():
 
             return stockist_ids
 
+        # =========================
+        # LINE-3 : TO (ACTUAL ENTITY)
+        # =========================
 
-        # ---------- LINE-2B : TO (ACTUAL, FILTERED) ----------
-        if st.session_state.ops_line2_phase == 2 and not st.session_state.ops_line2_complete:
+        if st.session_state.ops_line2_complete and not st.session_state.ops_line3_complete:
 
             st.subheader("🔹 To (Actual Entity)")
 
             dest_map = {}
-
             from_type = st.session_state.ops_from_entity_type
             from_id = st.session_state.ops_from_entity_id
 
-            # =================================================
-            # COMPANY AS DESTINATION (SINGLETON — ALWAYS VALID)
-            # =================================================
             if to_entity == "Company":
                 dest_map = {"Company": "COMPANY"}
 
-            # =================================================
-            # CNF AS DESTINATION
-            # =================================================
             elif to_entity == "CNF":
                 dest_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
 
-            # =================================================
-            # USER AS DESTINATION
-            # =================================================
             elif to_entity == "User":
+                dest_map = {u["username"]: u["id"] for u in st.session_state.users_master}
 
-                if from_type == "Company":
-                    dest_map = {u["username"]: u["id"] for u in st.session_state.users_master}
-
-                elif from_type == "CNF":
-                    allowed_users = [
-                        m["user_id"]
-                        for m in st.session_state.cnf_user_map
-                        if m["cnf_id"] == from_id
-                    ]
-                    dest_map = {
-                        u["username"]: u["id"]
-                        for u in st.session_state.users_master
-                        if u["id"] in allowed_users
-                    }
-
-                else:
-                    # User / Stockist / Purchaser → Company already handled above
-                    dest_map = {}
-
-            # =================================================
-            # STOCKIST AS DESTINATION
-            # =================================================
             elif to_entity == "Stockist":
+                dest_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
 
-                if from_type == "Company":
-                    dest_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
-
-                elif from_type == "CNF":
-                    user_ids = [
-                        m["user_id"]
-                        for m in st.session_state.cnf_user_map
-                        if m["cnf_id"] == from_id
-                    ]
-                    stockist_ids = [
-                        m["stockist_id"]
-                        for m in st.session_state.user_stockist_map
-                        if m["user_id"] in user_ids
-                    ]
-                    dest_map = {
-                        s["name"]: s["id"]
-                        for s in st.session_state.stockists_master
-                        if s["id"] in stockist_ids
-                    }
-
-                elif from_type == "User":
-                    allowed_stockists = [
-                        m["stockist_id"]
-                        for m in st.session_state.user_stockist_map
-                        if m["user_id"] == from_id
-                    ]
-                    dest_map = {
-                        s["name"]: s["id"]
-                        for s in st.session_state.stockists_master
-                        if s["id"] in allowed_stockists
-                    }
-
-            # =================================================
-            # PURCHASER AS DESTINATION
-            # =================================================
             elif to_entity == "Purchaser":
                 dest_map = {p["name"]: p["id"] for p in st.session_state.purchasers_master}
-
-            # =================================================
-            # DESTROYED (NO INSTANCE)
-            # =================================================
-            elif to_entity == "Destroyed":
-                dest_map = {}
-
-            # =================================================
-            # FINAL UI BINDING
-            # =================================================
-            if not dest_map and to_entity != "Destroyed":
-                st.warning("No valid destination available for this route")
-                st.stop()
-
-            if dest_map:
-                selected = st.selectbox("Select Destination", list(dest_map.keys()))
-                if st.button("Confirm"):
-                    st.session_state.ops_to_entity_type = to_entity
-                    st.session_state.ops_to_entity_id = dest_map[selected]
-                    st.session_state.ops_line2_complete = True
-                    st.rerun()
 
             elif to_entity == "Destroyed":
                 if st.button("Confirm Destruction"):
                     st.session_state.ops_to_entity_type = "Destroyed"
                     st.session_state.ops_to_entity_id = None
-                    st.session_state.ops_line2_complete = True
+                    st.session_state.ops_line3_complete = True
                     st.rerun()
 
+            if dest_map:
+                selected = st.selectbox("Select Destination", list(dest_map.keys()))
+                if st.button("Confirm Destination"):
+                    st.session_state.ops_to_entity_type = to_entity
+                    st.session_state.ops_to_entity_id = dest_map[selected]
+                    st.session_state.ops_line3_complete = True
+                    st.rerun()
 
-
-        if not st.session_state.ops_line2_complete:
-            st.warning("⛔ Complete Line-2 (From → To) to continue")
             st.stop()
+
+
+
+
+        if not (st.session_state.ops_line2_complete and st.session_state.ops_line3_complete):
+            st.warning("⛔ Complete entity binding (From → To) to continue")
+            st.stop()
+
 
         date = st.date_input("Date")
 
