@@ -800,7 +800,8 @@ def run_ops():
                 if st.button(
                     "✅ Final Submit OPS",
                     type="primary",
-                    disabled=st.session_state.ops_submit_done
+                    disabled=st.session_state.ops_submit_done or st.session_state.ops_amounts is None
+
                 ):
                     # 🔒 SAFETY — Amounts must be saved before submit
                     if st.session_state.ops_amounts is None:
