@@ -618,7 +618,15 @@ def run_ops():
             with c1:
                 if st.button("➕ Add Product"):
                     st.session_state.ops_product_index += 1
+                    st.session_state.ops_products.append({
+                        "product": "",
+                        "product_id": None,
+                        "sale_qty": 0,
+                        "free_qty": 0,
+                        "total_qty": 0
+                    })
                     st.rerun()
+
 
             with c2:
                 if st.button("⬅ Remove Product") and idx > 0:
