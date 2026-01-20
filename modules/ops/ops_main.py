@@ -1,6 +1,40 @@
 import streamlit as st
 from datetime import datetime
 from anchors.supabase_client import admin_supabase
+# ---------- Helper: resolve entity display name ----------
+def resolve_entity_name(entity_type, entity_id):
+    if entity_type == "Company":
+        return "Company"
+
+    if entity_type == "CNF":
+        return next(
+            (c["name"] for c in st.session_state.cnfs_master if c["id"] == entity_id),
+            "Unknown CNF"
+        )
+
+    if entity_type == "User":
+        return next(
+            (u["username"] for u in st.session_state.users_master if u["id"] == entity_id),
+            "Unknown User"
+        )
+
+    if entity_type == "Stockist":
+        return next(
+            (s["name"] for s in st.session_state.stockists_master if s["id"] == entity_id),
+            "Unknown Stockist"
+        )
+
+    if entity_type == "Purchaser":
+        return next(
+            (p["name"] for p in st.session_state.purchasers_master if p["id"] == entity_id),
+            "Unknown Purchaser"
+        )
+
+    if entity_type == "Destroyed":
+        return "Destroyed"
+
+    return "Unknown"
+
 
 
 def resolve_user_id():
@@ -434,40 +468,7 @@ def run_ops():
 
             return stockist_ids
             
-        # ---------- Helper: resolve entity display name ----------
-        def resolve_entity_name(entity_type, entity_id):
-            if entity_type == "Company":
-                return "Company"
-
-            if entity_type == "CNF":
-                return next(
-                    (c["name"] for c in st.session_state.cnfs_master if c["id"] == entity_id),
-                    "Unknown CNF"
-                )
-
-            if entity_type == "User":
-                return next(
-                    (u["username"] for u in st.session_state.users_master if u["id"] == entity_id),
-                    "Unknown User"
-                )
-
-            if entity_type == "Stockist":
-                return next(
-                    (s["name"] for s in st.session_state.stockists_master if s["id"] == entity_id),
-                    "Unknown Stockist"
-                )
-
-            if entity_type == "Purchaser":
-                return next(
-                    (p["name"] for p in st.session_state.purchasers_master if p["id"] == entity_id),
-                    "Unknown Purchaser"
-                )
-
-            if entity_type == "Destroyed":
-                return "Destroyed"
-
-            return "Unknown"
-
+        
 
         # =========================
         # LINE-3 : TO (ACTUAL ENTITY)
@@ -550,12 +551,14 @@ def run_ops():
         if st.session_state.ops_master_confirmed:
             from_display = resolve_entity_name(
             st.session_state.ops_from_entity_type,
-            st.session_state.ops_from_entity_id
+            st.session_state.ops_from_entity_id,
+            st.session_state
         )
 
         to_display = resolve_entity_name(
             st.session_state.ops_to_entity_type,
-            st.session_state.ops_to_entity_id
+            st.session_state.ops_to_entity_id,
+            st.session_state
         )
 
             # =========================
