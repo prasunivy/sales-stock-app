@@ -333,6 +333,10 @@ def run_ops():
     # STOCK IN / STOCK OUT
     # =========================
     elif section == "STOCK_FLOW":
+        # 🔒 HARD LOCK — OPS already submitted
+        if st.session_state.ops_submit_done:
+            st.warning("🔒 OPS already submitted. Start a new OPS to continue...")
+            st.stop()
         st.subheader("🔁 Stock In / Stock Out (Master Form)")
 
         # =========================
@@ -896,8 +900,7 @@ def run_ops():
                         st.error("❌ OPS submission failed")
                         st.exception(e)
 
-                if st.session_state.ops_submit_done and st.session_state.ops_amounts is not None:
-                    st.warning("🔒 OPS already submitted. Start a new OPS to continue...")
+                
 
 
 
