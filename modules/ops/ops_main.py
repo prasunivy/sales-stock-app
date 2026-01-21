@@ -343,6 +343,10 @@ def run_ops():
         if st.session_state.ops_submit_done and not st.session_state.ops_allow_reset:
             st.warning("🔒 OPS already submitted. Start a new OPS to continue...")
             st.stop()
+        # 🔓 AUTO-UNLOCK AFTER RESET
+        if st.session_state.ops_allow_reset:
+            st.session_state.ops_submit_done = False
+            st.session_state.ops_allow_reset = False
 
         
 
