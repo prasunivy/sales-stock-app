@@ -1010,6 +1010,8 @@ def run_ops():
                         if st.button("➕ New OPS", type="primary"):
                             # ---------- UNLOCK OPS ----------
                             st.session_state.ops_submit_done = False
+                            st.session_state.ops_flow_stage = "LINE1"
+
 
                             # ---------- RESET OPS FLOW STATE (STRUCTURAL) ----------
                             st.session_state.ops_line1_from_type = None
