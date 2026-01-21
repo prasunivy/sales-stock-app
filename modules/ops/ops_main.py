@@ -333,8 +333,11 @@ def run_ops():
     # STOCK IN / STOCK OUT
     # =========================
     elif section == "STOCK_FLOW":
+        if "ops_force_new" not in st.session_state:
+            st.session_state.ops_force_new = False
+
         # 🔒 HARD LOCK — OPS already submitted
-        if st.session_state.ops_submit_done:
+        if st.session_state.ops_submit_done and not st.session_state.ops_force_new:
             st.warning("🔒 OPS already submitted. Start a new OPS to continue...")
             st.stop()
         st.subheader("🔁 Stock In / Stock Out (Master Form)")
