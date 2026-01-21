@@ -984,7 +984,7 @@ def run_ops():
                                         st.exception(e)
 
                             
-                         if st.button("➕ New OPS", type="primary"):
+                        if st.button("➕ New OPS", type="primary"):
                             # ---------- UNLOCK OPS ----------
                             st.session_state.ops_submit_done = False
 
