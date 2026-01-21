@@ -339,118 +339,114 @@ def run_ops():
     # STOCK IN / STOCK OUT
     # =========================
     elif section == "STOCK_FLOW":
-    # 🔓 POST-SUBMIT ACTIONS (SHOWN FIRST)
-    if st.session_state.ops_submit_done:
-        st.success("✅ OPS Submitted Successfully")
-        
-        if "ops_master_payload" in st.session_state:
-            with st.expander("📋 View OPS Details"):
-                st.json(st.session_state.ops_master_payload)
-        
-        st.divider()
-        st.subheader("🛠 What would you like to do next?")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("➕ New OPS", type="primary", key="new_ops_btn"):
-                # Reset everything
-                st.session_state.ops_submit_done = False
-                st.session_state.ops_allow_reset = False
-                st.session_state.ops_flow_stage = "LINE1"
-                st.session_state.ops_line1_from_type = None
-                st.session_state.ops_line1_to_type = None
-                st.session_state.ops_line2_phase = 1
-                st.session_state.ops_line2_complete = False
-                st.session_state.ops_line3_complete = False
-                st.session_state.ops_from_entity_type = None
-                st.session_state.ops_from_entity_id = None
-                st.session_state.ops_to_entity_type = None
-                st.session_state.ops_to_entity_id = None
-                st.session_state.ops_master_confirmed = False
-                st.session_state.ops_products_done = False
-                st.session_state.ops_products = []
-                st.session_state.ops_product_index = 0
-                st.session_state.ops_amounts = None
-                st.session_state.ops_delete_confirm = False
-                st.rerun()
-        
-        with col2:
-            if "ops_delete_confirm" not in st.session_state:
-                st.session_state.ops_delete_confirm = False
+        # 🔓 POST-SUBMIT ACTIONS (SHOWN FIRST)
+        if st.session_state.ops_submit_done:
+            st.success("✅ OPS Submitted Successfully")
             
-            if not st.session_state.ops_delete_confirm:
-                if st.button("🗑 Delete This OPS", type="secondary", key="delete_btn"):
-                    st.session_state.ops_delete_confirm = True
+            if "ops_master_payload" in st.session_state:
+                with st.expander("📋 View OPS Details"):
+                    st.json(st.session_state.ops_master_payload)
+            
+            st.divider()
+            st.subheader("🛠 What would you like to do next?")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("➕ New OPS", type="primary", key="new_ops_btn"):
+                    # Reset everything
+                    st.session_state.ops_submit_done = False
+                    st.session_state.ops_allow_reset = False
+                    st.session_state.ops_flow_stage = "LINE1"
+                    st.session_state.ops_line1_from_type = None
+                    st.session_state.ops_line1_to_type = None
+                    st.session_state.ops_line2_phase = 1
+                    st.session_state.ops_line2_complete = False
+                    st.session_state.ops_line3_complete = False
+                    st.session_state.ops_from_entity_type = None
+                    st.session_state.ops_from_entity_id = None
+                    st.session_state.ops_to_entity_type = None
+                    st.session_state.ops_to_entity_id = None
+                    st.session_state.ops_master_confirmed = False
+                    st.session_state.ops_products_done = False
+                    st.session_state.ops_products = []
+                    st.session_state.ops_product_index = 0
+                    st.session_state.ops_amounts = None
+                    st.session_state.ops_delete_confirm = False
                     st.rerun()
-            else:
-                st.warning("⚠️ This will permanently delete the OPS. Confirm?")
+            
+            with col2:
+                if "ops_delete_confirm" not in st.session_state:
+                    st.session_state.ops_delete_confirm = False
                 
-                col_no, col_yes = st.columns(2)
-                
-                with col_no:
-                    if st.button("❌ No, Cancel", key="cancel_btn"):
-                        st.session_state.ops_delete_confirm = False
+                if not st.session_state.ops_delete_confirm:
+                    if st.button("🗑 Delete This OPS", type="secondary", key="delete_btn"):
+                        st.session_state.ops_delete_confirm = True
                         st.rerun()
-                
-                with col_yes:
-                    if st.button("✅ Yes, Delete", type="primary", key="confirm_btn"):
-                        try:
-                            if "last_ops_document_id" in st.session_state:
-                                ops_id = st.session_state.last_ops_document_id
-                                user_id = resolve_user_id()
-                                
-                                # Audit log
-                                admin_supabase.table("audit_logs").insert({
-                                    "action": "DELETE_OPS",
-                                    "target_type": "ops_documents",
-                                    "target_id": ops_id,
-                                    "performed_by": user_id,
-                                    "message": "OPS deleted by admin",
-                                    "metadata": {"ops_document_id": ops_id}
-                                }).execute()
-                                
-                                # Delete records
-                                admin_supabase.table("financial_ledger").delete().eq("ops_document_id", ops_id).execute()
-                                admin_supabase.table("stock_ledger").delete().eq("ops_document_id", ops_id).execute()
-                                admin_supabase.table("ops_lines").delete().eq("ops_document_id", ops_id).execute()
-                                admin_supabase.table("ops_documents").delete().eq("id", ops_id).execute()
-                                
-                                st.success("✅ OPS deleted successfully")
-                                
-                                # Reset everything
-                                st.session_state.ops_submit_done = False
-                                st.session_state.ops_delete_confirm = False
-                                st.session_state.ops_flow_stage = "LINE1"
-                                st.session_state.ops_line1_from_type = None
-                                st.session_state.ops_line1_to_type = None
-                                st.session_state.ops_line2_phase = 1
-                                st.session_state.ops_line2_complete = False
-                                st.session_state.ops_line3_complete = False
-                                st.session_state.ops_from_entity_type = None
-                                st.session_state.ops_from_entity_id = None
-                                st.session_state.ops_to_entity_type = None
-                                st.session_state.ops_to_entity_id = None
-                                st.session_state.ops_master_confirmed = False
-                                st.session_state.ops_products_done = False
-                                st.session_state.ops_products = []
-                                st.session_state.ops_product_index = 0
-                                st.session_state.ops_amounts = None
-                                
-                                st.rerun()
-                            else:
-                                st.error("❌ OPS ID not found")
-                        
-                        except Exception as e:
-                            st.error("❌ Failed to delete OPS")
-                            st.exception(e)
-        
-        st.stop()
-        
+                else:
+                    st.warning("⚠️ This will permanently delete the OPS. Confirm?")
+                    
+                    col_no, col_yes = st.columns(2)
+                    
+                    with col_no:
+                        if st.button("❌ No, Cancel", key="cancel_btn"):
+                            st.session_state.ops_delete_confirm = False
+                            st.rerun()
+                    
+                    with col_yes:
+                        if st.button("✅ Yes, Delete", type="primary", key="confirm_btn"):
+                            try:
+                                if "last_ops_document_id" in st.session_state:
+                                    ops_id = st.session_state.last_ops_document_id
+                                    user_id = resolve_user_id()
+                                    
+                                    # Audit log
+                                    admin_supabase.table("audit_logs").insert({
+                                        "action": "DELETE_OPS",
+                                        "target_type": "ops_documents",
+                                        "target_id": ops_id,
+                                        "performed_by": user_id,
+                                        "message": "OPS deleted by admin",
+                                        "metadata": {"ops_document_id": ops_id}
+                                    }).execute()
+                                    
+                                    # Delete records
+                                    admin_supabase.table("financial_ledger").delete().eq("ops_document_id", ops_id).execute()
+                                    admin_supabase.table("stock_ledger").delete().eq("ops_document_id", ops_id).execute()
+                                    admin_supabase.table("ops_lines").delete().eq("ops_document_id", ops_id).execute()
+                                    admin_supabase.table("ops_documents").delete().eq("id", ops_id).execute()
+                                    
+                                    st.success("✅ OPS deleted successfully")
+                                    
+                                    # Reset everything
+                                    st.session_state.ops_submit_done = False
+                                    st.session_state.ops_delete_confirm = False
+                                    st.session_state.ops_flow_stage = "LINE1"
+                                    st.session_state.ops_line1_from_type = None
+                                    st.session_state.ops_line1_to_type = None
+                                    st.session_state.ops_line2_phase = 1
+                                    st.session_state.ops_line2_complete = False
+                                    st.session_state.ops_line3_complete = False
+                                    st.session_state.ops_from_entity_type = None
+                                    st.session_state.ops_from_entity_id = None
+                                    st.session_state.ops_to_entity_type = None
+                                    st.session_state.ops_to_entity_id = None
+                                    st.session_state.ops_master_confirmed = False
+                                    st.session_state.ops_products_done = False
+                                    st.session_state.ops_products = []
+                                    st.session_state.ops_product_index = 0
+                                    st.session_state.ops_amounts = None
+                                    
+                                    st.rerun()
+                                else:
+                                    st.error("❌ OPS ID not found")
+                            
+                            except Exception as e:
+                                st.error("❌ Failed to delete OPS")
+                                st.exception(e)
+            
+            st.stop()
 
-        
-
-        
         st.subheader("🔁 Stock In / Stock Out (Master Form)")
 
         # =========================
