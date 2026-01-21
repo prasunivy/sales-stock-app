@@ -333,15 +333,19 @@ def run_ops():
     # STOCK IN / STOCK OUT
     # =========================
     elif section == "STOCK_FLOW":
-        if "ops_force_new" not in st.session_state:
-            st.session_state.ops_force_new = False
+        # 🔒 HARD LOCK — OPS already submitted
+        if st.session_state.ops_submit_done:
+            st.warning("🔒 OPS already submitted. Start a new OPS to continue...")
+            st.stop()
+
+        
 
         
         st.subheader("🔁 Stock In / Stock Out (Master Form)")
 
         # =========================
-         # MASTER INPUT (NO FORM)
-         # =========================
+        # MASTER INPUT (NO FORM)
+        # =========================
 
         stock_direction = st.radio(
             "Stock Direction",
@@ -990,8 +994,7 @@ def run_ops():
                                         st.session_state.ops_amounts = None
 
 
-                                        # ---------- UNLOCK OPS ----------
-                                        st.session_state.ops_submit_done = False
+                                        
 
                                         st.success("✅ OPS deleted successfully.")
                                         st.rerun()
