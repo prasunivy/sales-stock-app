@@ -340,7 +340,7 @@ def run_ops():
     # =========================
     elif section == "STOCK_FLOW":
         # 🔒 HARD LOCK — OPS already submitted
-        if st.session_state.ops_submit_done:
+        if st.session_state.ops_submit_done and not st.session_state.ops_allow_reset:
             st.warning("🔒 OPS already submitted. Start a new OPS to continue...")
             st.stop()
 
