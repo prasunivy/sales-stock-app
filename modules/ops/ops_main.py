@@ -968,10 +968,27 @@ def run_ops():
                                             .eq("id", ops_id) \
                                             .execute()
 
-                                        # ---------- RESET SESSION ----------
-                                        for k in list(st.session_state.keys()):
-                                            if k.startswith("ops_"):
-                                                del st.session_state[k]
+                                        # ---------- FULL OPS RESET ----------
+                                        st.session_state.ops_submit_done = False
+
+                                        st.session_state.ops_line1_from_type = None
+                                        st.session_state.ops_line1_to_type = None
+
+                                        st.session_state.ops_line2_phase = 1
+                                        st.session_state.ops_line2_complete = False
+                                        st.session_state.ops_line3_complete = False
+                                        st.session_state.ops_from_entity_type = None
+                                        st.session_state.ops_from_entity_id = None
+                                        st.session_state.ops_to_entity_type = None
+                                        st.session_state.ops_to_entity_id = None
+
+                                        st.session_state.ops_master_confirmed = False
+                                        st.session_state.ops_products_done = False
+                                        st.session_state.ops_products = []
+                                        st.session_state.ops_product_index = 0
+
+                                        st.session_state.ops_amounts = None
+
 
                                         # ---------- UNLOCK OPS ----------
                                         st.session_state.ops_submit_done = False
@@ -988,19 +1005,33 @@ def run_ops():
                             # ---------- UNLOCK OPS ----------
                             st.session_state.ops_submit_done = False
 
-                            # ---------- SESSION RESET ONLY ----------
-                            for k in list(st.session_state.keys()):
-                                if k.startswith("ops_"):
-                                    del st.session_state[k]
+                            # ---------- RESET OPS FLOW STATE (STRUCTURAL) ----------
+                            st.session_state.ops_line1_from_type = None
+                            st.session_state.ops_line1_to_type = None
+
+                            st.session_state.ops_line2_phase = 1
+                            st.session_state.ops_line2_complete = False
+                            st.session_state.ops_line3_complete = False
+
+                            st.session_state.ops_from_entity_type = None
+                            st.session_state.ops_from_entity_id = None
+                            st.session_state.ops_to_entity_type = None
+                            st.session_state.ops_to_entity_id = None
+
+                            st.session_state.ops_master_confirmed = False
+                            st.session_state.ops_products_done = False
+                            st.session_state.ops_products = []
+                            st.session_state.ops_product_index = 0
+
+                            st.session_state.ops_amounts = None
 
                             # Stay inside STOCK_FLOW for fast entry
                             st.session_state.ops_section = "STOCK_FLOW"
+
                             st.success("🆕 Ready for new OPS entry")
                             st.rerun()
-                        # ---------- HARD LOCK (MUST BE LAST) ----------
-                        if st.session_state.ops_submit_done:
-                            st.warning("🔒 OPS already submitted. Start a new OPS to continue...")
-                            st.stop()
+
+                        
 
 
 
