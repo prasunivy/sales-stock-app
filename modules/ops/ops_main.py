@@ -432,7 +432,7 @@ def run_ops():
             if from_entity == "Company":
                 if st.button("Confirm Company"):
                     st.session_state.ops_from_entity_type = "Company"
-                    st.session_state.ops_from_entity_id = "COMPANY"
+                    st.session_state.ops_from_entity_id = None
                     st.session_state.ops_line2_complete = True
                     st.rerun()
 
@@ -498,7 +498,7 @@ def run_ops():
             from_id = st.session_state.ops_from_entity_id
 
             if to_entity == "Company":
-                dest_map = {"Company": "COMPANY"}
+                dest_map = {"Company": None}
 
             elif to_entity == "CNF":
                 dest_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
@@ -828,9 +828,7 @@ def run_ops():
                     # 🔒 SAFETY CHECK — Line-2 must be bound
                     if not all([
                         st.session_state.ops_from_entity_type,
-                        st.session_state.ops_from_entity_id,
-                        st.session_state.ops_to_entity_type,
-                        st.session_state.ops_to_entity_id
+                        st.session_state.ops_to_entity_type
                     ]):
                         st.error("❌ OPS entity binding incomplete. Please restart OPS.")
                         st.stop()
