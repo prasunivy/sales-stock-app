@@ -901,6 +901,65 @@ def run_ops():
                         st.success("✅ OPS document saved successfully")
                         st.session_state.ops_submit_done = True
 
+                        # =========================
+                        # POST-SUBMIT ACTIONS
+                        # =========================
+                        st.divider()
+                        st.subheader("🛠 Post-Submit Actions")
+
+                        if st.button("🗑 Delete OPS", type="secondary"):
+                            try:
+                                ops_id = ops_document_id
+                                user_id = resolve_user_id()
+
+                                # ---------- AUDIT LOG ----------
+                                admin_supabase.table("audit_logs").insert({
+                                    "action": "DELETE_OPS",
+                                    "target_type": "ops_documents",
+                                    "target_id": ops_id,
+                                    "performed_by": user_id,
+                                    "message": "OPS hard deleted by admin",
+                                    "metadata": {
+                                        "ops_document_id": ops_id,
+                                        "reference_no": st.session_state.ops_master_payload.get("reference_no"),
+                                        "from_entity": st.session_state.ops_master_payload.get("from_entity_name"),
+                                        "to_entity": st.session_state.ops_master_payload.get("to_entity_name")
+                                    }
+                                }).execute()
+
+                                # ---------- HARD DELETE (ORDER MATTERS) ----------
+                                admin_supabase.table("financial_ledger") \
+                                    .delete() \
+                                    .eq("ops_document_id", ops_id) \
+                                    .execute()
+
+                                admin_supabase.table("stock_ledger") \
+                                    .delete() \
+                                    .eq("ops_document_id", ops_id) \
+                                    .execute()
+
+                                admin_supabase.table("ops_lines") \
+                                    .delete() \
+                                    .eq("ops_document_id", ops_id) \
+                                    .execute()
+
+                                admin_supabase.table("ops_documents") \
+                                    .delete() \
+                                    .eq("id", ops_id) \
+                                    .execute()
+
+                                # ---------- RESET SESSION (NO DB TOUCH) ----------
+                                for k in list(st.session_state.keys()):
+                                    if k.startswith("ops_"):
+                                        del st.session_state[k]
+
+                                st.success("✅ OPS deleted successfully. Ready for next entry.")
+                                st.rerun()
+
+                            except Exception as e:
+                                st.error("❌ Failed to delete OPS")
+                                st.exception(e)
+
 
                     except Exception as e:
                         st.error("❌ OPS submission failed")
