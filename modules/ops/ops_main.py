@@ -889,10 +889,17 @@ def run_ops():
 
                         debit = net if net > 0 else 0
                         credit = abs(net) if net < 0 else 0
+                        # ---------- LEDGER PARTY SAFETY ----------
+                        party_id = (
+                            None
+                            if st.session_state.ops_to_entity_type == "Company"
+                            else st.session_state.ops_to_entity_id
+                        )
+
 
                         admin_supabase.table("financial_ledger").insert({
                             "ops_document_id": ops_document_id,
-                            "party_id": st.session_state.ops_to_entity_id,
+                            "party_id": party_id,
                             "txn_date": date.isoformat(),
                             "debit": debit,
                             "credit": credit,
