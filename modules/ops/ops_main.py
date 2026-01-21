@@ -66,6 +66,9 @@ def resolve_user_id():
 
 
 def run_ops():
+    if "ops_flow_stage" not in st.session_state:
+        st.session_state.ops_flow_stage = "LINE1"
+
     st.title("📥 Order / Purchase / Sales / Payment")
 
     # =========================
