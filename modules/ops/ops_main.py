@@ -973,6 +973,9 @@ def run_ops():
                                             if k.startswith("ops_"):
                                                 del st.session_state[k]
 
+                                        # ---------- UNLOCK OPS ----------
+                                        st.session_state.ops_submit_done = False
+
                                         st.success("✅ OPS deleted successfully.")
                                         st.rerun()
 
@@ -981,7 +984,10 @@ def run_ops():
                                         st.exception(e)
 
                             
-                        if st.button("➕ New OPS", type="primary"):
+                         if st.button("➕ New OPS", type="primary"):
+                            # ---------- UNLOCK OPS ----------
+                            st.session_state.ops_submit_done = False
+
                             # ---------- SESSION RESET ONLY ----------
                             for k in list(st.session_state.keys()):
                                 if k.startswith("ops_"):
@@ -991,6 +997,7 @@ def run_ops():
                             st.session_state.ops_section = "STOCK_FLOW"
                             st.success("🆕 Ready for new OPS entry")
                             st.rerun()
+
 
 
 
