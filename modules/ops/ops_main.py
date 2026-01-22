@@ -892,23 +892,21 @@ def run_ops():
 
                     narration_text = ops_master.get("narration", "-")
 
-                    whatsapp_text = f"""
-                OPS PREVIEW
-                From: {from_display}
-                To: {to_display}
-                Date: {date}
-                Reference: {reference_no}
+                    whatsapp_text = (
+                        f"OPS PREVIEW\n"
+                        f"From: {from_display}\n"
+                        f"To: {to_display}\n"
+                        f"Date: {date}\n"
+                        f"Reference: {reference_no}\n\n"
+                        f"Stock As: {stock_as}\n"
+                        f"Narration: {narration_text}\n\n"
+                        f"Products:\n"
+                        + "\n".join(
+                            [f"- {p['product']} : {p['total_qty']}" for p in st.session_state.ops_products]
+                        )
+                        + f"\n\nNet Amount: {a['net']}"
+                    )
 
-                Stock As: {stock_as}
-                Narration: {narration_text}
-
-                Products:
-                """ + "\n".join(
-                        [f"- {p['product']} : {p['total_qty']}" for p in st.session_state.ops_products]
-                    ) + f"""
-
-                Net Amount: {a['net']}
-                """
 
                     whatsapp_url = (
                         "https://wa.me/?text="
@@ -926,6 +924,8 @@ def run_ops():
                     st.write("Discount:", a["discount"])
                     st.write("Net Amount:", a["net"])
 
+                    
+                    
                     if st.button("✏️ Edit Amounts"):
                         st.session_state.ops_amounts = None
                         st.rerun()
