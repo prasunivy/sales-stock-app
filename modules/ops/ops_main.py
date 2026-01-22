@@ -1536,8 +1536,53 @@ def run_ops():
         st.write("Reference:", pay_ref)
         st.write("Narration:", pay_narration)
         st.write("Net Amount:", st.session_state.pay_amounts["net"])
+        st.write("Net Amount:", st.session_state.pay_amounts["net"])
 
-        st.info("🚧 Final Submit disabled in Phase-2")
+        # =========================
+        # FINAL SUBMIT — LEDGER ONLY
+        # =========================
+        if st.button("✅ Final Submit Payment", type="primary"):
+            try:
+                user_id = resolve_user_id()
+                net_amt = st.session_state.pay_amounts["net"]
+
+                # ---------- DETERMINE DR / CR ----------
+                if payment_direction == "Money Received":
+                    debit = net_amt
+                    credit = 0
+                    party_id = (
+                        None
+                        if st.session_state.pay_from_entity_type == "Company"
+                        else st.session_state.pay_from_entity_id
+                    )
+                else:  # Money Paid
+                    debit = 0
+                    credit = net_amt
+                    party_id = (
+                        None
+                        if st.session_state.pay_to_entity_type == "Company"
+                        else st.session_state.pay_to_entity_id
+                    )
+
+                # ---------- INSERT FINANCIAL LEDGER ----------
+                admin_supabase.table("financial_ledger").insert({
+                    "txn_date": pay_date.isoformat(),
+                    "party_id": party_id,
+                    "debit": debit,
+                    "credit": credit,
+                    "closing_balance": 0,
+                    "narration": pay_narration or "Payment entry",
+                    "created_by": user_id
+                }).execute()
+
+                st.success("✅ Payment saved to financial ledger")
+
+            except Exception as e:
+                st.error("❌ Failed to save payment")
+                st.exception(e)
 
         st.divider()
+
+
+        
 
