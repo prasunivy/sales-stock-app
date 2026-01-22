@@ -1565,7 +1565,10 @@ def run_ops():
                     )
 
                 # ---------- INSERT FINANCIAL LEDGER ----------
+                ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+                
                 admin_supabase.table("financial_ledger").insert({
+                    "ops_document_id": ZERO_UUID,
                     "txn_date": pay_date.isoformat(),
                     "party_id": party_id,
                     "debit": debit,
