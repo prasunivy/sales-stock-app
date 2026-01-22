@@ -1576,7 +1576,7 @@ def run_ops():
                 doc_resp = admin_supabase.table("ops_documents").insert({
                     "ops_no": f"PAY-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                     "ops_date": pay_date.isoformat(),
-                    "ops_type": ""ADJUSTMENT"",
+                    "ops_type": "ADJUSTMENT",
                     "stock_as": "payment",
                     "direction": db_direction,
                     "narration": pay_narration or "Payment entry",
