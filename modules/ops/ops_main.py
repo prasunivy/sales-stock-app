@@ -884,7 +884,42 @@ def run_ops():
                     st.divider()
                     st.subheader("🔍 Final Preview — Stock + Accounts")
 
+                    
+                    # =========================
+                    # 📲 WHATSAPP PREVIEW (NO DB) — OPTION B
+                    # =========================
                     a = st.session_state.ops_amounts
+
+                    narration_text = ops_master.get("narration", "-")
+
+                    whatsapp_text = f"""
+                OPS PREVIEW
+                From: {from_display}
+                To: {to_display}
+                Date: {date}
+                Reference: {reference_no}
+
+                Stock As: {stock_as}
+                Narration: {narration_text}
+
+                Products:
+                """ + "\n".join(
+                        [f"- {p['product']} : {p['total_qty']}" for p in st.session_state.ops_products]
+                    ) + f"""
+
+                Net Amount: {a['net']}
+                """
+
+                    whatsapp_url = (
+                        "https://wa.me/?text="
+                        + whatsapp_text.replace(" ", "%20").replace("\n", "%0A")
+                    )
+
+                    st.markdown(
+                        f"[📲 Send on WhatsApp]({whatsapp_url})",
+                        unsafe_allow_html=True
+                    )
+
 
                     st.write("Gross Amount:", a["gross"])
                     st.write("Tax Amount:", a["tax"])
