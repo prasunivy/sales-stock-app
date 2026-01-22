@@ -1357,5 +1357,187 @@ def run_ops():
     elif section == "ORDERS":
         st.info("🔧 Orders — coming next")
 
+    
+
     elif section == "PAYMENTS":
-        st.info("🔧 Payments — coming next")
+        st.subheader("💳 Payments (Phase-2)")
+
+        # =========================
+        # PAYMENTS FLOW STATE
+        # =========================
+        if "pay_flow_stage" not in st.session_state:
+            st.session_state.pay_flow_stage = "LINE1"
+
+        if "pay_from_entity_type" not in st.session_state:
+            st.session_state.pay_from_entity_type = None
+        if "pay_from_entity_id" not in st.session_state:
+            st.session_state.pay_from_entity_id = None
+
+        if "pay_to_entity_type" not in st.session_state:
+            st.session_state.pay_to_entity_type = None
+        if "pay_to_entity_id" not in st.session_state:
+            st.session_state.pay_to_entity_id = None
+
+        if "pay_amounts" not in st.session_state:
+            st.session_state.pay_amounts = None
+
+        # =========================
+        # LINE-1 — PAYMENT DIRECTION
+        # =========================
+        payment_direction = st.radio(
+            "Payment Direction",
+            ["Money Received", "Money Paid"],
+            horizontal=True
+        )
+
+        st.divider()
+
+        # =========================
+        # LINE-2 — FROM (ACTUAL ENTITY)
+        # =========================
+        st.subheader("🔹 From (Actual Entity)")
+
+        from_options = ["Company", "CNF", "User", "Stockist", "Purchaser"]
+        from_type = st.selectbox("From Entity Type", from_options)
+
+        from_id = None
+        if from_type == "Company":
+            st.info("Company selected")
+        elif from_type == "CNF":
+            m = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+            k = st.selectbox("Select CNF", list(m.keys()))
+            from_id = m[k]
+        elif from_type == "User":
+            m = {u["username"]: u["id"] for u in st.session_state.users_master}
+            k = st.selectbox("Select User", list(m.keys()))
+            from_id = m[k]
+        elif from_type == "Stockist":
+            m = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+            k = st.selectbox("Select Stockist", list(m.keys()))
+            from_id = m[k]
+        elif from_type == "Purchaser":
+            m = {p["name"]: p["id"] for p in st.session_state.purchasers_master}
+            k = st.selectbox("Select Purchaser", list(m.keys()))
+            from_id = m[k]
+
+        if st.button("Confirm From"):
+            st.session_state.pay_from_entity_type = from_type
+            st.session_state.pay_from_entity_id = from_id
+            st.rerun()
+
+        if not st.session_state.pay_from_entity_type:
+            st.stop()
+
+        st.divider()
+
+        # =========================
+        # LINE-3 — TO (ACTUAL ENTITY)
+        # =========================
+        st.subheader("🔹 To (Actual Entity)")
+
+        to_options = ["Company", "CNF", "User", "Stockist", "Purchaser"]
+        to_type = st.selectbox("To Entity Type", to_options)
+
+        to_id = None
+        if to_type == "Company":
+            st.info("Company selected")
+        elif to_type == "CNF":
+            m = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+            k = st.selectbox("Select CNF", list(m.keys()))
+            to_id = m[k]
+        elif to_type == "User":
+            m = {u["username"]: u["id"] for u in st.session_state.users_master}
+            k = st.selectbox("Select User", list(m.keys()))
+            to_id = m[k]
+        elif to_type == "Stockist":
+            m = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+            k = st.selectbox("Select Stockist", list(m.keys()))
+            to_id = m[k]
+        elif to_type == "Purchaser":
+            m = {p["name"]: p["id"] for p in st.session_state.purchasers_master}
+            k = st.selectbox("Select Purchaser", list(m.keys()))
+            to_id = m[k]
+
+        if st.button("Confirm To"):
+            st.session_state.pay_to_entity_type = to_type
+            st.session_state.pay_to_entity_id = to_id
+            st.rerun()
+
+        if not st.session_state.pay_to_entity_type:
+            st.stop()
+
+        st.divider()
+
+        # =========================
+        # LINE-4 — PAYMENT META
+        # =========================
+        pay_date = st.date_input("Payment Date")
+        pay_mode = st.selectbox(
+            "Payment Mode",
+            ["Cash", "Bank", "UPI", "Cheque"]
+        )
+        pay_ref = st.text_input("Reference No")
+        pay_narration = st.text_input("Narration")
+
+        st.divider()
+
+        # =========================
+        # LINE-5 — AMOUNT SECTION (LOCKED)
+        # =========================
+        st.subheader("💰 Amount Details")
+
+        if st.session_state.pay_amounts is None:
+            gross = st.number_input("Gross Receipt Amount", min_value=0.0, step=0.01)
+            discount = st.number_input("Discount (Optional)", min_value=0.0, step=0.01)
+            net = st.number_input("Net Receipt Amount", min_value=0.0, step=0.01)
+
+            if st.button("💾 Save Amounts"):
+                st.session_state.pay_amounts = {
+                    "gross": gross,
+                    "discount": discount,
+                    "net": net
+                }
+                st.rerun()
+
+        else:
+            a = st.session_state.pay_amounts
+            st.write("Gross:", a["gross"])
+            st.write("Discount:", a["discount"])
+            st.write("Net:", a["net"])
+
+            if st.button("✏️ Edit / Reset Amount"):
+                st.session_state.pay_amounts = None
+                st.rerun()
+
+        if not st.session_state.pay_amounts:
+            st.stop()
+
+        st.divider()
+
+        # =========================
+        # FINAL PREVIEW (NO DB)
+        # =========================
+        st.subheader("🔍 Final Payment Preview")
+
+        from_disp = resolve_entity_name(
+            st.session_state.pay_from_entity_type,
+            st.session_state.pay_from_entity_id
+        )
+        to_disp = resolve_entity_name(
+            st.session_state.pay_to_entity_type,
+            st.session_state.pay_to_entity_id
+        )
+
+        st.write("Direction:", payment_direction)
+        st.write("From:", from_disp)
+        st.write("To:", to_disp)
+        st.write("Date:", pay_date)
+        st.write("Mode:", pay_mode)
+        st.write("Reference:", pay_ref)
+        st.write("Narration:", pay_narration)
+        st.write("Net Amount:", st.session_state.pay_amounts["net"])
+
+        st.info("🚧 Final Submit disabled in Phase-2")
+
+        st.divider()
+
