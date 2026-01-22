@@ -1574,7 +1574,7 @@ def run_ops():
                     "ops_date": pay_date.isoformat(),
                     "ops_type": "PAYMENT",
                     "stock_as": "payment",
-                    "direction": payment_direction,
+                    "direction": db_direction,
                     "narration": pay_narration or "Payment entry",
                     "reference_no": pay_ref,
                     "created_by": user_id
