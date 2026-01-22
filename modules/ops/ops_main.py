@@ -1571,8 +1571,8 @@ def run_ops():
                     "debit": debit,
                     "credit": credit,
                     "closing_balance": 0,
-                    "narration": pay_narration or "Payment entry",
-                    "created_by": user_id
+                    "narration": pay_narration or "Payment entry"
+                    
                 }).execute()
 
                 st.success("✅ Payment saved to financial ledger")
