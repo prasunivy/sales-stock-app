@@ -1564,22 +1564,34 @@ def run_ops():
                         else st.session_state.pay_to_entity_id
                     )
 
+                # ---------- CREATE PAYMENT DOCUMENT (HEADER ONLY) ----------
+                doc_resp = admin_supabase.table("ops_documents").insert({
+                    "ops_no": f"PAY-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                    "ops_date": pay_date.isoformat(),
+                    "ops_type": "PAYMENT",
+                    "stock_as": "payment",
+                    "direction": payment_direction,
+                    "narration": pay_narration or "Payment entry",
+                    "reference_no": pay_ref
+                }).execute()
+
+                payment_ops_id = doc_resp.data[0]["id"]
+
                 # ---------- INSERT FINANCIAL LEDGER ----------
-                ZERO_UUID = "00000000-0000-0000-0000-000000000000"
-                
                 admin_supabase.table("financial_ledger").insert({
-                    "ops_document_id": ZERO_UUID,
+                    "ops_document_id": payment_ops_id,
                     "txn_date": pay_date.isoformat(),
                     "party_id": party_id,
                     "debit": debit,
                     "credit": credit,
                     "closing_balance": 0,
                     "narration": pay_narration or "Payment entry"
-                    
                 }).execute()
 
-                st.success("✅ Payment saved to financial ledger")
+                st.success("✅ Payment saved successfully")
 
+
+                
             except Exception as e:
                 st.error("❌ Failed to save payment")
                 st.exception(e)
