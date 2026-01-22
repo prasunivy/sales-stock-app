@@ -1569,6 +1569,10 @@ def run_ops():
                 if not user_id:
                     st.error("❌ Invalid user session. Please login again.")
                     st.stop()
+                if payment_direction == "Money Received":
+                    db_direction = "IN"
+                else:
+                    db_direction = "OUT"
                 doc_resp = admin_supabase.table("ops_documents").insert({
                     "ops_no": f"PAY-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                     "ops_date": pay_date.isoformat(),
