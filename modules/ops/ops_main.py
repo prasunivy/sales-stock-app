@@ -1565,6 +1565,7 @@ def run_ops():
                     )
 
                 # ---------- CREATE PAYMENT DOCUMENT (HEADER ONLY) ----------
+                user_id = resolve_user_id()
                 doc_resp = admin_supabase.table("ops_documents").insert({
                     "ops_no": f"PAY-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                     "ops_date": pay_date.isoformat(),
@@ -1572,7 +1573,8 @@ def run_ops():
                     "stock_as": "payment",
                     "direction": payment_direction,
                     "narration": pay_narration or "Payment entry",
-                    "reference_no": pay_ref
+                    "reference_no": pay_ref,
+                    "created_by": user_id
                 }).execute()
 
                 payment_ops_id = doc_resp.data[0]["id"]
