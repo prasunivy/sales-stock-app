@@ -1577,7 +1577,7 @@ def run_ops():
                     "ops_no": f"PAY-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                     "ops_date": pay_date.isoformat(),
                     "ops_type": "ADJUSTMENT",
-                    "stock_as": "payment",
+                    "stock_as": "adjustment",
                     "direction": db_direction,
                     "narration": pay_narration or "Payment entry",
                     "reference_no": pay_ref,
