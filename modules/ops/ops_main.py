@@ -1566,6 +1566,9 @@ def run_ops():
 
                 # ---------- CREATE PAYMENT DOCUMENT (HEADER ONLY) ----------
                 user_id = resolve_user_id()
+                if not user_id:
+                    st.error("❌ Invalid user session. Please login again.")
+                    st.stop()
                 doc_resp = admin_supabase.table("ops_documents").insert({
                     "ops_no": f"PAY-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                     "ops_date": pay_date.isoformat(),
