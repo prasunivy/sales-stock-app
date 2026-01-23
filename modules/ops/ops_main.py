@@ -1380,6 +1380,11 @@ def run_ops():
 
         if "pay_amounts" not in st.session_state:
             st.session_state.pay_amounts = None
+        if "pay_submit_done" not in st.session_state:
+            st.session_state.pay_submit_done = False
+
+        if "last_payment_ops_id" not in st.session_state:
+            st.session_state.last_payment_ops_id = None
 
         # =========================
         # LINE-1 — PAYMENT DIRECTION
@@ -1535,7 +1540,6 @@ def run_ops():
         st.write("Mode:", pay_mode)
         st.write("Reference:", pay_ref)
         st.write("Narration:", pay_narration)
-        st.write("Net Amount:", st.session_state.pay_amounts["net"])
         st.write("Net Amount:", st.session_state.pay_amounts["net"])
 
         # =========================
