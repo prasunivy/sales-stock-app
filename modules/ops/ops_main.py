@@ -1539,6 +1539,7 @@ def run_ops():
             st.session_state.pay_from_entity_id
         )
         # =========================
+        # =========================
         # PHASE-3 STEP-3.1 — INVOICE PICKER (READ-ONLY)
         # =========================
         st.divider()
@@ -1558,7 +1559,7 @@ def run_ops():
         if not invoices:
             st.info("No invoices available for settlement.")
         else:
-            st.caption("Select invoice(s) to optionally allocate this payment. This does NOT save anything yet.")
+            st.caption("Allocate amounts from GROSS receipt (this does NOT save yet).")
 
             if "pay_invoice_allocations" not in st.session_state:
                 st.session_state.pay_invoice_allocations = {}
@@ -1586,6 +1587,57 @@ def run_ops():
                         st.session_state.pay_invoice_allocations.pop(inv["id"], None)
 
 
+        # =========================
+        # PHASE-3 STEP-3.3 — OUTSTANDING (READ-ONLY REPORT)
+        # =========================
+        st.divider()
+        st.subheader("📊 Invoice Outstanding (Read-Only)")
+
+        # ---- Fetch invoice totals ----
+        lines_resp = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .execute()
+
+        invoice_totals = {}
+        for row in (lines_resp.data or []):
+            doc_id = row["ops_document_id"]
+            invoice_totals[doc_id] = invoice_totals.get(doc_id, 0) + float(row["net_amount"])
+
+        # ---- Fetch settlement totals ----
+        settle_resp = admin_supabase.table("payment_settlements") \
+            .select("invoice_id, amount") \
+            .execute()
+
+        settled_totals = {}
+        for row in (settle_resp.data or []):
+            inv_id = row["invoice_id"]
+            settled_totals[inv_id] = settled_totals.get(inv_id, 0) + float(row["amount"])
+
+        if invoices:
+            for inv in invoices:
+                inv_id = inv["id"]
+                invoice_amt = invoice_totals.get(inv_id, 0)
+                settled_amt = settled_totals.get(inv_id, 0)
+                outstanding = invoice_amt - settled_amt
+
+                cols = st.columns([3, 2, 2, 2])
+
+                with cols[0]:
+                    st.write(f"📄 {inv['ops_no']}")
+
+                with cols[1]:
+                    st.write(inv["ops_date"])
+
+                with cols[2]:
+                    st.write(f"₹ {invoice_amt:,.2f}")
+
+                with cols[3]:
+                    st.write(f"₹ {outstanding:,.2f}")
+        else:
+            st.info("No invoices found for outstanding calculation.")
+
+
+
         
         to_disp = resolve_entity_name(
             st.session_state.pay_to_entity_type,
@@ -1599,7 +1651,8 @@ def run_ops():
         st.write("Mode:", pay_mode)
         st.write("Reference:", pay_ref)
         st.write("Narration:", pay_narration)
-        st.write("Net Amount:", st.session_state.pay_amounts["net"])
+        st.write("Net Receipt (Ledger Impact):", st.session_state.pay_amounts["net"])
+
 
         # =========================
         # 📲 WHATSAPP PREVIEW (NO DB)
