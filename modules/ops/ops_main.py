@@ -970,8 +970,10 @@ def run_ops():
                     ]):
                         st.error("❌ OPS entity binding incomplete. Please restart OPS.")
                         st.stop()
+                        
                     # 🔑 DETERMINE OPS DOCUMENT NATURE (INVOICE VS ADJUSTMENT)
-                    is_invoice = (stock_as == "Invoice")
+                    doc_stock_as = st.session_state.ops_master_payload.get("stock_as")
+                    is_invoice = (doc_stock_as == "Invoice")
 
                     ops_type_val = "STOCK_OUT" if is_invoice else "ADJUSTMENT"
                     stock_as_val = "normal" if is_invoice else "adjustment"
