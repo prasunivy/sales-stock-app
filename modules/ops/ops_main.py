@@ -970,14 +970,19 @@ def run_ops():
                     ]):
                         st.error("❌ OPS entity binding incomplete. Please restart OPS.")
                         st.stop()
+                    # 🔑 DETERMINE OPS DOCUMENT NATURE (INVOICE VS ADJUSTMENT)
+                    is_invoice = (stock_as == "Invoice")
 
+                    ops_type_val = "STOCK_OUT" if is_invoice else "ADJUSTMENT"
+                    stock_as_val = "normal" if is_invoice else "adjustment"
+                    direction_val = "OUT" if is_invoice else "ADJUST"
                     try:
                         response = admin_supabase.table("ops_documents").insert({
                             "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                             "ops_date": date.isoformat(),
-                            "ops_type": "ADJUSTMENT",
-                            "stock_as": "adjustment",
-                            "direction": "ADJUST",
+                            "ops_type": ops_type_val,
+                            "stock_as": stock_as_val,
+                            "direction": direction_val,
                             "narration": "OPS test submit from UI",
                             "reference_no": reference_no,
                             "created_by": user_id
