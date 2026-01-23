@@ -1548,29 +1548,30 @@ def run_ops():
         # =========================
         # 📲 WHATSAPP PREVIEW (NO DB)
         # =========================
-        whatsapp_text = (
-            f"PAYMENT PREVIEW\n"
-            f"Direction: {payment_direction}\n"
-            f"From: {from_disp}\n"
-            f"To: {to_disp}\n"
-            f"Date: {pay_date}\n"
-            f"Mode: {pay_mode}\n"
-            f"Reference: {pay_ref}\n"
-            f"Narration: {pay_narration}\n\n"
-            f"Gross: {st.session_state.pay_amounts['gross']}\n"
-            f"Discount: {st.session_state.pay_amounts['discount']}\n"
-            f"Net Amount: {st.session_state.pay_amounts['net']}"
-        )
+        if st.session_state.pay_amounts:
+            whatsapp_text = (
+                f"PAYMENT PREVIEW\n"
+                f"Direction: {payment_direction}\n"
+                f"From: {from_disp}\n"
+                f"To: {to_disp}\n"
+                f"Date: {pay_date}\n"
+                f"Mode: {pay_mode}\n"
+                f"Reference: {pay_ref}\n"
+                f"Narration: {pay_narration}\n\n"
+                f"Gross: {st.session_state.pay_amounts['gross']}\n"
+                f"Discount: {st.session_state.pay_amounts['discount']}\n"
+                f"Net Amount: {st.session_state.pay_amounts['net']}"
+            )
 
-        whatsapp_url = (
-            "https://wa.me/?text="
-            + whatsapp_text.replace(" ", "%20").replace("\n", "%0A")
-        )
+            whatsapp_url = (
+                "https://wa.me/?text="
+                + whatsapp_text.replace(" ", "%20").replace("\n", "%0A")
+            )
 
-        st.markdown(
-            f"[📲 Send Payment Preview on WhatsApp]({whatsapp_url})",
-            unsafe_allow_html=True
-        )
+            st.markdown(
+                f"[📲 Send Payment Preview on WhatsApp]({whatsapp_url})",
+                unsafe_allow_html=True
+            )
 
 
         # =========================
@@ -1583,7 +1584,7 @@ def run_ops():
         ):
 
             try:
-                user_id = resolve_user_id()
+                
                 net_amt = st.session_state.pay_amounts["net"]
 
                 # ---------- DETERMINE DR / CR ----------
@@ -1708,6 +1709,16 @@ def run_ops():
                                 st.session_state.pay_submit_done = False
                                 st.session_state.pay_delete_confirm = False
                                 st.session_state.last_payment_ops_id = None
+                                st.session_state.pay_flow_stage = "LINE1"
+
+                                st.session_state.pay_from_entity_type = None
+                                st.session_state.pay_from_entity_id = None
+
+                                st.session_state.pay_to_entity_type = None
+                                st.session_state.pay_to_entity_id = None
+
+                                st.session_state.pay_amounts = None
+
                                 st.rerun()
 
                             except Exception as e:
@@ -1720,6 +1731,7 @@ def run_ops():
                             st.session_state.pay_delete_confirm = False
                             st.info("Delete cancelled")
                             st.stop()
+        st.stop()
 
         
 
