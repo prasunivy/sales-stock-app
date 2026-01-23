@@ -1647,7 +1647,56 @@ def run_ops():
                 st.exception(e)
 
         st.divider()
+        # =========================
+        # POST-SUBMIT ACTIONS
+        # =========================
+        if st.session_state.pay_submit_done:
+            st.subheader("🛠 What would you like to do next?")
 
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button("➕ New Payment", type="primary"):
+                    st.session_state.pay_submit_done = False
+                    st.session_state.pay_from_entity_type = None
+                    st.session_state.pay_from_entity_id = None
+                    st.session_state.pay_to_entity_type = None
+                    st.session_state.pay_to_entity_id = None
+                    st.session_state.pay_amounts = None
+                    st.session_state.last_payment_ops_id = None
+                    st.rerun()
+
+            with col2:
+                if st.button("🗑 Delete This Payment"):
+                    try:
+                        ops_id = st.session_state.last_payment_ops_id
+                        user_id = resolve_user_id()
+
+                        # ---------- AUDIT ----------
+                        admin_supabase.table("audit_logs").insert({
+                            "action": "DELETE_PAYMENT",
+                            "target_type": "ops_documents",
+                            "target_id": ops_id,
+                            "performed_by": user_id,
+                            "message": "Payment deleted by admin",
+                            "metadata": {"ops_document_id": ops_id}
+                        }).execute()
+
+                        admin_supabase.table("financial_ledger") \
+                            .delete().eq("ops_document_id", ops_id).execute()
+
+                        admin_supabase.table("ops_documents") \
+                            .delete().eq("id", ops_id).execute()
+
+                        st.success("✅ Payment deleted successfully")
+
+                        st.session_state.pay_submit_done = False
+                        st.session_state.last_payment_ops_id = None
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error("❌ Failed to delete payment")
+                        st.exception(e)
 
         
 
