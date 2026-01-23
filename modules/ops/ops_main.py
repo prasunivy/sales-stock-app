@@ -1669,39 +1669,57 @@ def run_ops():
                     st.session_state.last_payment_ops_id = None
                     st.rerun()
 
+            # ---------- DELETE PAYMENT (OPS-STYLE CONFIRMATION) ----------
             with col2:
-                if st.button("🗑 Delete This Payment"):
-                    try:
-                        ops_id = st.session_state.last_payment_ops_id
-                        user_id = resolve_user_id()
+                if not st.session_state.pay_delete_confirm:
+                    if st.button("🗑 Delete This Payment"):
+                        st.session_state.pay_delete_confirm = True
+                        st.warning("⚠️ This will permanently delete the payment. Please confirm.")
+                        st.stop()
 
-                        # ---------- AUDIT ----------
-                        admin_supabase.table("audit_logs").insert({
-                            "action": "DELETE_PAYMENT",
-                            "target_type": "ops_documents",
-                            "target_id": ops_id,
-                            "performed_by": user_id,
-                            "message": "Payment deleted by admin",
-                            "metadata": {"ops_document_id": ops_id}
-                        }).execute()
+                else:
+                    c1, c2 = st.columns(2)
 
-                        admin_supabase.table("financial_ledger") \
-                            .delete().eq("ops_document_id", ops_id).execute()
+                    with c1:
+                        if st.button("✅ Confirm Delete"):
+                            try:
+                                ops_id = st.session_state.last_payment_ops_id
+                                user_id = resolve_user_id()
 
-                        admin_supabase.table("ops_documents") \
-                            .delete().eq("id", ops_id).execute()
+                                # ---------- AUDIT ----------
+                                admin_supabase.table("audit_logs").insert({
+                                    "action": "DELETE_PAYMENT",
+                                    "target_type": "ops_documents",
+                                    "target_id": ops_id,
+                                    "performed_by": user_id,
+                                    "message": "Payment deleted by admin",
+                                    "metadata": {"ops_document_id": ops_id}
+                                }).execute()
 
-                        st.success("✅ Payment deleted successfully")
+                                admin_supabase.table("financial_ledger") \
+                                    .delete().eq("ops_document_id", ops_id).execute()
 
-                        st.session_state.pay_submit_done = False
-                        st.session_state.last_payment_ops_id = None
-                        st.rerun()
+                                admin_supabase.table("ops_documents") \
+                                    .delete().eq("id", ops_id).execute()
 
-                    except Exception as e:
-                        st.error("❌ Failed to delete payment")
-                        st.exception(e)
-                    st.stop()
+                                st.success("✅ Payment deleted successfully")
 
+                                # ---------- RESET STATE ----------
+                                st.session_state.pay_submit_done = False
+                                st.session_state.pay_delete_confirm = False
+                                st.session_state.last_payment_ops_id = None
+                                st.rerun()
+
+                            except Exception as e:
+                                st.error("❌ Failed to delete payment")
+                                st.exception(e)
+                                st.stop()
+
+                    with c2:
+                        if st.button("❌ Cancel"):
+                            st.session_state.pay_delete_confirm = False
+                            st.info("Delete cancelled")
+                            st.stop()
 
         
 
