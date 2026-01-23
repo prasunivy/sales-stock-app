@@ -1636,7 +1636,6 @@ def run_ops():
 
                 st.session_state.pay_submit_done = True
                 st.session_state.last_payment_ops_id = payment_ops_id
-                st.success("✅ Payment saved successfully")
                 st.rerun()
 
 
@@ -1651,6 +1650,7 @@ def run_ops():
         # POST-SUBMIT ACTIONS
         # =========================
         if st.session_state.pay_submit_done:
+            st.success("✅ Payment saved successfully")
             st.subheader("🛠 What would you like to do next?")
 
             col1, col2 = st.columns(2)
@@ -1697,6 +1697,8 @@ def run_ops():
                     except Exception as e:
                         st.error("❌ Failed to delete payment")
                         st.exception(e)
+                    st.stop()
+
 
         
 
