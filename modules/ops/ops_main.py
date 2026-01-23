@@ -1382,6 +1382,9 @@ def run_ops():
             st.session_state.pay_amounts = None
         if "pay_submit_done" not in st.session_state:
             st.session_state.pay_submit_done = False
+        if "pay_delete_confirm" not in st.session_state:
+            st.session_state.pay_delete_confirm = False
+
 
         if "last_payment_ops_id" not in st.session_state:
             st.session_state.last_payment_ops_id = None
