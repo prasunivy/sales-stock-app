@@ -1693,6 +1693,18 @@ def run_ops():
                     "closing_balance": 0,
                     "narration": pay_narration or "Payment entry"
                 }).execute()
+                # =========================
+                # PHASE-3 STEP-3.2 — INSERT PAYMENT SETTLEMENTS (OPTIONAL)
+                # =========================
+                allocs = st.session_state.get("pay_invoice_allocations", {})
+
+                for invoice_id, amt in allocs.items():
+                    admin_supabase.table("payment_settlements").insert({
+                        "payment_ops_id": payment_ops_id,
+                        "invoice_id": invoice_id,
+                        "amount": amt
+                    }).execute()
+
 
                 st.session_state.pay_submit_done = True
                 st.session_state.last_payment_ops_id = payment_ops_id
