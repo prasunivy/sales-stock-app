@@ -1538,6 +1538,55 @@ def run_ops():
             st.session_state.pay_from_entity_type,
             st.session_state.pay_from_entity_id
         )
+        # =========================
+        # PHASE-3 STEP-3.1 — INVOICE PICKER (READ-ONLY)
+        # =========================
+        st.divider()
+        st.subheader("🧾 Optional Invoice Settlement (Preview Only)")
+
+        # Fetch invoices (READ ONLY)
+        invoice_resp = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date") \
+            .eq("ops_type", "STOCK_OUT") \
+            .eq("stock_as", "normal") \
+            .eq("is_deleted", False) \
+            .order("ops_date", desc=True) \
+            .execute()
+
+        invoices = invoice_resp.data or []
+
+        if not invoices:
+            st.info("No invoices available for settlement.")
+        else:
+            st.caption("Select invoice(s) to optionally allocate this payment. This does NOT save anything yet.")
+
+            if "pay_invoice_allocations" not in st.session_state:
+                st.session_state.pay_invoice_allocations = {}
+
+            for inv in invoices:
+                cols = st.columns([3, 2, 2])
+
+                with cols[0]:
+                    st.write(f"📄 {inv['ops_no']}")
+
+                with cols[1]:
+                    st.write(inv["ops_date"])
+
+                with cols[2]:
+                    amt = st.number_input(
+                        "Settle Amount",
+                        min_value=0.0,
+                        step=0.01,
+                        key=f"alloc_{inv['id']}"
+                    )
+
+                    if amt > 0:
+                        st.session_state.pay_invoice_allocations[inv["id"]] = amt
+                    else:
+                        st.session_state.pay_invoice_allocations.pop(inv["id"], None)
+
+
+        
         to_disp = resolve_entity_name(
             st.session_state.pay_to_entity_type,
             st.session_state.pay_to_entity_id
