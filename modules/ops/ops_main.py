@@ -1623,15 +1623,42 @@ def run_ops():
         for row in (ledger_resp.data or []):
             if row["party_id"]:
                 invoice_party_map[row["ops_document_id"]] = row["party_id"]
+        # =========================
+        # DATE RANGE FILTER (OUTSTANDING ONLY)
+        # =========================
+        st.markdown("### 📅 Filter Invoices by Date (Optional)")
+
+        date_col1, date_col2 = st.columns(2)
+
+        with date_col1:
+            from_date = st.date_input(
+                "From Date",
+                value=None,
+                key="outstanding_from_date"
+            )
+
+        with date_col2:
+            to_date = st.date_input(
+                "To Date",
+                value=None,
+                key="outstanding_to_date"
+            )
 
         # ---- 4️⃣ Fetch invoices ----
-        invoice_resp = admin_supabase.table("ops_documents") \
+        invoice_query = admin_supabase.table("ops_documents") \
             .select("id, ops_no, ops_date") \
             .eq("ops_type", "STOCK_OUT") \
             .eq("stock_as", "normal") \
-            .eq("is_deleted", False) \
-            .order("ops_date", desc=True) \
-            .execute()
+            .eq("is_deleted", False)
+
+        if from_date:
+            invoice_query = invoice_query.gte("ops_date", from_date.isoformat())
+
+        if to_date:
+            invoice_query = invoice_query.lte("ops_date", to_date.isoformat())
+
+        invoice_resp = invoice_query.order("ops_date", desc=True).execute()
+
 
         invoices = invoice_resp.data or []
 
@@ -1688,6 +1715,22 @@ def run_ops():
                     f"**🔹 Party Total Outstanding: ₹ {party_total_outstanding:,.2f}**"
                 )
                 st.divider()
+                
+            # =========================
+            # GRAND TOTAL OUTSTANDING (ALL PARTIES)
+            # =========================
+            grand_total_outstanding = 0
+
+            for party_id, party_invoices in party_groups.items():
+                for inv in party_invoices:
+                    inv_id = inv["id"]
+                    invoice_amt = invoice_totals.get(inv_id, 0)
+                    settled_amt = settled_totals.get(inv_id, 0)
+                    grand_total_outstanding += (invoice_amt - settled_amt)
+
+            st.markdown(
+                f"## 🧮 Grand Total Outstanding (All Parties): ₹ {grand_total_outstanding:,.2f}"
+            )
 
 
 
