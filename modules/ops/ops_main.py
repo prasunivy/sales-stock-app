@@ -1588,12 +1588,13 @@ def run_ops():
 
 
         # =========================
-        # PHASE-3 STEP-3.3 — OUTSTANDING (READ-ONLY REPORT)
+        # =========================
+        # PHASE-3 STEP-3.3 — OUTSTANDING (PARTY-WISE, READ-ONLY)
         # =========================
         st.divider()
-        st.subheader("📊 Invoice Outstanding (Read-Only)")
+        st.subheader("📊 Invoice Outstanding — Party-wise (Read-Only)")
 
-        # ---- Fetch invoice totals ----
+        # ---- 1️⃣ Invoice totals (ops_lines) ----
         lines_resp = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .execute()
@@ -1603,7 +1604,7 @@ def run_ops():
             doc_id = row["ops_document_id"]
             invoice_totals[doc_id] = invoice_totals.get(doc_id, 0) + float(row["net_amount"])
 
-        # ---- Fetch settlement totals ----
+        # ---- 2️⃣ Settlement totals (payment_settlements) ----
         settle_resp = admin_supabase.table("payment_settlements") \
             .select("invoice_id, amount") \
             .execute()
@@ -1613,28 +1614,80 @@ def run_ops():
             inv_id = row["invoice_id"]
             settled_totals[inv_id] = settled_totals.get(inv_id, 0) + float(row["amount"])
 
-        if invoices:
+        # ---- 3️⃣ Invoice → Party mapping (financial_ledger) ----
+        ledger_resp = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .execute()
+
+        invoice_party_map = {}
+        for row in (ledger_resp.data or []):
+            if row["party_id"]:
+                invoice_party_map[row["ops_document_id"]] = row["party_id"]
+
+        # ---- 4️⃣ Fetch invoices ----
+        invoice_resp = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date") \
+            .eq("ops_type", "STOCK_OUT") \
+            .eq("stock_as", "normal") \
+            .eq("is_deleted", False) \
+            .order("ops_date", desc=True) \
+            .execute()
+
+        invoices = invoice_resp.data or []
+
+        if not invoices:
+            st.info("No invoices found.")
+        else:
+            # ---- 5️⃣ Group invoices by party ----
+            party_groups = {}
+
             for inv in invoices:
                 inv_id = inv["id"]
-                invoice_amt = invoice_totals.get(inv_id, 0)
-                settled_amt = settled_totals.get(inv_id, 0)
-                outstanding = invoice_amt - settled_amt
+                party_id = invoice_party_map.get(inv_id, "UNMAPPED")
 
-                cols = st.columns([3, 2, 2, 2])
+                party_groups.setdefault(party_id, [])
+                party_groups[party_id].append(inv)
 
-                with cols[0]:
-                    st.write(f"📄 {inv['ops_no']}")
+            # ---- 6️⃣ Render party-wise outstanding ----
+            for party_id, party_invoices in party_groups.items():
 
-                with cols[1]:
-                    st.write(inv["ops_date"])
+                party_name = (
+                    "Unknown / Company"
+                    if party_id == "UNMAPPED"
+                    else resolve_entity_name("Party", party_id)
+                )
 
-                with cols[2]:
-                    st.write(f"₹ {invoice_amt:,.2f}")
+                st.markdown(f"### 🧑 Party: **{party_name}**")
 
-                with cols[3]:
-                    st.write(f"₹ {outstanding:,.2f}")
-        else:
-            st.info("No invoices found for outstanding calculation.")
+                party_total_outstanding = 0
+
+                for inv in party_invoices:
+                    inv_id = inv["id"]
+
+                    invoice_amt = invoice_totals.get(inv_id, 0)
+                    settled_amt = settled_totals.get(inv_id, 0)
+                    outstanding = invoice_amt - settled_amt
+
+                    party_total_outstanding += outstanding
+
+                    cols = st.columns([3, 2, 2, 2])
+
+                    with cols[0]:
+                        st.write(f"📄 {inv['ops_no']}")
+
+                    with cols[1]:
+                        st.write(inv["ops_date"])
+
+                    with cols[2]:
+                        st.write(f"₹ {invoice_amt:,.2f}")
+
+                    with cols[3]:
+                        st.write(f"₹ {outstanding:,.2f}")
+
+                st.markdown(
+                    f"**🔹 Party Total Outstanding: ₹ {party_total_outstanding:,.2f}**"
+                )
+                st.divider()
 
 
 
