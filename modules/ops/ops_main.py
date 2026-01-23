@@ -1543,9 +1543,42 @@ def run_ops():
         st.write("Net Amount:", st.session_state.pay_amounts["net"])
 
         # =========================
+        # 📲 WHATSAPP PREVIEW (NO DB)
+        # =========================
+        whatsapp_text = (
+            f"PAYMENT PREVIEW\n"
+            f"Direction: {payment_direction}\n"
+            f"From: {from_disp}\n"
+            f"To: {to_disp}\n"
+            f"Date: {pay_date}\n"
+            f"Mode: {pay_mode}\n"
+            f"Reference: {pay_ref}\n"
+            f"Narration: {pay_narration}\n\n"
+            f"Gross: {st.session_state.pay_amounts['gross']}\n"
+            f"Discount: {st.session_state.pay_amounts['discount']}\n"
+            f"Net Amount: {st.session_state.pay_amounts['net']}"
+        )
+
+        whatsapp_url = (
+            "https://wa.me/?text="
+            + whatsapp_text.replace(" ", "%20").replace("\n", "%0A")
+        )
+
+        st.markdown(
+            f"[📲 Send Payment Preview on WhatsApp]({whatsapp_url})",
+            unsafe_allow_html=True
+        )
+
+
+        # =========================
         # FINAL SUBMIT — LEDGER ONLY
         # =========================
-        if st.button("✅ Final Submit Payment", type="primary"):
+        if st.button(
+            "✅ Final Submit Payment",
+            type="primary",
+            disabled=st.session_state.pay_submit_done
+        ):
+
             try:
                 user_id = resolve_user_id()
                 net_amt = st.session_state.pay_amounts["net"]
@@ -1601,7 +1634,11 @@ def run_ops():
                     "narration": pay_narration or "Payment entry"
                 }).execute()
 
+                st.session_state.pay_submit_done = True
+                st.session_state.last_payment_ops_id = payment_ops_id
                 st.success("✅ Payment saved successfully")
+                st.rerun()
+
 
 
                 
