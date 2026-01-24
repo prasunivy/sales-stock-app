@@ -329,6 +329,10 @@ def run_ops():
         product_name = st.selectbox("Select Product", list(product_map.keys()))
         product_id = product_map[product_name]
 
+        opening_stock_date = st.date_input(
+            "Opening Stock Date"
+        )
+
         qty = st.number_input(
             "Opening Quantity",
             min_value=0.0,
@@ -343,7 +347,7 @@ def run_ops():
                 # ---- Create synthetic OPS document for opening stock ----
                 ops_resp = admin_supabase.table("ops_documents").insert({
                     "ops_no": f"OPEN-STOCK-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
-                    "ops_date": datetime.utcnow().date().isoformat(),
+                    "ops_date": opening_stock_date.isoformat(),
                     "ops_type": "ADJUSTMENT",
                     "stock_as": "adjustment",
                     "direction": "IN",
@@ -358,7 +362,7 @@ def run_ops():
                     "ops_document_id": ops_document_id,
                     "ops_line_id": None,
                     "product_id": product_id,
-                    "txn_date": datetime.utcnow().date().isoformat(),
+                    "txn_date": opening_stock_date.isoformat(),
                     "qty_in": qty,
                     "qty_out": 0,
                     "closing_qty": qty,
