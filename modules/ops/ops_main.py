@@ -1731,15 +1731,66 @@ def run_ops():
             st.markdown(
                 f"## 🧮 Grand Total Outstanding (All Parties): ₹ {grand_total_outstanding:,.2f}"
             )
+            
 
+            # =========================
+            # 📥 EXPORT OUTSTANDING TO EXCEL (READ-ONLY)
+            # =========================
+            import pandas as pd
+            from io import BytesIO
 
+            export_rows = []
 
-        
+            for party_id, party_invoices in party_groups.items():
+
+                party_name = (
+                    "Unknown / Company"
+                    if party_id == "UNMAPPED"
+                    else resolve_entity_name("Party", party_id)
+                )
+
+                for inv in party_invoices:
+                    inv_id = inv["id"]
+
+                    invoice_amt = invoice_totals.get(inv_id, 0)
+                    settled_amt = settled_totals.get(inv_id, 0)
+                    outstanding_amt = invoice_amt - settled_amt
+
+                    export_rows.append({
+                        "Invoice No": inv["ops_no"],
+                        "Date": inv["ops_date"],
+                        "Party": party_name,
+                        "Invoice Amount": invoice_amt,
+                        "Settled Amount": settled_amt,
+                        "Outstanding": outstanding_amt
+                    })
+
+            if export_rows:
+                df_outstanding = pd.DataFrame(export_rows)
+
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    df_outstanding.to_excel(
+                        writer,
+                        index=False,
+                        sheet_name="Outstanding Report"
+                    )
+
+                st.download_button(
+                    label="📥 Export Outstanding to Excel",
+                    data=output.getvalue(),
+                    file_name="invoice_outstanding_report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
         to_disp = resolve_entity_name(
             st.session_state.pay_to_entity_type,
             st.session_state.pay_to_entity_id
         )
 
+
+
+        
         st.write("Direction:", payment_direction)
         st.write("From:", from_disp)
         st.write("To:", to_disp)
