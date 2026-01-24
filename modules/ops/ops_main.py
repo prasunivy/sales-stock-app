@@ -2328,6 +2328,115 @@ def run_ops():
                     .execute()
 
                 st.success("✅ Ledger entry updated. Refresh to see changes.")
+    # =========================
+    # STOCK LEDGER (QUANTITY ONLY)
+    # =========================
+    elif section == "STOCK_LEDGER":
+        st.subheader("📦 Stock Ledger")
+
+        # -------------------------
+        # ENTITY FILTER
+        # -------------------------
+        entity_type = st.selectbox(
+            "Select Entity Type",
+            ["Company", "CNF", "User", "Stockist"]
+        )
+
+        if entity_type == "Company":
+            entity_id = None
+            entity_name = "Company"
+
+        elif entity_type == "CNF":
+            cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+            entity_name = st.selectbox("Select CNF", list(cnf_map.keys()))
+            entity_id = cnf_map[entity_name]
+
+        elif entity_type == "User":
+            user_map = {u["username"]: u["id"] for u in st.session_state.users_master}
+            entity_name = st.selectbox("Select User", list(user_map.keys()))
+            entity_id = user_map[entity_name]
+
+        else:  # Stockist
+            stockist_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+            entity_name = st.selectbox("Select Stockist", list(stockist_map.keys()))
+            entity_id = stockist_map[entity_name]
+
+        # -------------------------
+        # PRODUCT FILTER
+        # -------------------------
+        product_map = {p["name"]: p["id"] for p in st.session_state.products_master}
+        product_name = st.selectbox("Select Product", list(product_map.keys()))
+        product_id = product_map[product_name]
+
+        # -------------------------
+        # DATE FILTER
+        # -------------------------
+        col1, col2 = st.columns(2)
+        with col1:
+            from_date = st.date_input("From Date")
+        with col2:
+            to_date = st.date_input("To Date")
+
+        # -------------------------
+        # FETCH STOCK LEDGER ROWS
+        # -------------------------
+        stock_rows = (
+            admin_supabase.table("stock_ledger")
+            .select(
+                "txn_date, qty_in, qty_out, closing_qty, narration, ops_document_id"
+            )
+            .eq("product_id", product_id)
+            .gte("txn_date", from_date.isoformat())
+            .lte("txn_date", to_date.isoformat())
+            .order("txn_date", desc=False)
+            .order("created_at", desc=False)
+            .execute()
+        ).data
+
+        if not stock_rows:
+            st.info("No stock ledger entries found.")
+            st.stop()
+
+        # -------------------------
+        # FETCH OPS DOCUMENTS (VOUCHER NO)
+        # -------------------------
+        ops_ids = list({r["ops_document_id"] for r in stock_rows})
+        ops_docs = (
+            admin_supabase.table("ops_documents")
+            .select("id, ops_no, reference_no")
+            .in_("id", ops_ids)
+            .execute()
+        ).data
+
+        ops_map = {
+            o["id"]: f'{o["ops_no"]}{(" / " + o["reference_no"]) if o["reference_no"] else ""}'
+            for o in ops_docs
+        }
+
+        # -------------------------
+        # BUILD DISPLAY ROWS
+        # -------------------------
+        display_rows = []
+
+        for r in stock_rows:
+            display_rows.append({
+                "Date": r["txn_date"],
+                "Voucher No": ops_map.get(r["ops_document_id"], ""),
+                "Product": product_name,
+                "In Qty": r["qty_in"] if r["qty_in"] else "",
+                "Out Qty": r["qty_out"] if r["qty_out"] else "",
+                "Closing Qty": r["closing_qty"],
+                "Narration": r["narration"]
+            })
+
+        import pandas as pd
+        df_stock = pd.DataFrame(display_rows)
+
+        st.dataframe(
+            df_stock,
+            use_container_width=True,
+            hide_index=True
+        )
 
 
         
