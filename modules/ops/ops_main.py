@@ -312,28 +312,62 @@ def run_ops():
             st.write("Quantity:", quantity)
             st.warning("⚠️ Preview only. Data not saved.")
 
+    
     # =========================
-    # OPENING BALANCE (PREVIEW)
+    # OPENING BALANCE (SAVE + EDIT)
     # =========================
     elif section == "OPENING_BALANCE":
-        st.subheader("💰 Opening Balance (Preview Only)")
+        st.subheader("💰 Opening Balance")
 
-        with st.form("opening_balance_form"):
-            entity_type = st.selectbox(
-                "Select Entity",
-                ["Stockist", "CNF"]
-            )
-            entity_name = st.text_input("Name")
-            amount = st.number_input("Opening Balance Amount", step=1)
+        # ---- Entity selection from master ----
+        entity_type = st.selectbox(
+            "Select Entity Type",
+            ["Stockist", "CNF"]
+        )
 
-            submitted = st.form_submit_button("Preview")
+        if entity_type == "Stockist":
+            entity_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+        else:
+            entity_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
 
-        if submitted:
-            st.markdown("### 🔍 Preview")
-            st.write("Entity Type:", entity_type)
-            st.write("Name:", entity_name)
-            st.write("Amount:", amount)
-            st.warning("⚠️ Preview only. Data not saved.")
+        entity_name = st.selectbox("Select Name", list(entity_map.keys()))
+        entity_id = entity_map[entity_name]
+
+        amount = st.number_input(
+            "Opening Balance Amount",
+            step=0.01,
+            help="Positive = Debit, Negative = Credit"
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("💾 Save Opening Balance"):
+                debit = amount if amount > 0 else 0
+                credit = abs(amount) if amount < 0 else 0
+
+                admin_supabase.table("financial_ledger").insert({
+                    "ops_document_id": None,
+                    "party_id": entity_id,
+                    "txn_date": datetime.utcnow().date().isoformat(),
+                    "debit": debit,
+                    "credit": credit,
+                    "closing_balance": 0,
+                    "narration": "Opening Balance"
+                }).execute()
+
+                st.success("✅ Opening Balance saved to ledger")
+
+        with col2:
+            if st.button("✏️ Edit Opening Balance"):
+                admin_supabase.table("financial_ledger") \
+                    .delete() \
+                    .eq("party_id", entity_id) \
+                    .eq("narration", "Opening Balance") \
+                    .execute()
+
+                st.warning("✏️ Previous Opening Balance removed. Re-enter amount.")
+
 
     # =========================
     # STOCK IN / STOCK OUT
