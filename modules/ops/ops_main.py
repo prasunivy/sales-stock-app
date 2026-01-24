@@ -384,16 +384,39 @@ def run_ops():
 
         
         with col2:
-            if st.button("✏️ Edit Opening Stock"):
-                admin_supabase.table("stock_ledger") \
-                    .delete() \
-                    .eq("product_id", product_id) \
-                    .eq("entity_type", entity_type) \
-                    .eq("entity_id", entity_id) \
-                    .eq("narration", "Opening Stock") \
-                    .execute()
+            
+            if st.button("✏️ Adjust Opening Stock"):
+                adjustment_qty = qty  # positive = add, negative = reduce
 
-                st.warning("✏️ Previous opening stock removed. Re-enter quantity.")
+                # Create synthetic OPS document for stock adjustment
+                ops_resp = admin_supabase.table("ops_documents").insert({
+                    "ops_no": f"STOCK-ADJ-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                    "ops_date": opening_stock_date.isoformat(),
+                    "ops_type": "ADJUSTMENT",
+                    "stock_as": "adjustment",
+                    "direction": "ADJUST",
+                    "narration": "Opening Stock Adjustment",
+                    "created_by": resolve_user_id()
+                }).execute()
+
+                ops_document_id = ops_resp.data[0]["id"]
+
+                admin_supabase.table("stock_ledger").insert({
+                    "ops_document_id": ops_document_id,
+                    "ops_line_id": None,
+                    "product_id": product_id,
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                    "txn_date": opening_stock_date.isoformat(),
+                    "qty_in": adjustment_qty if adjustment_qty > 0 else 0,
+                    "qty_out": abs(adjustment_qty) if adjustment_qty < 0 else 0,
+                    "closing_qty": 0,  # will be recalculated in reports
+                    "direction": "ADJUST",
+                    "narration": "Opening Stock Adjustment"
+                }).execute()
+
+                st.success("✅ Stock adjustment entry added (audit-safe)")
+
 
 
 
