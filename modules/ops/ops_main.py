@@ -408,11 +408,26 @@ def run_ops():
 
         with col1:
             if st.button("💾 Save Opening Balance"):
+                        
                 debit = amount if amount > 0 else 0
                 credit = abs(amount) if amount < 0 else 0
 
+                # ---- Create synthetic OPS document for opening balance ----
+                ops_resp = admin_supabase.table("ops_documents").insert({
+                    "ops_no": f"OPEN-BAL-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                    "ops_date": datetime.utcnow().date().isoformat(),
+                    "ops_type": "ADJUSTMENT",
+                    "stock_as": "adjustment",
+                    "direction": "ADJUST",
+                    "narration": "Opening Balance",
+                    "created_by": resolve_user_id()
+                }).execute()
+
+                ops_document_id = ops_resp.data[0]["id"]
+
+                # ---- Insert opening balance into financial ledger ----
                 admin_supabase.table("financial_ledger").insert({
-                    "ops_document_id": None,
+                    "ops_document_id": ops_document_id,
                     "party_id": entity_id,
                     "txn_date": datetime.utcnow().date().isoformat(),
                     "debit": debit,
@@ -422,6 +437,7 @@ def run_ops():
                 }).execute()
 
                 st.success("✅ Opening Balance saved to ledger")
+
 
         with col2:
             if st.button("✏️ Edit Opening Balance"):
