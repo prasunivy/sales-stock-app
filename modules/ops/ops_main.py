@@ -2245,12 +2245,87 @@ def run_ops():
             "Balance": ""
         }
 
+        # -------------------------
+        # LEDGER EXCEL EXPORT
+        # -------------------------
+        from io import BytesIO
+
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(
+                writer,
+                index=False,
+                sheet_name="Ledger Statement"
+            )
+
+        st.download_button(
+            label="📥 Export Ledger to Excel",
+            data=output.getvalue(),
+            file_name=f"ledger_{party_name}_{from_date}_{to_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        
+        
         # Display dataframe
         st.dataframe(
             df,
             use_container_width=True,
             hide_index=True
         )
+
+        # -------------------------
+        # LEDGER ROW EDIT (CONTROLLED)
+        # -------------------------
+        st.divider()
+        st.subheader("✏️ Edit Ledger Entry (Controlled)")
+
+        editable_rows = [
+            r for r in ledger_rows
+            if r["narration"] == "Opening Balance"
+        ]
+
+        if not editable_rows:
+            st.info("No editable ledger entries available.")
+        else:
+            row_map = {
+                f'{r["txn_date"]} | {r["narration"]} | Dr {r["debit"]} Cr {r["credit"]}': r
+                for r in editable_rows
+            }
+
+            selected_key = st.selectbox(
+                "Select Ledger Entry",
+                list(row_map.keys())
+            )
+
+            selected_row = row_map[selected_key]
+
+            new_debit = st.number_input(
+                "Debit",
+                value=float(selected_row["debit"]),
+                step=0.01
+            )
+            new_credit = st.number_input(
+                "Credit",
+                value=float(selected_row["credit"]),
+                step=0.01
+            )
+            new_narration = st.text_input(
+                "Narration",
+                value=selected_row["narration"]
+            )
+
+            if st.button("💾 Update Ledger Entry"):
+                admin_supabase.table("financial_ledger") \
+                    .update({
+                        "debit": new_debit,
+                        "credit": new_credit,
+                        "narration": new_narration
+                    }) \
+                    .eq("id", selected_row["id"]) \
+                    .execute()
+
+                st.success("✅ Ledger entry updated. Refresh to see changes.")
 
 
         
