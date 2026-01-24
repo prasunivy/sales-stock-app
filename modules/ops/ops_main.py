@@ -383,14 +383,18 @@ def run_ops():
                 
 
         with col2:
+        with col2:
             if st.button("✏️ Edit Opening Stock"):
                 admin_supabase.table("stock_ledger") \
                     .delete() \
                     .eq("product_id", product_id) \
-                    .eq("narration", f"Opening Stock - {entity_type}: {entity_name}") \
+                    .eq("entity_type", entity_type) \
+                    .eq("entity_id", entity_id) \
+                    .eq("narration", "Opening Stock") \
                     .execute()
 
                 st.warning("✏️ Previous opening stock removed. Re-enter quantity.")
+
 
 
     
