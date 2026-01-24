@@ -1889,7 +1889,8 @@ def run_ops():
                 df_outstanding = pd.DataFrame(export_rows)
 
                 output = BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                with pd.ExcelWriter(output) as writer:
+
                     df_outstanding.to_excel(
                         writer,
                         index=False,
