@@ -255,6 +255,11 @@ def run_ops():
         st.session_state.ops_section = "OPENING_BALANCE"
         st.rerun()
 
+    if st.sidebar.button("📒 Ledger"):
+        st.session_state.ops_section = "LEDGER"
+        st.rerun()
+
+
     if st.sidebar.button("🏢 CNF Master"):
         st.session_state.ops_section = "CNF_MASTER"
         st.rerun()
