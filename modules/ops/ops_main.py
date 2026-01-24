@@ -382,7 +382,7 @@ def run_ops():
 
                 
 
-        with col2:
+        
         with col2:
             if st.button("✏️ Edit Opening Stock"):
                 admin_supabase.table("stock_ledger") \
