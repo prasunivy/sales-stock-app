@@ -2115,6 +2115,109 @@ def run_ops():
                             st.info("Delete cancelled")
                             st.stop()
         st.stop()
+    # =========================
+    # LEDGER STATEMENT (FINANCIAL LEDGER ONLY)
+    # =========================
+    elif section == "LEDGER":
+        st.subheader("📒 Ledger Statement")
+
+        # -------------------------
+        # PARTY FILTER (EXCLUDING COMPANY)
+        # -------------------------
+        party_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+        party_name = st.selectbox("Select Party", list(party_map.keys()))
+        party_id = party_map[party_name]
+
+        col1, col2 = st.columns(2)
+        with col1:
+            from_date = st.date_input("From Date")
+        with col2:
+            to_date = st.date_input("To Date")
+
+        # -------------------------
+        # FETCH LEDGER ROWS
+        # -------------------------
+        ledger_rows = (
+            admin_supabase.table("financial_ledger")
+            .select(
+                "id, txn_date, debit, credit, narration, ops_document_id"
+            )
+            .eq("party_id", party_id)
+            .gte("txn_date", from_date.isoformat())
+            .lte("txn_date", to_date.isoformat())
+            .order("txn_date", desc=False)
+            .order("created_at", desc=False)
+            .execute()
+        ).data
+
+        if not ledger_rows:
+            st.info("No ledger entries found.")
+            st.stop()
+
+        # -------------------------
+        # FETCH OPS DOCUMENTS (FOR VOUCHER NO)
+        # -------------------------
+        ops_ids = list({row["ops_document_id"] for row in ledger_rows})
+        ops_docs = (
+            admin_supabase.table("ops_documents")
+            .select("id, ops_no, reference_no")
+            .in_("id", ops_ids)
+            .execute()
+        ).data
+
+        ops_map = {
+            o["id"]: f'{o["ops_no"]}{(" / " + o["reference_no"]) if o["reference_no"] else ""}'
+            for o in ops_docs
+        }
+
+        # -------------------------
+        # OPENING BALANCE (SYNTHETIC)
+        # -------------------------
+        opening_balance = 0
+        for row in ledger_rows:
+            if row["narration"] == "Opening Balance":
+                opening_balance += row["debit"] - row["credit"]
+
+        display_rows = []
+        running_balance = opening_balance
+
+        display_rows.append({
+            "Date": "",
+            "Voucher No": "",
+            "Particulars": "Opening Balance",
+            "Debit": "",
+            "Credit": "",
+            "Discount": "",
+            "Balance": f"{running_balance:,.2f}"
+        })
+
+        # -------------------------
+        # LEDGER ROWS WITH RUNNING BALANCE
+        # -------------------------
+        for row in ledger_rows:
+            debit = row["debit"]
+            credit = row["credit"]
+
+            running_balance += debit - credit
+
+            display_rows.append({
+                "Date": row["txn_date"],
+                "Voucher No": ops_map.get(row["ops_document_id"], ""),
+                "Particulars": row["narration"],
+                "Debit": f"{debit:,.2f}" if debit else "",
+                "Credit": f"{credit:,.2f}" if credit else "",
+                "Discount": "",
+                "Balance": f"{running_balance:,.2f}"
+            })
+
+        # -------------------------
+        # DISPLAY LEDGER TABLE
+        # -------------------------
+        st.dataframe(
+            display_rows,
+            use_container_width=True
+        )
+
 
         
 
