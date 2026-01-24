@@ -259,6 +259,11 @@ def run_ops():
         st.session_state.ops_section = "LEDGER"
         st.rerun()
 
+    if st.sidebar.button("📦 Stock Ledger"):
+        st.session_state.ops_section = "STOCK_LEDGER"
+        st.rerun()
+
+
 
     if st.sidebar.button("🏢 CNF Master"):
         st.session_state.ops_section = "CNF_MASTER"
