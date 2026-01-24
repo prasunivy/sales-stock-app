@@ -2260,25 +2260,7 @@ def run_ops():
             "Balance": ""
         }
 
-        # -------------------------
-        # LEDGER EXCEL EXPORT
-        # -------------------------
-        from io import BytesIO
 
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(
-                writer,
-                index=False,
-                sheet_name="Ledger Statement"
-            )
-
-        st.download_button(
-            label="📥 Export Ledger to Excel",
-            data=output.getvalue(),
-            file_name=f"ledger_{party_name}_{from_date}_{to_date}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
 
         
         
