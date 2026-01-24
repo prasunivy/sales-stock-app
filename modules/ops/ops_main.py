@@ -367,6 +367,8 @@ def run_ops():
                     "ops_document_id": ops_document_id,
                     "ops_line_id": None,
                     "product_id": product_id,
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
                     "txn_date": opening_stock_date.isoformat(),
                     "qty_in": qty,
                     "qty_out": 0,
@@ -2386,10 +2388,11 @@ def run_ops():
                 "txn_date, qty_in, qty_out, closing_qty, narration, ops_document_id"
             )
             .eq("product_id", product_id)
+            .eq("entity_type", entity_type)
+            .eq("entity_id", entity_id)
             .gte("txn_date", from_date.isoformat())
             .lte("txn_date", to_date.isoformat())
             .order("txn_date", desc=False)
-            .order("created_at", desc=False)
             .execute()
         ).data
 
