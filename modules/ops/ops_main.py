@@ -2211,11 +2211,45 @@ def run_ops():
             })
 
         # -------------------------
-        # DISPLAY LEDGER TABLE
+        # LEDGER POLISH (EXCEL STYLE)
         # -------------------------
+        import pandas as pd
+
+        df = pd.DataFrame(display_rows)
+
+        # Format date column
+        if "Date" in df.columns:
+            df["Date"] = df["Date"].astype(str)
+
+        # Calculate totals (ignore opening balance row)
+        total_debit = sum(
+            float(r["Debit"].replace(",", ""))
+            for r in display_rows
+            if r["Debit"]
+        )
+
+        total_credit = sum(
+            float(r["Credit"].replace(",", ""))
+            for r in display_rows
+            if r["Credit"]
+        )
+
+        # Append totals row
+        df.loc[len(df)] = {
+            "Date": "",
+            "Voucher No": "",
+            "Particulars": "TOTAL",
+            "Debit": f"{total_debit:,.2f}",
+            "Credit": f"{total_credit:,.2f}",
+            "Discount": "",
+            "Balance": ""
+        }
+
+        # Display dataframe
         st.dataframe(
-            display_rows,
-            use_container_width=True
+            df,
+            use_container_width=True,
+            hide_index=True
         )
 
 
