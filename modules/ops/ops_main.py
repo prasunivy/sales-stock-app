@@ -403,6 +403,11 @@ def run_ops():
         entity_name = st.selectbox("Select Name", list(entity_map.keys()))
         entity_id = entity_map[entity_name]
 
+        opening_date = st.date_input(
+            "Opening Balance Date"
+        )
+
+        
         amount = st.number_input(
             "Opening Balance Amount",
             step=0.01,
@@ -420,7 +425,7 @@ def run_ops():
                 # ---- Create synthetic OPS document for opening balance ----
                 ops_resp = admin_supabase.table("ops_documents").insert({
                     "ops_no": f"OPEN-BAL-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
-                    "ops_date": datetime.utcnow().date().isoformat(),
+                    "ops_date": opening_date.isoformat(),
                     "ops_type": "ADJUSTMENT",
                     "stock_as": "adjustment",
                     "direction": "ADJUST",
@@ -434,7 +439,7 @@ def run_ops():
                 admin_supabase.table("financial_ledger").insert({
                     "ops_document_id": ops_document_id,
                     "party_id": entity_id,
-                    "txn_date": datetime.utcnow().date().isoformat(),
+                    "txn_date": opening_date.isoformat(),
                     "debit": debit,
                     "credit": credit,
                     "closing_balance": 0,
