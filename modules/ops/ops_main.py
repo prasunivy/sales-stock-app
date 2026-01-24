@@ -334,8 +334,23 @@ def run_ops():
 
         with col1:
             if st.button("💾 Save Opening Stock"):
+                            
+                # ---- Create synthetic OPS document for opening stock ----
+                ops_resp = admin_supabase.table("ops_documents").insert({
+                    "ops_no": f"OPEN-STOCK-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                    "ops_date": datetime.utcnow().date().isoformat(),
+                    "ops_type": "ADJUSTMENT",
+                    "stock_as": "adjustment",
+                    "direction": "IN",
+                    "narration": "Opening Stock",
+                    "created_by": resolve_user_id()
+                }).execute()
+
+                ops_document_id = ops_resp.data[0]["id"]
+
+                # ---- Insert opening stock into stock ledger ----
                 admin_supabase.table("stock_ledger").insert({
-                    "ops_document_id": None,
+                    "ops_document_id": ops_document_id,
                     "ops_line_id": None,
                     "product_id": product_id,
                     "txn_date": datetime.utcnow().date().isoformat(),
@@ -347,6 +362,9 @@ def run_ops():
                 }).execute()
 
                 st.success("✅ Opening stock saved")
+
+
+                
 
         with col2:
             if st.button("✏️ Edit Opening Stock"):
