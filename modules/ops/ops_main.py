@@ -287,30 +287,77 @@ def run_ops():
         st.info("👈 Select an OPS function from the sidebar")
         return
 
+    
     # =========================
-    # OPENING STOCK (PREVIEW)
+    # OPENING STOCK (SAVE + EDIT)
     # =========================
     if section == "OPENING_STOCK":
-        st.subheader("📦 Opening Stock (Preview Only)")
+        st.subheader("📦 Opening Stock")
 
-        with st.form("opening_stock_form"):
-            entity_type = st.selectbox(
-                "Select Entity Type",
-                ["Company", "CNF", "User", "Stockist"]
-            )
-            entity_name = st.text_input("Entity Name")
-            product = st.text_input("Product Name")
-            quantity = st.number_input("Quantity", min_value=0, step=1)
+        # ---- Entity selection ----
+        entity_type = st.selectbox(
+            "Select Entity Type",
+            ["Company", "CNF", "User", "Stockist"]
+        )
 
-            submitted = st.form_submit_button("Preview")
+        if entity_type == "Company":
+            entity_id = None
+            entity_name = "Company"
 
-        if submitted:
-            st.markdown("### 🔍 Preview")
-            st.write("Entity Type:", entity_type)
-            st.write("Entity Name:", entity_name)
-            st.write("Product:", product)
-            st.write("Quantity:", quantity)
-            st.warning("⚠️ Preview only. Data not saved.")
+        elif entity_type == "CNF":
+            entity_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+            entity_name = st.selectbox("Select CNF", list(entity_map.keys()))
+            entity_id = entity_map[entity_name]
+
+        elif entity_type == "User":
+            entity_map = {u["username"]: u["id"] for u in st.session_state.users_master}
+            entity_name = st.selectbox("Select User", list(entity_map.keys()))
+            entity_id = entity_map[entity_name]
+
+        else:  # Stockist
+            entity_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+            entity_name = st.selectbox("Select Stockist", list(entity_map.keys()))
+            entity_id = entity_map[entity_name]
+
+        # ---- Product selection ----
+        product_map = {p["name"]: p["id"] for p in st.session_state.products_master}
+        product_name = st.selectbox("Select Product", list(product_map.keys()))
+        product_id = product_map[product_name]
+
+        qty = st.number_input(
+            "Opening Quantity",
+            min_value=0.0,
+            step=1.0
+        )
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("💾 Save Opening Stock"):
+                admin_supabase.table("stock_ledger").insert({
+                    "ops_document_id": None,
+                    "ops_line_id": None,
+                    "product_id": product_id,
+                    "txn_date": datetime.utcnow().date().isoformat(),
+                    "qty_in": qty,
+                    "qty_out": 0,
+                    "closing_qty": qty,
+                    "direction": "IN",
+                    "narration": f"Opening Stock - {entity_type}: {entity_name}"
+                }).execute()
+
+                st.success("✅ Opening stock saved")
+
+        with col2:
+            if st.button("✏️ Edit Opening Stock"):
+                admin_supabase.table("stock_ledger") \
+                    .delete() \
+                    .eq("product_id", product_id) \
+                    .eq("narration", f"Opening Stock - {entity_type}: {entity_name}") \
+                    .execute()
+
+                st.warning("✏️ Previous opening stock removed. Re-enter quantity.")
+
 
     
     # =========================
