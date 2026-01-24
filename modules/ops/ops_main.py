@@ -2163,6 +2163,8 @@ def run_ops():
                 "id, txn_date, debit, credit, narration, ops_document_id"
             )
             .eq("party_id", party_id)
+            .gt("debit", 0)
+            .or_("credit.gt.0")
             .gte("txn_date", from_date.isoformat())
             .lte("txn_date", to_date.isoformat())
             .order("txn_date", desc=False)
