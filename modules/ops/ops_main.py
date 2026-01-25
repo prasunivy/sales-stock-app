@@ -1242,6 +1242,7 @@ def run_ops():
                                 "qty_in": qty_in,
                                 "qty_out": qty_out,
                                 "closing_qty": 0,
+                                "direction": "OUT" if stock_direction == "Stock Out" else "IN",
                                 "narration": f"OPS {stock_direction}"
                             }).execute()
 
