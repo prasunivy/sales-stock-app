@@ -2498,9 +2498,13 @@ def run_ops():
         display_rows = []
 
         # 🔒 ENSURE CHRONOLOGICAL ORDER FOR RUNNING STOCK
+        from datetime import date
         stock_rows = sorted(
             stock_rows,
-            key=lambda x: (x["txn_date"], x["created_at"])
+            key=lambda x: (
+                date.fromisoformat(x["txn_date"]),
+                x["created_at"]
+            )
         )
 
         running_qty = 0
