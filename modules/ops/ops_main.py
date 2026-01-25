@@ -2441,37 +2441,38 @@ def run_ops():
         if entity_type == "Company":
             stock_rows = (
                 admin_supabase.table("stock_ledger")
-                .select(
-                    "txn_date, qty_in, qty_out, closing_qty, narration, ops_document_id"
-                )
-                .eq("product_id", product_id)
-                .eq("entity_type", "Company")
-                .is_("entity_id", None)
-                .gte("txn_date", from_date.isoformat())
-                .lte("txn_date", to_date.isoformat())
-                .order("txn_date", desc=False)
-                .order("created_at", desc=False)
-                .execute()
+                    .select(
+                        "txn_date, qty_in, qty_out, closing_qty, narration, ops_document_id, created_at"
+                    )
+                    .eq("product_id", product_id)
+                    .eq("entity_type", "Company")
+                    .is_("entity_id", None)
+                    .gte("txn_date", from_date.isoformat())
+                    .lte("txn_date", to_date.isoformat())
+                    .order("txn_date", desc=False)
+                    .order("created_at", desc=False)
+                    .execute()
             ).data
         else:
             stock_rows = (
                 admin_supabase.table("stock_ledger")
-                .select(
-                    "txn_date, qty_in, qty_out, closing_qty, narration, ops_document_id"
-                )
-                .eq("product_id", product_id)
-                .eq("entity_type", entity_type)
-                .eq("entity_id", entity_id)
-                .gte("txn_date", from_date.isoformat())
-                .lte("txn_date", to_date.isoformat())
-                .order("txn_date", desc=False)
-                .order("created_at", desc=False)
-                .execute()
+                    .select(
+                        "txn_date, qty_in, qty_out, closing_qty, narration, ops_document_id, created_at"
+                    )
+                    .eq("product_id", product_id)
+                    .eq("entity_type", entity_type)
+                    .eq("entity_id", entity_id)
+                    .gte("txn_date", from_date.isoformat())
+                    .lte("txn_date", to_date.isoformat())
+                    .order("txn_date", desc=False)
+                    .order("created_at", desc=False)
+                    .execute()
             ).data
 
         if not stock_rows:
             st.info("No stock ledger entries found.")
             st.stop()
+
 
         # -------------------------
         # FETCH OPS DOCUMENTS (VOUCHER NO)
