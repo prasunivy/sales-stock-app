@@ -2193,6 +2193,7 @@ def run_ops():
                             st.info("Delete cancelled")
                             st.stop()
         st.stop()
+    
     # =========================
     # LEDGER STATEMENT (FINANCIAL LEDGER ONLY)
     # =========================
@@ -2204,8 +2205,7 @@ def run_ops():
         # -------------------------
         party_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
 
-
-        party_name = st.selectbox("Select Party", list(party_map.keys()))
+        party_name = st.selectbox("Select Party (Stockist)", list(party_map.keys()))
         party_id = party_map[party_name]
 
         col1, col2 = st.columns(2)
@@ -2239,29 +2239,40 @@ def run_ops():
             or (float(r.get("credit") or 0) != 0)
         ]
 
-
-        
-        
-        
         if not ledger_rows:
             st.info("No ledger entries found.")
             st.stop()
 
         # -------------------------
-        # FETCH OPS DOCUMENTS (FOR VOUCHER NO)
+        # FETCH OPS DOCUMENTS (FOR INVOICE NO & TYPE)
         # -------------------------
         ops_ids = list({row["ops_document_id"] for row in ledger_rows})
         ops_docs = (
             admin_supabase.table("ops_documents")
-            .select("id, ops_no, reference_no")
+            .select("id, ops_no, reference_no, stock_as, ops_type")
             .in_("id", ops_ids)
             .execute()
         ).data
 
-        ops_map = {
-            o["id"]: f'{o["ops_no"]}{(" / " + o["reference_no"]) if o["reference_no"] else ""}'
-            for o in ops_docs
-        }
+        ops_map = {o["id"]: o for o in ops_docs}
+
+        # -------------------------
+        # FETCH PAYMENT SETTLEMENTS (FOR DISCOUNT COLUMN)
+        # -------------------------
+        payment_settlements = {}
+        if ops_ids:
+            settlements_resp = (
+                admin_supabase.table("payment_settlements")
+                .select("payment_ops_id, amount")
+                .in_("payment_ops_id", ops_ids)
+                .execute()
+            )
+            
+            for s in (settlements_resp.data or []):
+                payment_ops_id = s["payment_ops_id"]
+                if payment_ops_id not in payment_settlements:
+                    payment_settlements[payment_ops_id] = 0
+                payment_settlements[payment_ops_id] += float(s["amount"])
 
         # -------------------------
         # OPENING BALANCE (SYNTHETIC)
@@ -2276,35 +2287,81 @@ def run_ops():
 
         display_rows.append({
             "Date": "",
-            "Voucher No": "",
-            "Particulars": "Opening Balance",
-            "Debit": "",
-            "Credit": "",
+            "Invoice No": "",
+            "Type": "Opening Balance",
+            "Invoice Amount (Debit)": "",
+            "Gross Receipt/Payment (Credit)": "",
             "Discount": "",
-            "Balance": f"{running_balance:,.2f}"
+            "Net Receipt/Payment (Credit)": "",
+            "Balance Due": f"{running_balance:,.2f}"
         })
 
         # -------------------------
         # LEDGER ROWS WITH RUNNING BALANCE
         # -------------------------
         for row in ledger_rows:
-            debit = row["debit"]
-            credit = row["credit"]
+            debit = float(row["debit"])
+            credit = float(row["credit"])
+            
+            # Skip opening balance (already added above)
+            if row["narration"] == "Opening Balance":
+                continue
+
+            ops_doc = ops_map.get(row["ops_document_id"], {})
+            
+            # Determine Type
+            if debit > 0:
+                # Invoice/Debit Note
+                if ops_doc.get("stock_as") == "normal":
+                    txn_type = "Invoice"
+                else:
+                    txn_type = "Adjustment"
+            else:
+                # Payment/Credit Note
+                if "payment" in row["narration"].lower() or "receipt" in row["narration"].lower():
+                    txn_type = "Payment"
+                elif "credit" in row["narration"].lower():
+                    txn_type = "Credit Note"
+                else:
+                    txn_type = "Receipt"
+
+            # Invoice number
+            invoice_no = ops_doc.get("ops_no", "")
+            if ops_doc.get("reference_no"):
+                invoice_no = ops_doc["reference_no"]
+
+            # Gross vs Net (for payments)
+            gross_receipt = ""
+            discount_amt = ""
+            net_receipt = ""
+            
+            if credit > 0:
+                # This is a payment/credit
+                discount_amt = payment_settlements.get(row["ops_document_id"], 0)
+                
+                if discount_amt > 0:
+                    gross_receipt = f"{credit + discount_amt:,.2f}"
+                    discount_amt = f"{discount_amt:,.2f}"
+                    net_receipt = f"{credit:,.2f}"
+                else:
+                    gross_receipt = f"{credit:,.2f}"
+                    net_receipt = f"{credit:,.2f}"
 
             running_balance += debit - credit
 
             display_rows.append({
                 "Date": row["txn_date"],
-                "Voucher No": ops_map.get(row["ops_document_id"], ""),
-                "Particulars": row["narration"],
-                "Debit": f"{debit:,.2f}" if debit else "",
-                "Credit": f"{credit:,.2f}" if credit else "",
-                "Discount": "",
-                "Balance": f"{running_balance:,.2f}"
+                "Invoice No": invoice_no,
+                "Type": txn_type,
+                "Invoice Amount (Debit)": f"{debit:,.2f}" if debit > 0 else "",
+                "Gross Receipt/Payment (Credit)": gross_receipt,
+                "Discount": discount_amt,
+                "Net Receipt/Payment (Credit)": net_receipt,
+                "Balance Due": f"{running_balance:,.2f}"
             })
 
         # -------------------------
-        # LEDGER POLISH (EXCEL STYLE)
+        # LEDGER DISPLAY (EXCEL STYLE)
         # -------------------------
         import pandas as pd
 
@@ -2315,33 +2372,42 @@ def run_ops():
             df["Date"] = df["Date"].astype(str)
 
         # Calculate totals (ignore opening balance row)
-        total_debit = sum(
-            float(r["Debit"].replace(",", ""))
-            for r in display_rows
-            if r["Debit"]
+        total_invoice = sum(
+            float(r["Invoice Amount (Debit)"].replace(",", ""))
+            for r in display_rows[1:]  # Skip opening balance
+            if r["Invoice Amount (Debit)"]
         )
 
-        total_credit = sum(
-            float(r["Credit"].replace(",", ""))
-            for r in display_rows
-            if r["Credit"]
+        total_gross = sum(
+            float(r["Gross Receipt/Payment (Credit)"].replace(",", ""))
+            for r in display_rows[1:]
+            if r["Gross Receipt/Payment (Credit)"]
+        )
+
+        total_discount = sum(
+            float(r["Discount"].replace(",", ""))
+            for r in display_rows[1:]
+            if r["Discount"]
+        )
+
+        total_net = sum(
+            float(r["Net Receipt/Payment (Credit)"].replace(",", ""))
+            for r in display_rows[1:]
+            if r["Net Receipt/Payment (Credit)"]
         )
 
         # Append totals row
         df.loc[len(df)] = {
             "Date": "",
-            "Voucher No": "",
-            "Particulars": "TOTAL",
-            "Debit": f"{total_debit:,.2f}",
-            "Credit": f"{total_credit:,.2f}",
-            "Discount": "",
-            "Balance": ""
+            "Invoice No": "",
+            "Type": "TOTAL",
+            "Invoice Amount (Debit)": f"{total_invoice:,.2f}",
+            "Gross Receipt/Payment (Credit)": f"{total_gross:,.2f}",
+            "Discount": f"{total_discount:,.2f}",
+            "Net Receipt/Payment (Credit)": f"{total_net:,.2f}",
+            "Balance Due": f"{running_balance:,.2f}"
         }
 
-
-
-        
-        
         # Display dataframe
         st.dataframe(
             df,
@@ -2350,57 +2416,22 @@ def run_ops():
         )
 
         # -------------------------
-        # LEDGER ROW EDIT (CONTROLLED)
+        # EXPORT TO EXCEL
         # -------------------------
-        st.divider()
-        st.subheader("✏️ Edit Ledger Entry (Controlled)")
+        from io import BytesIO
 
-        editable_rows = [
-            r for r in ledger_rows
-            if r["narration"] == "Opening Balance"
-        ]
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Ledger Statement')
 
-        if not editable_rows:
-            st.info("No editable ledger entries available.")
-        else:
-            row_map = {
-                f'{r["txn_date"]} | {r["narration"]} | Dr {r["debit"]} Cr {r["credit"]}': r
-                for r in editable_rows
-            }
+        st.download_button(
+            label="📥 Export Ledger to Excel",
+            data=output.getvalue(),
+            file_name=f"ledger_{party_name}_{from_date}_{to_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-            selected_key = st.selectbox(
-                "Select Ledger Entry",
-                list(row_map.keys())
-            )
-
-            selected_row = row_map[selected_key]
-
-            new_debit = st.number_input(
-                "Debit",
-                value=float(selected_row["debit"]),
-                step=0.01
-            )
-            new_credit = st.number_input(
-                "Credit",
-                value=float(selected_row["credit"]),
-                step=0.01
-            )
-            new_narration = st.text_input(
-                "Narration",
-                value=selected_row["narration"]
-            )
-
-            if st.button("💾 Update Ledger Entry"):
-                admin_supabase.table("financial_ledger") \
-                    .update({
-                        "debit": new_debit,
-                        "credit": new_credit,
-                        "narration": new_narration
-                    }) \
-                    .eq("id", selected_row["id"]) \
-                    .execute()
-
-                st.success("✅ Ledger entry updated. Refresh to see changes.")
+    
     # =========================
     # STOCK LEDGER (QUANTITY ONLY)
     # =========================
