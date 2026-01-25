@@ -2465,16 +2465,24 @@ def run_ops():
         # -------------------------
         display_rows = []
 
+        running_qty = 0
+
         for r in stock_rows:
+            qty_in = r["qty_in"] or 0
+            qty_out = r["qty_out"] or 0
+
+            running_qty = running_qty + qty_in - qty_out
+
             display_rows.append({
                 "Date": r["txn_date"],
                 "Voucher No": ops_map.get(r["ops_document_id"], ""),
                 "Product": product_name,
-                "In Qty": r["qty_in"] if r["qty_in"] else "",
-                "Out Qty": r["qty_out"] if r["qty_out"] else "",
-                "Closing Qty": r["closing_qty"],
+                "In Qty": qty_in if qty_in else "",
+                "Out Qty": qty_out if qty_out else "",
+                "Closing Qty": running_qty,
                 "Narration": r["narration"]
             })
+
 
         import pandas as pd
         df_stock = pd.DataFrame(display_rows)
