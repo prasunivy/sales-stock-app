@@ -2232,7 +2232,10 @@ def run_ops():
         # -------------------------
         ledger_rows = [
             r for r in ledger_rows
-            if (r["debit"] or 0) != 0 or (r["credit"] or 0) != 0
+            if float(r.get("debit") or 0) != 0
+            or float(r.get("credit") or 0) != 0
+        ]
+
         if not ledger_rows:
             st.info("No ledger entries found.")
             st.stop()
