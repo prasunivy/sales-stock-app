@@ -2416,20 +2416,71 @@ def run_ops():
         )
 
         # -------------------------
-        # EXPORT TO EXCEL
+        # EXPORT TO PDF (HTML-BASED)
         # -------------------------
-        from io import BytesIO
+        st.divider()
+        
+        if st.button("📥 Download Ledger as PDF (Print)"):
+            # Create HTML for PDF
+            html_content = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                    h2 {{ text-align: center; }}
+                    table {{ width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }}
+                    th {{ background-color: #4CAF50; color: white; padding: 8px; text-align: left; border: 1px solid #ddd; }}
+                    td {{ padding: 8px; border: 1px solid #ddd; }}
+                    tr:nth-child(even) {{ background-color: #f2f2f2; }}
+                    .total-row {{ font-weight: bold; background-color: #e8f5e9; }}
+                </style>
+            </head>
+            <body>
+                <h2>Ledger Statement - {party_name}</h2>
+                <p>Period: {from_date} to {to_date}</p>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Invoice No</th>
+                            <th>Type</th>
+                            <th>Invoice Amount (Debit)</th>
+                            <th>Gross Receipt (Credit)</th>
+                            <th>Discount</th>
+                            <th>Net Receipt (Credit)</th>
+                            <th>Balance Due</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            """
+            
+            for idx, row in enumerate(display_rows):
+                row_class = 'total-row' if row['Type'] == 'TOTAL' else ''
+                html_content += f"""
+                        <tr class="{row_class}">
+                            <td>{row['Date']}</td>
+                            <td>{row['Invoice No']}</td>
+                            <td>{row['Type']}</td>
+                            <td>{row['Invoice Amount (Debit)']}</td>
+                            <td>{row['Gross Receipt/Payment (Credit)']}</td>
+                            <td>{row['Discount']}</td>
+                            <td>{row['Net Receipt/Payment (Credit)']}</td>
+                            <td>{row['Balance Due']}</td>
+                        </tr>
+                """
+            
+            html_content += """
+                    </tbody>
+                </table>
+            </body>
+            </html>
+            """
+            
+            st.components.v1.html(html_content, height=600, scrolling=True)
+            st.info("💡 Use your browser's Print function (Ctrl+P / Cmd+P) and select 'Save as PDF' to download")
 
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Ledger Statement')
-
-        st.download_button(
-            label="📥 Export Ledger to Excel",
-            data=output.getvalue(),
-            file_name=f"ledger_{party_name}_{from_date}_{to_date}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+   
 
     
     # =========================
