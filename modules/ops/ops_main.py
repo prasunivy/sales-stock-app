@@ -2202,7 +2202,8 @@ def run_ops():
         # -------------------------
         # PARTY FILTER (EXCLUDING COMPANY)
         # -------------------------
-        party_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+        party_map = {p["name"]: p["id"] for p in st.session_state.parties_master}
+
         party_name = st.selectbox("Select Party", list(party_map.keys()))
         party_id = party_map[party_name]
 
@@ -2227,15 +2228,21 @@ def run_ops():
             .order("created_at", desc=False)
             .execute()
         ).data
+        
         # -------------------------
-        # REMOVE NON-MONETARY (STOCK) LEDGER ROWS
+        # EXCLUDE OPS STOCK AUDIT ROWS FROM FINANCIAL LEDGER DISPLAY
         # -------------------------
         ledger_rows = [
             r for r in ledger_rows
-            if float(r.get("debit") or 0) != 0
-            or float(r.get("credit") or 0) != 0
+            if not (
+                r.get("narration")
+                and r["narration"].lower().startswith("ops stock")
+            )
         ]
 
+        
+        
+        
         if not ledger_rows:
             st.info("No ledger entries found.")
             st.stop()
