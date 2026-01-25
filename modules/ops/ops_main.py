@@ -2227,7 +2227,12 @@ def run_ops():
             .order("created_at", desc=False)
             .execute()
         ).data
-
+        # -------------------------
+        # REMOVE NON-MONETARY (STOCK) LEDGER ROWS
+        # -------------------------
+        ledger_rows = [
+            r for r in ledger_rows
+            if (r["debit"] or 0) != 0 or (r["credit"] or 0) != 0
         if not ledger_rows:
             st.info("No ledger entries found.")
             st.stop()
