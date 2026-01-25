@@ -1241,6 +1241,7 @@ def run_ops():
                                 "txn_date": date.isoformat(),
                                 "qty_in": qty_in,
                                 "qty_out": qty_out,
+                                "closing_qty": 0,
                                 "narration": f"OPS {stock_direction}"
                             }).execute()
 
