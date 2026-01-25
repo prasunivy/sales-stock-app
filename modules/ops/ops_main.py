@@ -2529,6 +2529,13 @@ def run_ops():
 
         import pandas as pd
         df_stock = pd.DataFrame(display_rows)
+        # 🔒 FORCE DISPLAY ORDER — DO NOT TRUST UI DEFAULTS
+        df_stock["Date"] = pd.to_datetime(df_stock["Date"])
+        df_stock = df_stock.sort_values(
+            by=["Date"],
+            ascending=True,
+            kind="stable"
+        )
 
         st.dataframe(
             df_stock,
