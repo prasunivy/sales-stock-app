@@ -2492,13 +2492,22 @@ def run_ops():
         # -------------------------
         # BUILD DISPLAY ROWS
         # -------------------------
+        
+
         display_rows = []
+
+        # 🔒 ENSURE CHRONOLOGICAL ORDER FOR RUNNING STOCK
+        stock_rows = sorted(
+            stock_rows,
+            key=lambda x: (x["txn_date"], x["created_at"])
+        )
 
         running_qty = 0
 
         for r in stock_rows:
             qty_in = r["qty_in"] or 0
             qty_out = r["qty_out"] or 0
+
 
             running_qty = running_qty + qty_in - qty_out
 
