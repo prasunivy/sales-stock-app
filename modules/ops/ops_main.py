@@ -2442,7 +2442,7 @@ def run_ops():
             stock_rows = (
                 admin_supabase.table("stock_ledger")
                     .select(
-                        "txn_date, qty_in, qty_out, closing_qty, narration, ops_document_id, created_at"
+                        "txn_date, qty_in, qty_out, narration, ops_document_id, created_at"
                     )
                     .eq("product_id", product_id)
                     .eq("entity_type", "Company")
@@ -2457,7 +2457,7 @@ def run_ops():
             stock_rows = (
                 admin_supabase.table("stock_ledger")
                     .select(
-                        "txn_date, qty_in, qty_out, closing_qty, narration, ops_document_id, created_at"
+                        "txn_date, qty_in, qty_out, narration, ops_document_id, created_at"
                     )
                     .eq("product_id", product_id)
                     .eq("entity_type", entity_type)
