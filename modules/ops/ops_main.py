@@ -1217,6 +1217,33 @@ def run_ops():
                             "narration": "OPS stock posting"
                         }).execute()
 
+                        # ---------- STOCK LEDGER INSERT (MISSING FIX) ----------
+                        for p in st.session_state.ops_products:
+
+                            qty = p.get("total_qty", 0)
+
+                            if stock_direction == "Stock Out":
+                                qty_in = 0
+                                qty_out = qty
+                                entity_type = st.session_state.ops_from_entity_type
+                                entity_id = st.session_state.ops_from_entity_id
+                            else:
+                                qty_in = qty
+                                qty_out = 0
+                                entity_type = st.session_state.ops_to_entity_type
+                                entity_id = st.session_state.ops_to_entity_id
+
+                            admin_supabase.table("stock_ledger").insert({
+                                "ops_document_id": ops_document_id,
+                                "product_id": p["product_id"],
+                                "entity_type": entity_type,
+                                "entity_id": entity_id,
+                                "txn_date": date.isoformat(),
+                                "qty_in": qty_in,
+                                "qty_out": qty_out,
+                                "narration": f"OPS {stock_direction}"
+                            }).execute()
+
 
 
 
