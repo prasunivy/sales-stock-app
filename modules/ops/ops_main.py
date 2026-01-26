@@ -70,6 +70,8 @@ def run_ops():
         st.session_state.ops_flow_stage = "LINE1"
     if "ops_allow_reset" not in st.session_state:
         st.session_state.ops_allow_reset = False
+    if "ops_section" not in st.session_state:
+        st.session_state.ops_section = None
 
 
     st.title("📥 Order / Purchase / Sales / Payment")
@@ -245,8 +247,7 @@ def run_ops():
     st.sidebar.subheader("⚙ OPS Menu")
 
     
-    if "ops_section" not in st.session_state:
-        st.session_state.ops_section = None
+    
 
     # =========================
     # DOCUMENT BROWSER
