@@ -528,7 +528,95 @@ def run_ops():
             st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
             st.rerun()
 
-    
+    # =========================
+    # DOCUMENT BROWSER — INVOICE DELETE (CONFIRM)
+    # =========================
+    elif section == "DOCUMENT_BROWSER_INVOICE_DELETE":
+
+        ops_id = st.session_state.get("selected_ops_id")
+
+        if not ops_id:
+            st.error("Invoice not selected")
+            st.stop()
+
+        invoice = admin_supabase.table("ops_documents") \
+            .select("ops_no, ops_date, narration, is_deleted") \
+            .eq("id", ops_id) \
+            .single() \
+            .execute().data
+
+        if not invoice or invoice["is_deleted"]:
+            st.error("Invoice already deleted or not found")
+            st.stop()
+
+        st.subheader("⚠️ Confirm Invoice Deletion")
+
+        st.warning(f"""
+    You are about to delete:
+
+    **Invoice:** {invoice['ops_no']}  
+    **Date:** {invoice['ops_date']}  
+
+    This action:
+    - Cannot be undone
+    - Will affect stock & ledger reports
+    - Will be recorded in audit logs
+    """)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("❌ Cancel"):
+                st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+                st.rerun()
+
+        with col2:
+            if st.button("🗑 Confirm Delete"):
+                # actual delete handled in next step
+                st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE_EXEC"
+                st.rerun()
+
+
+    # =========================
+    # DOCUMENT BROWSER — INVOICE DELETE (EXECUTE)
+    # =========================
+    elif section == "DOCUMENT_BROWSER_INVOICE_DELETE_EXEC":
+
+        ops_id = st.session_state.get("selected_ops_id")
+        admin_id = resolve_user_id()
+
+        if not ops_id:
+            st.error("Invoice not selected")
+            st.stop()
+
+        # ---- Soft delete invoice ----
+        admin_supabase.table("ops_documents").update({
+            "is_deleted": True,
+            "updated_at": datetime.utcnow().isoformat(),
+            "updated_by": admin_id
+        }).eq("id", ops_id).execute()
+
+        # ---- Audit log ----
+        admin_supabase.table("audit_logs").insert({
+            "action": "DELETE_INVOICE",
+            "target_type": "ops_documents",
+            "target_id": ops_id,
+            "performed_by": admin_id,
+            "message": "Invoice deleted via Document Browser",
+            "metadata": {
+                "module": "DOCUMENT_BROWSER",
+                "reason": "Manual delete by admin"
+            }
+        }).execute()
+
+        st.success("✅ Invoice deleted successfully")
+
+        # Cleanup state
+        st.session_state.selected_ops_id = None
+        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+        st.rerun()
+
+
     # =========================
     # OPENING BALANCE (SAVE + EDIT)
     # =========================
@@ -3053,6 +3141,10 @@ def run_ops():
                         st.button("✏️ Edit", disabled=True, key=f"edit_{inv['id']}")
 
                     with b3:
-                        st.button("🗑 Delete", disabled=True, key=f"del_{inv['id']}")
+                        if st.button("🗑 Delete", key=f"del_{inv['id']}"):
+                            st.session_state.selected_ops_id = inv["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                            st.rerun()
+
 
                 st.divider()
