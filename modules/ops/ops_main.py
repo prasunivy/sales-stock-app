@@ -332,6 +332,10 @@ def run_ops():
         st.session_state.ops_section = "PAYMENTS"
         st.rerun()
 
+    if st.sidebar.button("🚚 Freight"):
+        st.session_state.ops_section = "FREIGHT"
+        st.rerun()
+        
     if st.sidebar.button("🔄 Return / Replace"):
         st.session_state.ops_section = "RETURN_REPLACE"
         st.rerun()
@@ -3989,3 +3993,221 @@ This action will:
                 st.exception(e)
 
 
+    # =========================
+    # FREIGHT DEDUCTION
+    # =========================
+    elif section == "FREIGHT":
+        st.subheader("🚚 Freight Deduction Entry")
+        
+        st.info("""
+        **Purpose:** Record freight charges paid by Company/CNF on behalf of stockists.
+        - Freight amount is deducted from stockist's outstanding
+        - Acts as a payment made by the stockist
+        - No specific invoice allocation needed
+        """)
+        
+        # State management
+        if "freight_submit_done" not in st.session_state:
+            st.session_state.freight_submit_done = False
+        if "freight_delete_confirm" not in st.session_state:
+            st.session_state.freight_delete_confirm = False
+        if "last_freight_ops_id" not in st.session_state:
+            st.session_state.last_freight_ops_id = None
+        
+        # POST-SUBMIT ACTIONS
+        if st.session_state.freight_submit_done:
+            st.success("✅ Freight deduction recorded successfully")
+            
+            st.divider()
+            st.subheader("🛠 What would you like to do next?")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("➕ New Freight Entry", type="primary"):
+                    st.session_state.freight_submit_done = False
+                    st.session_state.freight_delete_confirm = False
+                    st.session_state.last_freight_ops_id = None
+                    st.rerun()
+            
+            with col2:
+                if not st.session_state.freight_delete_confirm:
+                    if st.button("🗑 Delete This Entry"):
+                        st.session_state.freight_delete_confirm = True
+                        st.rerun()
+                else:
+                    st.warning("⚠️ This will permanently delete the freight entry. Confirm?")
+                    
+                    col_no, col_yes = st.columns(2)
+                    
+                    with col_no:
+                        if st.button("❌ No, Cancel"):
+                            st.session_state.freight_delete_confirm = False
+                            st.rerun()
+                    
+                    with col_yes:
+                        if st.button("✅ Yes, Delete", type="primary"):
+                            try:
+                                ops_id = st.session_state.last_freight_ops_id
+                                user_id = resolve_user_id()
+                                
+                                # Audit log
+                                admin_supabase.table("audit_logs").insert({
+                                    "action": "DELETE_FREIGHT",
+                                    "target_type": "ops_documents",
+                                    "target_id": ops_id,
+                                    "performed_by": user_id,
+                                    "message": "Freight entry deleted by admin",
+                                    "metadata": {"ops_document_id": ops_id}
+                                }).execute()
+                                
+                                # Delete records
+                                admin_supabase.table("financial_ledger").delete().eq("ops_document_id", ops_id).execute()
+                                admin_supabase.table("ops_documents").delete().eq("id", ops_id).execute()
+                                
+                                st.success("✅ Freight entry deleted successfully")
+                                
+                                # Reset state
+                                st.session_state.freight_submit_done = False
+                                st.session_state.freight_delete_confirm = False
+                                st.session_state.last_freight_ops_id = None
+                                st.rerun()
+                            
+                            except Exception as e:
+                                st.error("❌ Failed to delete freight entry")
+                                st.exception(e)
+            
+            st.stop()
+        
+        # -------------------------
+        # FREIGHT ENTRY FORM
+        # -------------------------
+        
+        # Date selection
+        freight_date = st.date_input(
+            "Freight Date",
+            help="Date when freight was incurred"
+        )
+        
+        # Stockist selection
+        stockist_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+        
+        if not stockist_map:
+            st.warning("No stockists found. Please create stockists first.")
+            st.stop()
+        
+        stockist_name = st.selectbox(
+            "Select Stockist",
+            list(stockist_map.keys()),
+            help="Stockist for whom freight was paid"
+        )
+        stockist_id = stockist_map[stockist_name]
+        
+        # Amount entry
+        freight_amount = st.number_input(
+            "Freight Amount (₹)",
+            min_value=0.0,
+            step=0.01,
+            help="Amount of freight paid by Company/CNF"
+        )
+        
+        # Reference and narration
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            reference_no = st.text_input(
+                "Reference No (Optional)",
+                help="LR number, transport receipt, etc."
+            )
+        
+        with col2:
+            narration = st.text_area(
+                "Narration",
+                value="Freight deduction",
+                help="Additional details about the freight"
+            )
+        
+        st.divider()
+        
+        # -------------------------
+        # PREVIEW
+        # -------------------------
+        st.subheader("📋 Preview")
+        
+        st.write(f"**Stockist:** {stockist_name}")
+        st.write(f"**Date:** {freight_date}")
+        st.write(f"**Amount:** ₹{freight_amount:,.2f}")
+        st.write(f"**Reference:** {reference_no or '-'}")
+        st.write(f"**Narration:** {narration}")
+        
+        st.info(f"""
+        **Impact on Ledger:**
+        - Stockist's outstanding will be **reduced** by ₹{freight_amount:,.2f}
+        - This is treated as a **payment** made by the stockist
+        - Will appear in ledger as "Freight Deduction"
+        """)
+        
+        st.divider()
+        
+        # -------------------------
+        # FINAL SUBMIT
+        # -------------------------
+        if st.button("✅ Submit Freight Entry", type="primary"):
+            if freight_amount <= 0:
+                st.error("❌ Freight amount must be greater than zero")
+                st.stop()
+            
+            try:
+                user_id = resolve_user_id()
+                
+                if not user_id:
+                    st.error("❌ Invalid user session. Please login again.")
+                    st.stop()
+                
+                # Create OPS document for freight
+                freight_ops = admin_supabase.table("ops_documents").insert({
+                    "ops_no": f"FREIGHT-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                    "ops_date": freight_date.isoformat(),
+                    "ops_type": "ADJUSTMENT",
+                    "stock_as": "adjustment",
+                    "direction": "ADJUST",
+                    "narration": narration,
+                    "reference_no": reference_no,
+                    "created_by": user_id
+                }).execute()
+                
+                freight_ops_id = freight_ops.data[0]["id"]
+                
+                # Insert into financial ledger as CREDIT (reduces outstanding)
+                # Credit = Payment received from stockist's perspective
+                admin_supabase.table("financial_ledger").insert({
+                    "ops_document_id": freight_ops_id,
+                    "party_id": stockist_id,
+                    "txn_date": freight_date.isoformat(),
+                    "debit": 0,
+                    "credit": freight_amount,
+                    "closing_balance": 0,
+                    "narration": f"Freight deduction - {narration}"
+                }).execute()
+                
+                # Audit log
+                admin_supabase.table("audit_logs").insert({
+                    "action": "CREATE_FREIGHT",
+                    "target_type": "ops_documents",
+                    "target_id": freight_ops_id,
+                    "performed_by": user_id,
+                    "message": f"Freight entry created for {stockist_name}",
+                    "metadata": {
+                        "stockist_id": stockist_id,
+                        "amount": freight_amount,
+                        "reference_no": reference_no
+                    }
+                }).execute()
+                
+                st.session_state.freight_submit_done = True
+                st.session_state.last_freight_ops_id = freight_ops_id
+                st.rerun()
+            
+            except Exception as e:
+                st.error("❌ Failed to submit freight entry")
+                st.exception(e)
