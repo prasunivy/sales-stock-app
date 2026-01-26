@@ -1268,7 +1268,7 @@ def run_ops():
                                 # Stock In - only create entry if NOT Sample/Lot
                                 if stock_as not in ["Sample", "Lot"]:
                                     admin_supabase.table("stock_ledger").insert({
-                                "ops_document_id": ops_document_id,
+                                        "ops_document_id": ops_document_id,
                                         "product_id": p["product_id"],
                                         "entity_type": st.session_state.ops_to_entity_type,
                                         "entity_id": st.session_state.ops_to_entity_id,
