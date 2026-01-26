@@ -1528,6 +1528,18 @@ def run_ops():
                         st.success("✅ OPS document saved successfully")
                         st.session_state.ops_submit_done = True
 
+                        if st.session_state.edit_source_ops_id:
+                            admin_supabase.table("audit_logs").insert({
+                                "action": "EDIT_INVOICE",
+                                "target_type": "ops_documents",
+                                "target_id": st.session_state.edit_source_ops_id,
+                                "performed_by": resolve_user_id(),
+                                "message": "Invoice edited — new OPS document created",
+                                "metadata": {
+                                    "new_ops_no": response.data[0]["ops_no"]
+                                }
+                            }).execute()
+
                         
 
 
