@@ -441,6 +441,92 @@ def run_ops():
 
 
 
+    # =========================
+    # DOCUMENT BROWSER — INVOICE VIEW (READ ONLY)
+    # =========================
+    elif section == "DOCUMENT_BROWSER_INVOICE_VIEW":
+
+        ops_id = st.session_state.get("selected_ops_id")
+
+        if not ops_id:
+            st.error("Invoice not found")
+            st.stop()
+
+        # -------- Fetch Invoice Header --------
+        invoice = admin_supabase.table("ops_documents") \
+            .select("*") \
+            .eq("id", ops_id) \
+            .eq("is_deleted", False) \
+            .single() \
+            .execute().data
+
+        if not invoice:
+            st.error("Invoice does not exist or was deleted")
+            st.stop()
+
+        st.subheader(f"🧾 Invoice View — {invoice['ops_no']}")
+
+        # -------- Header Details --------
+        st.markdown(f"""
+    **Date:** {invoice['ops_date']}  
+    **Reference:** {invoice.get('reference_no') or '-'}  
+    **Narration:** {invoice.get('narration')}
+    """)
+
+        st.divider()
+
+        # -------- Fetch Line Items --------
+        lines = admin_supabase.table("ops_lines") \
+            .select("*") \
+            .eq("ops_document_id", ops_id) \
+            .execute().data or []
+
+        total_gross = total_tax = total_discount = total_net = 0
+
+        for line in lines:
+            total_gross += line["gross_amount"]
+            total_tax += line["tax_amount"]
+            total_discount += line["discount_amount"]
+            total_net += line["net_amount"]
+
+            with st.container():
+                c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
+
+                with c1:
+                    product = next(
+                        (p["name"] for p in st.session_state.products_master if p["id"] == line["product_id"]),
+                        "Unknown Product"
+                    )
+                    st.write(product)
+
+                with c2:
+                    st.write(f"Sale: {line['sale_qty']}")
+
+                with c3:
+                    st.write(f"Free: {line['free_qty']}")
+
+                with c4:
+                    st.write(f"Gross: ₹{line['gross_amount']:,.2f}")
+
+                with c5:
+                    st.write(f"Net: ₹{line['net_amount']:,.2f}")
+
+        st.divider()
+
+        # -------- Totals --------
+        st.markdown(f"""
+    ### 💰 Totals
+    - **Gross:** ₹ {total_gross:,.2f}
+    - **Tax:** ₹ {total_tax:,.2f}
+    - **Discount:** ₹ {total_discount:,.2f}
+    - **Net Amount:** ₹ {total_net:,.2f}
+    """)
+
+        st.divider()
+
+        if st.button("⬅ Back to Invoice List"):
+            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+            st.rerun()
 
     
     # =========================
@@ -2955,8 +3041,13 @@ def run_ops():
                 with c4:
                     b1, b2, b3 = st.columns(3)
 
+                    
                     with b1:
-                        st.button("👁 View", disabled=True, key=f"view_{inv['id']}")
+                        if st.button("👁 View", key=f"view_{inv['id']}"):
+                            st.session_state.selected_ops_id = inv["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
+                            st.rerun()
+
 
                     with b2:
                         st.button("✏️ Edit", disabled=True, key=f"edit_{inv['id']}")
