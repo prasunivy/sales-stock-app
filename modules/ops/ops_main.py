@@ -3118,13 +3118,16 @@ def run_ops():
                 c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
 
                 with c1:
-                    st.write(f"📄 **{inv['ops_no']}**")
+                    
+                    st.write(f"📄 **OPS No:** {inv['ops_no']}")
+
 
                 with c2:
                     st.write(inv["ops_date"])
 
                 with c3:
-                    st.write(f"Ref: {inv.get('reference_no') or '-'}")
+                    
+                    st.write(f"**Invoice Ref:** {inv.get('reference_no') or '-'}")
 
                 with c4:
                     b1, b2, b3 = st.columns(3)
