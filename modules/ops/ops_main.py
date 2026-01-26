@@ -2490,6 +2490,9 @@ def run_ops():
         display_rows = []
         running_balance = opening_balance
 
+        total_debit = 0.0
+        total_credit = 0.0
+
         display_rows.append({
             "Date": "",
             "Invoice No": "",
