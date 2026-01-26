@@ -244,9 +244,21 @@ def run_ops():
     # =========================
     st.sidebar.subheader("⚙ OPS Menu")
 
+    
     if "ops_section" not in st.session_state:
         st.session_state.ops_section = None
 
+    # =========================
+    # DOCUMENT BROWSER
+    # =========================
+    st.sidebar.subheader("📂 Documents")
+
+    if st.sidebar.button("🧾 Invoices"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+        st.rerun()
+
+
+    
     if st.sidebar.button("📦 Opening Stock"):
         st.session_state.ops_section = "OPENING_STOCK"
         st.rerun()
@@ -299,8 +311,7 @@ def run_ops():
         st.session_state.ops_section = "RETURN_REPLACE"
         st.rerun()
 
-    section = st.session_state.ops_section
-
+    
     section = st.session_state.ops_section
 
     if not section:
@@ -2906,3 +2917,28 @@ def run_ops():
         
 
     
+   
+    # =========================
+    # DOCUMENT BROWSER — INVOICES
+    # =========================
+    elif section == "DOCUMENT_BROWSER_INVOICES":
+
+        st.subheader("🧾 Invoice Register")
+
+        invoices = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, created_at") \
+            .eq("ops_type", "STOCK_OUT") \
+            .eq("stock_as", "normal") \
+            .eq("is_deleted", False) \
+            .order("ops_date", desc=True) \
+            .execute().data
+
+        if not invoices:
+            st.info("No invoices found")
+            st.stop()
+
+        for inv in invoices:
+        ...
+        
+elif section == "RETURN_REPLACE":
+    ...
