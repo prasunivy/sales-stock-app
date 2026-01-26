@@ -279,8 +279,11 @@ def run_ops():
     if st.sidebar.button("🛒 Purchases"):
         st.session_state.ops_section = "DOCUMENT_BROWSER_PURCHASES"
         st.rerun()
-
     
+
+    if st.sidebar.button("🚚 Freight Entries"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_FREIGHT"
+        st.rerun()
     
 
     
@@ -3068,8 +3071,10 @@ This action will:
                 else:
                     txn_type = "Adjustment"
             else:
-                # Payment/Credit Note
-                if "payment" in row["narration"].lower() or "receipt" in row["narration"].lower():
+                # Payment/Credit Note/Freight
+                if "freight" in row["narration"].lower():
+                    txn_type = "Freight"
+                elif "payment" in row["narration"].lower() or "receipt" in row["narration"].lower():
                     txn_type = "Payment"
                 elif "credit" in row["narration"].lower():
                     txn_type = "Credit Note"
@@ -3653,7 +3658,149 @@ This action will:
                         st.rerun()
 
                 st.divider()
+    # ========================
+    # DOCUMENT BROWSER — FREIGHT
+    # =========================
+    elif section == "DOCUMENT_BROWSER_FREIGHT":
+        st.subheader("🚚 Freight Register")
 
+        # Date filter
+        col1, col2 = st.columns(2)
+        with col1:
+            from_date = st.date_input("From Date", key="freight_from")
+        with col2:
+            to_date = st.date_input("To Date", key="freight_to")
+
+        docs = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, narration") \
+            .ilike("narration", "%freight%") \
+            .gte("ops_date", from_date.isoformat()) \
+            .lte("ops_date", to_date.isoformat()) \
+            .eq("is_deleted", False) \
+            .order("ops_date", desc=True) \
+            .execute().data
+
+        if not docs:
+            st.info("No freight entries found")
+            st.stop()
+
+        total_freight = 0
+
+        for doc in docs:
+            # Get freight amount from financial ledger
+            ledger = admin_supabase.table("financial_ledger") \
+                .select("credit, party_id") \
+                .eq("ops_document_id", doc["id"]) \
+                .single() \
+                .execute().data
+
+            if ledger:
+                freight_amt = ledger["credit"]
+                total_freight += float(freight_amt)
+
+                # Get stockist name
+                stockist_name = "Unknown"
+                if ledger["party_id"]:
+                    stockist = next(
+                        (s for s in st.session_state.stockists_master if s["id"] == ledger["party_id"]),
+                        None
+                    )
+                    if stockist:
+                        stockist_name = stockist["name"]
+
+                with st.container():
+                    c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
+
+                    with c1:
+                        st.write(f"🚚 **{doc['ops_no']}**")
+
+                    with c2:
+                        st.write(doc["ops_date"])
+
+                    with c3:
+                        st.write(f"**{stockist_name}**")
+
+                    with c4:
+                        st.write(f"₹{freight_amt:,.2f}")
+
+                    # Show reference and narration in expandable section
+                    with st.expander("View Details"):
+                        st.write(f"**Reference:** {doc.get('reference_no') or '-'}")
+                        st.write(f"**Narration:** {doc.get('narration', '-')}")
+                        
+                        # Delete button
+                        if st.button("🗑 Delete", key=f"del_freight_{doc['id']}"):
+                            try:
+                                user_id = resolve_user_id()
+                                
+                                # Audit log
+                                admin_supabase.table("audit_logs").insert({
+                                    "action": "DELETE_FREIGHT",
+                                    "target_type": "ops_documents",
+                                    "target_id": doc["id"],
+                                    "performed_by": user_id,
+                                    "message": "Freight entry deleted from register"
+                                }).execute()
+                                
+                                # Delete records
+                                admin_supabase.table("financial_ledger").delete().eq("ops_document_id", doc["id"]).execute()
+                                admin_supabase.table("ops_documents").delete().eq("id", doc["id"]).execute()
+                                
+                                st.success("✅ Freight entry deleted")
+                                st.rerun()
+                            except Exception as e:
+                                st.error("❌ Failed to delete")
+                                st.exception(e)
+
+                    st.divider()
+
+        # Total summary
+        st.markdown(f"### 💰 Total Freight: ₹{total_freight:,.2f}")
+
+        # Export to Excel
+        st.divider()
+        if docs:
+            import pandas as pd
+            from io import BytesIO
+
+            export_data = []
+            for doc in docs:
+                ledger = admin_supabase.table("financial_ledger") \
+                    .select("credit, party_id") \
+                    .eq("ops_document_id", doc["id"]) \
+                    .single() \
+                    .execute().data
+
+                stockist_name = "Unknown"
+                if ledger and ledger["party_id"]:
+                    stockist = next(
+                        (s for s in st.session_state.stockists_master if s["id"] == ledger["party_id"]),
+                        None
+                    )
+                    if stockist:
+                        stockist_name = stockist["name"]
+
+                export_data.append({
+                    "Date": doc["ops_date"],
+                    "Freight No": doc["ops_no"],
+                    "Stockist": stockist_name,
+                    "Amount": float(ledger["credit"]) if ledger else 0,
+                    "Reference": doc.get("reference_no") or "-",
+                    "Narration": doc.get("narration", "-")
+                })
+
+            df = pd.DataFrame(export_data)
+            
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name="Freight Register")
+
+            st.download_button(
+                label="📥 Export to Excel",
+                data=output.getvalue(),
+                file_name=f"freight_register_{from_date}_to_{to_date}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
     # =========================
     # RETURN / REPLACE
     # =========================
