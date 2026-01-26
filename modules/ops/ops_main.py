@@ -255,6 +255,10 @@ def run_ops():
         st.session_state.ops_section = "OPENING_BALANCE"
         st.rerun()
 
+    if st.sidebar.button("💰 Party Balance"):
+        st.session_state.ops_section = "PARTY_BALANCE"
+        st.rerun()
+
     if st.sidebar.button("📒 Ledger"):
         st.session_state.ops_section = "LEDGER"
         st.rerun()
@@ -290,6 +294,12 @@ def run_ops():
     if st.sidebar.button("💳 Payments"):
         st.session_state.ops_section = "PAYMENTS"
         st.rerun()
+
+    if st.sidebar.button("🔄 Return / Replace"):
+        st.session_state.ops_section = "RETURN_REPLACE"
+        st.rerun()
+
+    section = st.session_state.ops_section
 
     section = st.session_state.ops_section
 
@@ -624,14 +634,16 @@ def run_ops():
             # ✅ DEFINE STOCK AS OPTIONS EARLY (STREAMLIT SAFE)
             if stock_direction == "Stock Out":
                 stock_as_options = [
-                    "Invoice", "Sample", "Lot", "Destroyed", "Return to Purchaser"
+                    "Invoice", "Transfer", "Sample", "Lot", "Damage", "Return to Purchaser"
                 ]
             else:
                 stock_as_options = [
-                    "Purchase", "Credit Note", "Return"
+                    "Purchase", "Credit Note", "Return", "Replace"
                 ]
 
         # Line-1 entity universe
+
+        
         # 🔒 LOCK LINE-1 AFTER LINE-2 STARTS
         # 🔒 LOCK LINE-1 ONLY AFTER LINE-2 IS COMPLETE
         line1_locked = st.session_state.ops_line2_complete is True
@@ -1217,34 +1229,44 @@ def run_ops():
                             "narration": "OPS stock posting"
                         }).execute()
 
-                        # ---------- STOCK LEDGER INSERT (MISSING FIX) ----------
+                        
+                        # ---------- STOCK LEDGER INSERT (EXCLUDE SAMPLE/LOT FOR RECEIVER) ----------
+                        # Sample/Lot: Stock OUT from sender, NO stock IN for receiver
+                        
                         for p in st.session_state.ops_products:
-
                             qty = p.get("total_qty", 0)
 
+                            # ✅ SENDER SIDE (always create stock_ledger entry)
                             if stock_direction == "Stock Out":
-                                qty_in = 0
-                                qty_out = qty
-                                entity_type = st.session_state.ops_from_entity_type
-                                entity_id = st.session_state.ops_from_entity_id
-                            else:
-                                qty_in = qty
-                                qty_out = 0
-                                entity_type = st.session_state.ops_to_entity_type
-                                entity_id = st.session_state.ops_to_entity_id
+                                admin_supabase.table("stock_ledger").insert({
+                                    "ops_document_id": ops_document_id,
+                                    "product_id": p["product_id"],
+                                    "entity_type": st.session_state.ops_from_entity_type,
+                                    "entity_id": st.session_state.ops_from_entity_id,
+                                    "txn_date": date.isoformat(),
+                                    "qty_in": 0,
+                                    "qty_out": qty,
+                                    "closing_qty": 0,
+                                    "direction": "OUT",
+                                    "narration": f"OPS {stock_direction} - {stock_as}"
+                                }).execute()
 
-                            admin_supabase.table("stock_ledger").insert({
+                            # ✅ RECEIVER SIDE (skip if Sample/Lot)
+                            else:
+                                # Stock In - only create entry if NOT Sample/Lot
+                                if stock_as not in ["Sample", "Lot"]:
+                                    admin_supabase.table("stock_ledger").insert({
                                 "ops_document_id": ops_document_id,
-                                "product_id": p["product_id"],
-                                "entity_type": entity_type,
-                                "entity_id": entity_id,
-                                "txn_date": date.isoformat(),
-                                "qty_in": qty_in,
-                                "qty_out": qty_out,
-                                "closing_qty": 0,
-                                "direction": "OUT" if stock_direction == "Stock Out" else "IN",
-                                "narration": f"OPS {stock_direction}"
-                            }).execute()
+                                        "product_id": p["product_id"],
+                                        "entity_type": st.session_state.ops_to_entity_type,
+                                        "entity_id": st.session_state.ops_to_entity_id,
+                                        "txn_date": date.isoformat(),
+                                        "qty_in": qty,
+                                        "qty_out": 0,
+                                        "closing_qty": 0,
+                                        "direction": "IN",
+                                        "narration": f"OPS {stock_direction} - {stock_as}"
+                                    }).execute()
 
 
 
@@ -2195,6 +2217,189 @@ def run_ops():
         st.stop()
     
     # =========================
+    # PARTY BALANCE SUMMARY
+    # =========================
+    elif section == "PARTY_BALANCE":
+        st.subheader("📊 Party Balance & Stock Summary")
+        
+        # -------------------------
+        # FILTERS
+        # -------------------------
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            filter_level = st.selectbox(
+                "View By",
+                ["Company (All)", "CNF", "User"]
+            )
+        
+        with col2:
+            as_on_date = st.date_input("As on Date")
+        
+        with col3:
+            report_type = st.radio(
+                "Report Type",
+                ["Both", "Financial Only", "Stock Only"],
+                horizontal=True
+            )
+        
+        # Entity filter based on level
+        stockist_ids = []
+        
+        if filter_level == "CNF":
+            cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+            if not cnf_map:
+                st.warning("No CNFs found")
+                st.stop()
+            selected_cnf_name = st.selectbox("Select CNF", list(cnf_map.keys()))
+            selected_cnf_id = cnf_map[selected_cnf_name]
+            
+            user_ids = [
+                m["user_id"] for m in st.session_state.cnf_user_map
+                if m["cnf_id"] == selected_cnf_id
+            ]
+            
+            stockist_ids = [
+                m["stockist_id"] for m in st.session_state.user_stockist_map
+                if m["user_id"] in user_ids
+            ]
+            
+        elif filter_level == "User":
+            user_map = {u["username"]: u["id"] for u in st.session_state.users_master}
+            if not user_map:
+                st.warning("No users found")
+                st.stop()
+            selected_user_name = st.selectbox("Select User", list(user_map.keys()))
+            selected_user_id = user_map[selected_user_name]
+            
+            stockist_ids = [
+                m["stockist_id"] for m in st.session_state.user_stockist_map
+                if m["user_id"] == selected_user_id
+            ]
+            
+        else:  # Company (All)
+            stockist_ids = [s["id"] for s in st.session_state.stockists_master]
+        
+        if not stockist_ids:
+            st.warning("No stockists found for selected filter")
+            st.stop()
+        
+        st.divider()
+        
+        # -------------------------
+        # BUILD SUMMARY
+        # -------------------------
+        summary_data = []
+        
+        for stockist_id in stockist_ids:
+            stockist_name = next(
+                (s["name"] for s in st.session_state.stockists_master if s["id"] == stockist_id),
+                "Unknown"
+            )
+            
+            row = {"Stockist": stockist_name}
+            
+            # FINANCIAL BALANCE
+            if report_type in ["Both", "Financial Only"]:
+                ledger_rows = (
+                    admin_supabase.table("financial_ledger")
+                    .select("debit, credit")
+                    .eq("party_id", stockist_id)
+                    .lte("txn_date", as_on_date.isoformat())
+                    .execute()
+                ).data
+                
+                total_debit = sum(float(r["debit"] or 0) for r in ledger_rows)
+                total_credit = sum(float(r["credit"] or 0) for r in ledger_rows)
+                outstanding = total_debit - total_credit
+                
+                row["Outstanding (₹)"] = f"{outstanding:,.2f}"
+            
+            # STOCK POSITION
+            if report_type in ["Both", "Stock Only"]:
+                stock_rows = (
+                    admin_supabase.table("stock_ledger")
+                    .select("product_id, qty_in, qty_out")
+                    .eq("entity_type", "Stockist")
+                    .eq("entity_id", stockist_id)
+                    .lte("txn_date", as_on_date.isoformat())
+                    .execute()
+                ).data
+                
+                product_stock = {}
+                for r in stock_rows:
+                    pid = r["product_id"]
+                    if pid not in product_stock:
+                        product_stock[pid] = 0
+                    product_stock[pid] += float(r["qty_in"] or 0) - float(r["qty_out"] or 0)
+                
+                stock_details = []
+                for pid, qty in product_stock.items():
+                    if qty != 0:
+                        product_name = next(
+                            (p["name"] for p in st.session_state.products_master if p["id"] == pid),
+                            "Unknown"
+                        )
+                        stock_details.append(f"{product_name}: {qty:.0f}")
+                
+                row["Stock Details"] = " | ".join(stock_details) if stock_details else "No Stock"
+            
+            summary_data.append(row)
+        
+        # -------------------------
+        # DISPLAY SUMMARY
+        # -------------------------
+        if summary_data:
+            import pandas as pd
+            df_summary = pd.DataFrame(summary_data)
+            
+            st.dataframe(
+                df_summary,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # TOTALS
+            if report_type in ["Both", "Financial Only"]:
+                total_outstanding = sum(
+                    float(r["Outstanding (₹)"].replace(",", ""))
+                    for r in summary_data
+                    if "Outstanding (₹)" in r
+                )
+                st.markdown(f"### 💰 Total Outstanding: ₹ {total_outstanding:,.2f}")
+            
+            # -------------------------
+            # WHATSAPP EXPORT
+            # -------------------------
+            st.divider()
+            
+            whatsapp_text = f"PARTY BALANCE SUMMARY\nAs on: {as_on_date}\nFilter: {filter_level}\n\n"
+            
+            for row in summary_data[:10]:  # First 10 only
+                whatsapp_text += f"{row['Stockist']}\n"
+                if "Outstanding (₹)" in row:
+                    whatsapp_text += f"Outstanding: {row['Outstanding (₹)']}\n"
+                if "Stock Details" in row:
+                    whatsapp_text += f"Stock: {row['Stock Details'][:50]}...\n"
+                whatsapp_text += "\n"
+            
+            if report_type in ["Both", "Financial Only"]:
+                whatsapp_text += f"\nTotal Outstanding: ₹{total_outstanding:,.2f}"
+            
+            whatsapp_url = (
+                "https://wa.me/?text="
+                + whatsapp_text.replace(" ", "%20").replace("\n", "%0A")
+            )
+            
+            st.markdown(
+                f"[📲 Send Summary on WhatsApp]({whatsapp_url})",
+                unsafe_allow_html=True
+            )
+        else:
+            st.info("No data found")
+
+    
+    # =========================
     # LEDGER STATEMENT (FINANCIAL LEDGER ONLY)
     # =========================
     elif section == "LEDGER":
@@ -2408,12 +2613,39 @@ def run_ops():
             "Balance Due": f"{running_balance:,.2f}"
         }
 
+        
         # Display dataframe
         st.dataframe(
             df,
             use_container_width=True,
             hide_index=True
         )
+
+        # -------------------------
+        # WHATSAPP EXPORT (FINANCIAL LEDGER)
+        # -------------------------
+        st.divider()
+        
+        whatsapp_text = (
+            f"LEDGER STATEMENT\n"
+            f"Party: {party_name}\n"
+            f"Period: {from_date} to {to_date}\n"
+            f"Closing Balance: {running_balance:,.2f}\n\n"
+            f"Summary:\n"
+            f"Total Debit: {total_debit:,.2f}\n"
+            f"Total Credit: {total_credit:,.2f}\n"
+        )
+        
+        whatsapp_url = (
+            "https://wa.me/?text="
+            + whatsapp_text.replace(" ", "%20").replace("\n", "%0A")
+        )
+        
+        st.markdown(
+            f"[📲 Send Ledger on WhatsApp]({whatsapp_url})",
+            unsafe_allow_html=True
+        )
+
 
         # -------------------------
         # EXPORT TO PDF (HTML-BASED)
@@ -2634,12 +2866,40 @@ def run_ops():
             kind="stable"
         )
 
+
+
         st.dataframe(
             df_stock,
             use_container_width=True,
             hide_index=True
         )
 
-
+        # -------------------------
+        # WHATSAPP EXPORT (STOCK LEDGER)
+        # -------------------------
+        st.divider()
+        
+        whatsapp_text = (
+            f"STOCK LEDGER REPORT\n"
+            f"Entity: {entity_type} - {entity_name}\n"
+            f"Product: {product_name}\n"
+            f"Period: {from_date} to {to_date}\n"
+            f"Closing Stock: {running_qty:.0f}\n\n"
+            f"Details:\n"
+        )
+        
+        for row in display_rows[:10]:  # First 10 rows only
+            whatsapp_text += f"{row['Date']} | In: {row['In Qty']} | Out: {row['Out Qty']} | Closing: {row['Closing Qty']}\n"
+        
+        whatsapp_url = (
+            "https://wa.me/?text="
+            + whatsapp_text.replace(" ", "%20").replace("\n", "%0A")
+        )
+        
+        st.markdown(
+            f"[📲 Send Stock Ledger on WhatsApp]({whatsapp_url})",
+            unsafe_allow_html=True
+        )
         
 
+    
