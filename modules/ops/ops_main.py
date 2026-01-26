@@ -569,6 +569,32 @@ def run_ops():
             .eq("ops_document_id", source_ops_id) \
             .execute().data or []
 
+        st.subheader(f"✏️ Edit Invoice — {old_invoice['ops_no']}")
+
+        st.info("This will create a new invoice and lock the old one.")
+
+        # =========================
+        # PREFILL OPS SESSION STATE
+        # =========================
+        st.session_state.ops_from_entity_type = old_invoice["reference_type"]
+        st.session_state.ops_from_entity_id = old_invoice.get("from_entity_id")
+
+        st.session_state.ops_to_entity_type = old_invoice.get("to_entity_type")
+        st.session_state.ops_to_entity_id = old_invoice.get("to_entity_id")
+
+        st.session_state.ops_products = old_lines.copy()
+
+        st.session_state.ops_amounts = {
+            "gross": sum(l["gross_amount"] for l in old_lines),
+            "tax": sum(l["tax_amount"] for l in old_lines),
+            "discount": sum(l["discount_amount"] for l in old_lines),
+            "net": sum(l["net_amount"] for l in old_lines),
+        }
+
+        if st.button("➡️ Continue to Edit"):
+            st.session_state.ops_section = "STOCK_FLOW"
+            st.rerun()
+
     
     # =========================
     # DOCUMENT BROWSER — INVOICE DELETE (CONFIRM)
