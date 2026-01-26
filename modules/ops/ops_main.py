@@ -264,6 +264,24 @@ def run_ops():
         st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
         st.rerun()
 
+    if st.sidebar.button("📝 Credit Notes"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_CREDIT_NOTES"
+        st.rerun()
+
+    if st.sidebar.button("🔄 Transfers"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFERS"
+        st.rerun()
+
+    if st.sidebar.button("🎁 Samples & Lots"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_SAMPLES"
+        st.rerun()
+
+    if st.sidebar.button("🛒 Purchases"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_PURCHASES"
+        st.rerun()
+
+    
+    
 
     
     if st.sidebar.button("📦 Opening Stock"):
@@ -528,11 +546,144 @@ def run_ops():
     - **Net Amount:** ₹ {total_net:,.2f}
     """)
 
+        
         st.divider()
+
+        # -------------------------
+        # CANCEL INVOICE OPTION
+        # -------------------------
+        if st.button("❌ Cancel This Invoice", type="secondary"):
+            st.session_state.selected_ops_id = ops_id
+            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_CANCEL"
+            st.rerun()
 
         if st.button("⬅ Back to Invoice List"):
             st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
             st.rerun()
+
+    # =========================
+    # DOCUMENT BROWSER — INVOICE CANCEL (CONFIRM)
+    # =========================
+    elif section == "DOCUMENT_BROWSER_INVOICE_CANCEL":
+
+        ops_id = st.session_state.get("selected_ops_id")
+
+        if not ops_id:
+            st.error("Invoice not selected")
+            st.stop()
+
+        invoice = admin_supabase.table("ops_documents") \
+            .select("ops_no, ops_date, narration, is_deleted") \
+            .eq("id", ops_id) \
+            .single() \
+            .execute().data
+
+        if not invoice or invoice["is_deleted"]:
+            st.error("Invoice already deleted or not found")
+            st.stop()
+
+        st.subheader("⚠️ Cancel Invoice (Create Reverse Entry)")
+
+        st.warning(f"""
+You are about to CANCEL:
+
+**Invoice:** {invoice['ops_no']}  
+**Date:** {invoice['ops_date']}  
+
+This action will:
+- Create a **reverse entry** to nullify stock & financial impact
+- Mark original invoice as CANCELLED
+- Record in audit logs
+""")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("❌ No, Go Back"):
+                st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+                st.rerun()
+
+        with col2:
+            if st.button("✅ Confirm Cancel Invoice", type="primary"):
+                try:
+                    admin_id = resolve_user_id()
+
+                    # Fetch original invoice lines
+                    lines = admin_supabase.table("ops_lines") \
+                        .select("*") \
+                        .eq("ops_document_id", ops_id) \
+                        .execute().data or []
+
+                    # Create REVERSE OPS document
+                    reverse_resp = admin_supabase.table("ops_documents").insert({
+                        "ops_no": f"CANCEL-{invoice['ops_no']}",
+                        "ops_date": datetime.utcnow().date().isoformat(),
+                        "ops_type": "ADJUSTMENT",
+                        "stock_as": "adjustment",
+                        "direction": "ADJUST",
+                        "narration": f"Cancellation of {invoice['ops_no']}",
+                        "reference_no": invoice['ops_no'],
+                        "created_by": admin_id
+                    }).execute()
+
+                    reverse_ops_id = reverse_resp.data[0]["id"]
+
+                    # Reverse financial ledger
+                    ledger_rows = admin_supabase.table("financial_ledger") \
+                        .select("*") \
+                        .eq("ops_document_id", ops_id) \
+                        .execute().data or []
+
+                    for ledger in ledger_rows:
+                        admin_supabase.table("financial_ledger").insert({
+                            "ops_document_id": reverse_ops_id,
+                            "party_id": ledger["party_id"],
+                            "txn_date": datetime.utcnow().date().isoformat(),
+                            "debit": ledger["credit"],  # Reverse
+                            "credit": ledger["debit"],  # Reverse
+                            "closing_balance": 0,
+                            "narration": f"Cancellation of {invoice['ops_no']}"
+                        }).execute()
+
+                    # Reverse stock ledger
+                    stock_rows = admin_supabase.table("stock_ledger") \
+                        .select("*") \
+                        .eq("ops_document_id", ops_id) \
+                        .execute().data or []
+
+                    for stock in stock_rows:
+                        admin_supabase.table("stock_ledger").insert({
+                            "ops_document_id": reverse_ops_id,
+                            "product_id": stock["product_id"],
+                            "entity_type": stock["entity_type"],
+                            "entity_id": stock["entity_id"],
+                            "txn_date": datetime.utcnow().date().isoformat(),
+                            "qty_in": stock["qty_out"],  # Reverse
+                            "qty_out": stock["qty_in"],  # Reverse
+                            "closing_qty": 0,
+                            "direction": "ADJUST",
+                            "narration": f"Cancellation of {invoice['ops_no']}"
+                        }).execute()
+
+                    # Audit log
+                    admin_supabase.table("audit_logs").insert({
+                        "action": "CANCEL_INVOICE",
+                        "target_type": "ops_documents",
+                        "target_id": ops_id,
+                        "performed_by": admin_id,
+                        "message": f"Invoice {invoice['ops_no']} cancelled via reverse entry",
+                        "metadata": {"reverse_ops_id": reverse_ops_id}
+                    }).execute()
+
+                    st.success("✅ Invoice cancelled successfully with reverse entry")
+                    st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+                    st.rerun()
+
+                except Exception as e:
+                    st.error("❌ Failed to cancel invoice")
+                    st.exception(e)
+
+    
 
     # =========================
     # DOCUMENT BROWSER — INVOICE EDIT (LOAD)
@@ -582,13 +733,23 @@ def run_ops():
         st.session_state.ops_to_entity_type = old_invoice.get("to_entity_type")
         st.session_state.ops_to_entity_id = old_invoice.get("to_entity_id")
 
-        st.session_state.ops_products = old_lines.copy()
+        # ✅ Convert database types to Python native types
+        st.session_state.ops_products = [
+            {
+                "product": l.get("product", ""),
+                "product_id": l["product_id"],
+                "sale_qty": int(l.get("sale_qty", 0)),
+                "free_qty": int(l.get("free_qty", 0)),
+                "total_qty": int(l.get("sale_qty", 0)) + int(l.get("free_qty", 0))
+            }
+            for l in old_lines
+        ]
 
         st.session_state.ops_amounts = {
-            "gross": sum(l["gross_amount"] for l in old_lines),
-            "tax": sum(l["tax_amount"] for l in old_lines),
-            "discount": sum(l["discount_amount"] for l in old_lines),
-            "net": sum(l["net_amount"] for l in old_lines),
+            "gross": float(sum(l["gross_amount"] for l in old_lines)),
+            "tax": float(sum(l["tax_amount"] for l in old_lines)),
+            "discount": float(sum(l["discount_amount"] for l in old_lines)),
+            "net": float(sum(l["net_amount"] for l in old_lines)),
         }
 
         if st.button("➡️ Continue to Edit"):
@@ -992,6 +1153,15 @@ def run_ops():
                 if st.button("Confirm Stockist"):
                     st.session_state.ops_from_entity_type = "Stockist"
                     st.session_state.ops_from_entity_id = stockist_map[selected]
+                    st.session_state.ops_line2_complete = True
+                    st.rerun()
+
+            elif from_entity == "Purchaser":
+                purchaser_map = {p["name"]: p["id"] for p in st.session_state.purchasers_master}
+                selected = st.selectbox("Select Purchaser", list(purchaser_map.keys()))
+                if st.button("Confirm Purchaser"):
+                    st.session_state.ops_from_entity_type = "Purchaser"
+                    st.session_state.ops_from_entity_id = purchaser_map[selected]
                     st.session_state.ops_line2_complete = True
                     st.rerun()
 
@@ -3236,3 +3406,144 @@ def run_ops():
 
 
                 st.divider()
+    # =========================
+    # DOCUMENT BROWSER — CREDIT NOTES
+    # =========================
+    elif section == "DOCUMENT_BROWSER_CREDIT_NOTES":
+        st.subheader("📝 Credit Note Register")
+
+        docs = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, narration") \
+            .eq("stock_as", "adjustment") \
+            .ilike("narration", "%credit%") \
+            .eq("is_deleted", False) \
+            .order("ops_date", desc=True) \
+            .execute().data
+
+        if not docs:
+            st.info("No credit notes found")
+            st.stop()
+
+        for doc in docs:
+            with st.container():
+                c1, c2, c3 = st.columns([4, 3, 3])
+
+                with c1:
+                    st.write(f"📝 **{doc['ops_no']}** | {doc['ops_date']}")
+
+                with c2:
+                    st.write(doc.get("narration", "-"))
+
+                with c3:
+                    if st.button("🗑 Delete", key=f"del_cn_{doc['id']}"):
+                        st.session_state.selected_ops_id = doc["id"]
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                        st.rerun()
+
+                st.divider()
+
+    # =========================
+    # DOCUMENT BROWSER — TRANSFERS
+    # =========================
+    elif section == "DOCUMENT_BROWSER_TRANSFERS":
+        st.subheader("🔄 Transfer Register")
+
+        docs = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, narration") \
+            .ilike("narration", "%transfer%") \
+            .eq("is_deleted", False) \
+            .order("ops_date", desc=True) \
+            .execute().data
+
+        if not docs:
+            st.info("No transfers found")
+            st.stop()
+
+        for doc in docs:
+            with st.container():
+                c1, c2, c3 = st.columns([4, 3, 3])
+
+                with c1:
+                    st.write(f"🔄 **{doc['ops_no']}** | {doc['ops_date']}")
+
+                with c2:
+                    st.write(doc.get("narration", "-"))
+
+                with c3:
+                    if st.button("🗑 Delete", key=f"del_tr_{doc['id']}"):
+                        st.session_state.selected_ops_id = doc["id"]
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                        st.rerun()
+
+                st.divider()
+
+    # =========================
+    # DOCUMENT BROWSER — SAMPLES & LOTS
+    # =========================
+    elif section == "DOCUMENT_BROWSER_SAMPLES":
+        st.subheader("🎁 Sample & Lot Register")
+
+        docs = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, narration") \
+            .or_("narration.ilike.%sample%,narration.ilike.%lot%") \
+            .eq("is_deleted", False) \
+            .order("ops_date", desc=True) \
+            .execute().data
+
+        if not docs:
+            st.info("No samples/lots found")
+            st.stop()
+
+        for doc in docs:
+            with st.container():
+                c1, c2, c3 = st.columns([4, 3, 3])
+
+                with c1:
+                    st.write(f"🎁 **{doc['ops_no']}** | {doc['ops_date']}")
+
+                with c2:
+                    st.write(doc.get("narration", "-"))
+
+                with c3:
+                    if st.button("🗑 Delete", key=f"del_sl_{doc['id']}"):
+                        st.session_state.selected_ops_id = doc["id"]
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                        st.rerun()
+
+                st.divider()
+
+    # =========================
+    # DOCUMENT BROWSER — PURCHASES
+    # =========================
+    elif section == "DOCUMENT_BROWSER_PURCHASES":
+        st.subheader("🛒 Purchase Register")
+
+        docs = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, narration") \
+            .eq("ops_type", "STOCK_IN") \
+            .eq("is_deleted", False) \
+            .order("ops_date", desc=True) \
+            .execute().data
+
+        if not docs:
+            st.info("No purchases found")
+            st.stop()
+
+        for doc in docs:
+            with st.container():
+                c1, c2, c3 = st.columns([4, 3, 3])
+
+                with c1:
+                    st.write(f"🛒 **{doc['ops_no']}** | {doc['ops_date']}")
+
+                with c2:
+                    st.write(doc.get("narration", "-"))
+
+                with c3:
+                    if st.button("🗑 Delete", key=f"del_pur_{doc['id']}"):
+                        st.session_state.selected_ops_id = doc["id"]
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                        st.rerun()
+
+                st.divider()
+
