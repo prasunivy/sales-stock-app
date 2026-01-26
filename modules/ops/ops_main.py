@@ -1698,17 +1698,70 @@ This action will:
                         st.success("✅ OPS document saved successfully")
                         st.session_state.ops_submit_done = True
 
+                        # ✅ IF EDITING, REVERSE THE OLD STOCK & FINANCIAL ENTRIES
                         if st.session_state.edit_source_ops_id:
+                            old_ops_id = st.session_state.edit_source_ops_id
+
+                            # Reverse old stock ledger entries
+                            old_stock = admin_supabase.table("stock_ledger") \
+                                .select("*") \
+                                .eq("ops_document_id", old_ops_id) \
+                                .execute().data or []
+
+                            for s in old_stock:
+                                admin_supabase.table("stock_ledger").insert({
+                                    "ops_document_id": ops_document_id,
+                                    "product_id": s["product_id"],
+                                    "entity_type": s["entity_type"],
+                                    "entity_id": s["entity_id"],
+                                    "txn_date": date.isoformat(),
+                                    "qty_in": s["qty_out"],  # Reverse
+                                    "qty_out": s["qty_in"],  # Reverse
+                                    "closing_qty": 0,
+                                    "direction": "ADJUST",
+                                    "narration": f"Reversal of {old_ops_id} (Edit)"
+                                }).execute()
+
+                            # Reverse old financial ledger entries
+                            old_ledger = admin_supabase.table("financial_ledger") \
+                                .select("*") \
+                                .eq("ops_document_id", old_ops_id) \
+                                .execute().data or []
+
+                            for l in old_ledger:
+                                admin_supabase.table("financial_ledger").insert({
+                                    "ops_document_id": ops_document_id,
+                                    "party_id": l["party_id"],
+                                    "txn_date": date.isoformat(),
+                                    "debit": l["credit"],  # Reverse
+                                    "credit": l["debit"],  # Reverse
+                                    "closing_balance": 0,
+                                    "narration": f"Reversal of old entry (Edit)"
+                                }).execute()
+
+                            # Mark old document as deleted
+                            admin_supabase.table("ops_documents").update({
+                                "is_deleted": True,
+                                "updated_at": datetime.utcnow().isoformat(),
+                                "updated_by": resolve_user_id()
+                            }).eq("id", old_ops_id).execute()
+
+                            # Audit log
                             admin_supabase.table("audit_logs").insert({
                                 "action": "EDIT_INVOICE",
                                 "target_type": "ops_documents",
-                                "target_id": st.session_state.edit_source_ops_id,
+                                "target_id": old_ops_id,
                                 "performed_by": resolve_user_id(),
-                                "message": "Invoice edited — new OPS document created",
+                                "message": "Invoice edited — old entry reversed, new entry created",
                                 "metadata": {
+                                    "old_ops_id": old_ops_id,
                                     "new_ops_no": response.data[0]["ops_no"]
                                 }
                             }).execute()
+
+                            # Clear edit state
+                            st.session_state.edit_source_ops_id = None
+                            st.session_state.edit_mode = False
 
                         
 
@@ -3546,4 +3599,343 @@ This action will:
                         st.rerun()
 
                 st.divider()
+
+    # =========================
+    # RETURN / REPLACE
+    # =========================
+    elif section == "RETURN_REPLACE":
+        st.subheader("🔄 Return / Replace")
+
+        # State management
+        if "return_replace_type" not in st.session_state:
+            st.session_state.return_replace_type = None
+        if "return_replace_confirmed" not in st.session_state:
+            st.session_state.return_replace_confirmed = False
+        if "return_products" not in st.session_state:
+            st.session_state.return_products = []
+        if "replace_products" not in st.session_state:
+            st.session_state.replace_products = []
+        if "return_replace_submit_done" not in st.session_state:
+            st.session_state.return_replace_submit_done = False
+
+        # POST-SUBMIT
+        if st.session_state.return_replace_submit_done:
+            st.success("✅ Return/Replace submitted successfully")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button("➕ New Return/Replace", type="primary"):
+                    st.session_state.return_replace_type = None
+                    st.session_state.return_replace_confirmed = False
+                    st.session_state.return_products = []
+                    st.session_state.replace_products = []
+                    st.session_state.return_replace_submit_done = False
+                    st.rerun()
+
+            with col2:
+                if st.button("⬅ Back to Menu"):
+                    st.session_state.ops_section = None
+                    st.rerun()
+
+            st.stop()
+
+        # -------------------------
+        # STEP 1: SELECT TYPE
+        # -------------------------
+        return_type = st.radio(
+            "Transaction Type",
+            ["Return Only", "Replace (Return + New Goods)"],
+            horizontal=True
+        )
+
+        st.session_state.return_replace_type = return_type
+
+        st.divider()
+
+        # -------------------------
+        # STEP 2: FROM → TO
+        # -------------------------
+        st.subheader("📍 Direction")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            from_entity_type = st.selectbox(
+                "From (Returning Party)",
+                ["Stockist", "User", "CNF"]
+            )
+
+        with col2:
+            to_entity_type = st.selectbox(
+                "To (Receiving Party)",
+                ["Company", "CNF", "User"]
+            )
+
+        # Entity selection
+        if from_entity_type == "Stockist":
+            from_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+        elif from_entity_type == "User":
+            from_map = {u["username"]: u["id"] for u in st.session_state.users_master}
+        else:  # CNF
+            from_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+
+        from_name = st.selectbox(f"Select {from_entity_type}", list(from_map.keys()))
+        from_id = from_map[from_name]
+
+        if to_entity_type == "Company":
+            to_id = None
+            to_name = "Company"
+        elif to_entity_type == "User":
+            to_map = {u["username"]: u["id"] for u in st.session_state.users_master}
+            to_name = st.selectbox(f"Select {to_entity_type}", list(to_map.keys()))
+            to_id = to_map[to_name]
+        else:  # CNF
+            to_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+            to_name = st.selectbox(f"Select {to_entity_type}", list(to_map.keys()))
+            to_id = to_map[to_name]
+
+        return_date = st.date_input("Return Date")
+        reference_no = st.text_input("Reference Number")
+
+        if st.button("✅ Confirm Direction"):
+            st.session_state.return_replace_confirmed = True
+            st.rerun()
+
+        if not st.session_state.return_replace_confirmed:
+            st.stop()
+
+        st.divider()
+
+        # -------------------------
+        # STEP 3: RETURN PRODUCTS
+        # -------------------------
+        st.subheader("📦 Products Being Returned")
+
+        if not st.session_state.return_products:
+            st.session_state.return_products = [{"product_id": None, "qty": 0}]
+
+        for idx, item in enumerate(st.session_state.return_products):
+            col1, col2, col3 = st.columns([4, 2, 1])
+
+            with col1:
+                product_map = {p["name"]: p["id"] for p in st.session_state.products_master}
+                selected = st.selectbox(
+                    "Product",
+                    list(product_map.keys()),
+                    key=f"ret_prod_{idx}"
+                )
+                item["product_id"] = product_map[selected]
+                item["product_name"] = selected
+
+            with col2:
+                item["qty"] = st.number_input(
+                    "Quantity",
+                    min_value=0,
+                    step=1,
+                    key=f"ret_qty_{idx}"
+                )
+
+            with col3:
+                if st.button("➕", key=f"ret_add_{idx}"):
+                    st.session_state.return_products.append({"product_id": None, "qty": 0})
+                    st.rerun()
+
+        if st.button("✅ Confirm Return Products"):
+            st.session_state.return_products_done = True
+            st.rerun()
+
+        if "return_products_done" not in st.session_state or not st.session_state.return_products_done:
+            st.stop()
+
+        st.divider()
+
+        # -------------------------
+        # STEP 4: REPLACE PRODUCTS (IF REPLACE TYPE)
+        # -------------------------
+        if return_type == "Replace (Return + New Goods)":
+            st.subheader("📦 Replacement Products (New Goods)")
+
+            if not st.session_state.replace_products:
+                st.session_state.replace_products = [{"product_id": None, "qty": 0}]
+
+            for idx, item in enumerate(st.session_state.replace_products):
+                col1, col2, col3 = st.columns([4, 2, 1])
+
+                with col1:
+                    product_map = {p["name"]: p["id"] for p in st.session_state.products_master}
+                    selected = st.selectbox(
+                        "Product",
+                        list(product_map.keys()),
+                        key=f"rep_prod_{idx}"
+                    )
+                    item["product_id"] = product_map[selected]
+                    item["product_name"] = selected
+
+                with col2:
+                    item["qty"] = st.number_input(
+                        "Quantity",
+                        min_value=0,
+                        step=1,
+                        key=f"rep_qty_{idx}"
+                    )
+
+                with col3:
+                    if st.button("➕", key=f"rep_add_{idx}"):
+                        st.session_state.replace_products.append({"product_id": None, "qty": 0})
+                        st.rerun()
+
+            if st.button("✅ Confirm Replacement Products"):
+                st.session_state.replace_products_done = True
+                st.rerun()
+
+            if "replace_products_done" not in st.session_state or not st.session_state.replace_products_done:
+                st.stop()
+
+            st.divider()
+
+        # -------------------------
+        # STEP 5: AMOUNTS
+        # -------------------------
+        st.subheader("💰 Financial Impact")
+
+        net_amount = st.number_input(
+            "Net Amount Adjustment",
+            step=0.01,
+            help="Positive = Debit to party, Negative = Credit to party"
+        )
+
+        st.divider()
+
+        # -------------------------
+        # FINAL PREVIEW
+        # -------------------------
+        st.subheader("📋 Preview")
+
+        st.write(f"**Type:** {return_type}")
+        st.write(f"**From:** {from_entity_type} - {from_name}")
+        st.write(f"**To:** {to_entity_type} - {to_name}")
+        st.write(f"**Date:** {return_date}")
+
+        st.write("**Return Products:**")
+        for p in st.session_state.return_products:
+            if p["qty"] > 0:
+                st.write(f"- {p.get('product_name', 'Unknown')}: {p['qty']}")
+
+        if return_type == "Replace (Return + New Goods)":
+            st.write("**Replacement Products:**")
+            for p in st.session_state.replace_products:
+                if p["qty"] > 0:
+                    st.write(f"- {p.get('product_name', 'Unknown')}: {p['qty']}")
+
+        st.write(f"**Net Amount:** ₹ {net_amount:,.2f}")
+
+        # -------------------------
+        # FINAL SUBMIT
+        # -------------------------
+        if st.button("✅ Final Submit Return/Replace", type="primary"):
+            try:
+                user_id = resolve_user_id()
+
+                # Create OPS document for return
+                return_ops = admin_supabase.table("ops_documents").insert({
+                    "ops_no": f"RET-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                    "ops_date": return_date.isoformat(),
+                    "ops_type": "ADJUSTMENT",
+                    "stock_as": "adjustment",
+                    "direction": "ADJUST",
+                    "narration": f"{return_type} from {from_name} to {to_name}",
+                    "reference_no": reference_no,
+                    "created_by": user_id
+                }).execute()
+
+                return_ops_id = return_ops.data[0]["id"]
+
+                # ✅ STOCK LEDGER - RETURN (Stock OUT from returner, Stock IN to receiver)
+                for p in st.session_state.return_products:
+                    if p["qty"] > 0:
+                        # Stock OUT from returner
+                        admin_supabase.table("stock_ledger").insert({
+                            "ops_document_id": return_ops_id,
+                            "product_id": p["product_id"],
+                            "entity_type": from_entity_type,
+                            "entity_id": from_id,
+                            "txn_date": return_date.isoformat(),
+                            "qty_in": 0,
+                            "qty_out": p["qty"],
+                            "closing_qty": 0,
+                            "direction": "OUT",
+                            "narration": f"Return to {to_entity_type}"
+                        }).execute()
+
+                        # Stock IN to receiver
+                        admin_supabase.table("stock_ledger").insert({
+                            "ops_document_id": return_ops_id,
+                            "product_id": p["product_id"],
+                            "entity_type": to_entity_type,
+                            "entity_id": to_id,
+                            "txn_date": return_date.isoformat(),
+                            "qty_in": p["qty"],
+                            "qty_out": 0,
+                            "closing_qty": 0,
+                            "direction": "IN",
+                            "narration": f"Return from {from_entity_type}"
+                        }).execute()
+
+                # ✅ STOCK LEDGER - REPLACE (if applicable)
+                if return_type == "Replace (Return + New Goods)":
+                    for p in st.session_state.replace_products:
+                        if p["qty"] > 0:
+                            # Stock OUT from receiver (sending replacement)
+                            admin_supabase.table("stock_ledger").insert({
+                                "ops_document_id": return_ops_id,
+                                "product_id": p["product_id"],
+                                "entity_type": to_entity_type,
+                                "entity_id": to_id,
+                                "txn_date": return_date.isoformat(),
+                                "qty_in": 0,
+                                "qty_out": p["qty"],
+                                "closing_qty": 0,
+                                "direction": "OUT",
+                                "narration": f"Replacement to {from_entity_type}"
+                            }).execute()
+
+                            # Stock IN to returner (receiving replacement)
+                            admin_supabase.table("stock_ledger").insert({
+                                "ops_document_id": return_ops_id,
+                                "product_id": p["product_id"],
+                                "entity_type": from_entity_type,
+                                "entity_id": from_id,
+                                "txn_date": return_date.isoformat(),
+                                "qty_in": p["qty"],
+                                "qty_out": 0,
+                                "closing_qty": 0,
+                                "direction": "IN",
+                                "narration": f"Replacement from {to_entity_type}"
+                            }).execute()
+
+                # ✅ FINANCIAL LEDGER
+                if net_amount != 0:
+                    party_id = from_id if from_entity_type != "Company" else to_id
+
+                    debit = net_amount if net_amount > 0 else 0
+                    credit = abs(net_amount) if net_amount < 0 else 0
+
+                    admin_supabase.table("financial_ledger").insert({
+                        "ops_document_id": return_ops_id,
+                        "party_id": party_id,
+                        "txn_date": return_date.isoformat(),
+                        "debit": debit,
+                        "credit": credit,
+                        "closing_balance": 0,
+                        "narration": f"{return_type} adjustment"
+                    }).execute()
+
+                st.session_state.return_replace_submit_done = True
+                st.rerun()
+
+            except Exception as e:
+                st.error("❌ Failed to submit return/replace")
+                st.exception(e)
+
 
