@@ -818,6 +818,56 @@ This action will:
             st.error("Invoice not selected")
             st.stop()
 
+        # ---- REVERSE STOCK LEDGER ENTRIES ----
+        stock_rows = admin_supabase.table("stock_ledger") \
+            .select("*") \
+            .eq("ops_document_id", ops_id) \
+            .execute().data or []
+
+        # Create synthetic OPS for reversal
+        reversal_ops = admin_supabase.table("ops_documents").insert({
+            "ops_no": f"REV-DEL-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+            "ops_date": datetime.utcnow().date().isoformat(),
+            "ops_type": "ADJUSTMENT",
+            "stock_as": "adjustment",
+            "direction": "ADJUST",
+            "narration": f"Reversal due to deletion of {ops_id}",
+            "created_by": admin_id
+        }).execute()
+
+        reversal_ops_id = reversal_ops.data[0]["id"]
+
+        for s in stock_rows:
+            admin_supabase.table("stock_ledger").insert({
+                "ops_document_id": reversal_ops_id,
+                "product_id": s["product_id"],
+                "entity_type": s["entity_type"],
+                "entity_id": s["entity_id"],
+                "txn_date": datetime.utcnow().date().isoformat(),
+                "qty_in": s["qty_out"],  # Reverse
+                "qty_out": s["qty_in"],  # Reverse
+                "closing_qty": 0,
+                "direction": "ADJUST",
+                "narration": f"Reversal of deleted invoice"
+            }).execute()
+
+        # ---- REVERSE FINANCIAL LEDGER ENTRIES ----
+        ledger_rows = admin_supabase.table("financial_ledger") \
+            .select("*") \
+            .eq("ops_document_id", ops_id) \
+            .execute().data or []
+
+        for l in ledger_rows:
+            admin_supabase.table("financial_ledger").insert({
+                "ops_document_id": reversal_ops_id,
+                "party_id": l["party_id"],
+                "txn_date": datetime.utcnow().date().isoformat(),
+                "debit": l["credit"],  # Reverse
+                "credit": l["debit"],  # Reverse
+                "closing_balance": 0,
+                "narration": f"Reversal of deleted invoice"
+            }).execute()
+
         # ---- Soft delete invoice ----
         admin_supabase.table("ops_documents").update({
             "is_deleted": True,
