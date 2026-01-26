@@ -72,6 +72,12 @@ def run_ops():
         st.session_state.ops_allow_reset = False
     if "ops_section" not in st.session_state:
         st.session_state.ops_section = None
+    if "edit_source_ops_id" not in st.session_state:
+        st.session_state.edit_source_ops_id = None
+
+    if "edit_mode" not in st.session_state:
+        st.session_state.edit_mode = False
+
 
 
     st.title("📥 Order / Purchase / Sales / Payment")
@@ -528,6 +534,42 @@ def run_ops():
             st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
             st.rerun()
 
+    # =========================
+    # DOCUMENT BROWSER — INVOICE EDIT (LOAD)
+    # =========================
+    elif section == "DOCUMENT_BROWSER_INVOICE_EDIT":
+
+        source_ops_id = st.session_state.get("edit_source_ops_id")
+
+        if not source_ops_id:
+            st.error("No invoice selected for edit")
+            st.stop()
+
+        # ---- Load original invoice ----
+        old_invoice = admin_supabase.table("ops_documents") \
+            .select("*") \
+            .eq("id", source_ops_id) \
+            .eq("is_deleted", False) \
+            .single() \
+            .execute().data
+
+        if not old_invoice:
+            st.error("Invoice not found or already deleted")
+            st.stop()
+
+        st.subheader(f"✏️ Edit Invoice — {old_invoice['ops_no']}")
+
+        st.info(
+            "Editing will create a NEW invoice and lock this one for audit safety."
+        )
+
+        # ---- Load invoice lines ----
+        old_lines = admin_supabase.table("ops_lines") \
+            .select("*") \
+            .eq("ops_document_id", source_ops_id) \
+            .execute().data or []
+
+    
     # =========================
     # DOCUMENT BROWSER — INVOICE DELETE (CONFIRM)
     # =========================
@@ -3140,8 +3182,13 @@ def run_ops():
                             st.rerun()
 
 
+                    
                     with b2:
-                        st.button("✏️ Edit", disabled=True, key=f"edit_{inv['id']}")
+                        if st.button("✏️ Edit", key=f"edit_{inv['id']}"):
+                            st.session_state.edit_source_ops_id = inv["id"]
+                            st.session_state.edit_mode = True
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_EDIT"
+                            st.rerun()
 
                     with b3:
                         if st.button("🗑 Delete", key=f"del_{inv['id']}"):
