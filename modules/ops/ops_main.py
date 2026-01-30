@@ -1711,43 +1711,42 @@ This action will:
                         }).execute()
 
                         
-                        # ---------- STOCK LEDGER INSERT (EXCLUDE SAMPLE/LOT FOR RECEIVER) ----------
-                        # Sample/Lot: Stock OUT from sender, NO stock IN for receiver
+                        # ---------- STOCK LEDGER INSERT (DOUBLE-ENTRY SYSTEM) ----------
+                        # Rule: Every transaction creates TWO entries (sender OUT + receiver IN)
+                        # Exception: Sample/Lot - only sender OUT, receiver gets NOTHING
                         
                         for p in st.session_state.ops_products:
                             qty = p.get("total_qty", 0)
-
-                            # ✅ SENDER SIDE (always create stock_ledger entry)
-                            if stock_direction == "Stock Out":
+                            
+                            # ✅ ALWAYS CREATE STOCK OUT FOR SENDER (FROM entity)
+                            admin_supabase.table("stock_ledger").insert({
+                                "ops_document_id": ops_document_id,
+                                "product_id": p["product_id"],
+                                "entity_type": st.session_state.ops_from_entity_type,
+                                "entity_id": st.session_state.ops_from_entity_id,
+                                "txn_date": date.isoformat(),
+                                "qty_in": 0,
+                                "qty_out": qty,
+                                "closing_qty": 0,
+                                "direction": "OUT",
+                                "narration": f"Stock OUT - {stock_as} - To {st.session_state.ops_to_entity_type}"
+                            }).execute()
+                            
+                            # ✅ CREATE STOCK IN FOR RECEIVER (TO entity)
+                            # SKIP ONLY if stock_as is Sample or Lot
+                            if stock_as not in ["Sample", "Lot"]:
                                 admin_supabase.table("stock_ledger").insert({
                                     "ops_document_id": ops_document_id,
                                     "product_id": p["product_id"],
-                                    "entity_type": st.session_state.ops_from_entity_type,
-                                    "entity_id": st.session_state.ops_from_entity_id,
+                                    "entity_type": st.session_state.ops_to_entity_type,
+                                    "entity_id": st.session_state.ops_to_entity_id,
                                     "txn_date": date.isoformat(),
-                                    "qty_in": 0,
-                                    "qty_out": qty,
+                                    "qty_in": qty,
+                                    "qty_out": 0,
                                     "closing_qty": 0,
-                                    "direction": "OUT",
-                                    "narration": f"OPS {stock_direction} - {stock_as}"
+                                    "direction": "IN",
+                                    "narration": f"Stock IN - {stock_as} - From {st.session_state.ops_from_entity_type}"
                                 }).execute()
-
-                            # ✅ RECEIVER SIDE (skip if Sample/Lot)
-                            else:
-                                # Stock In - only create entry if NOT Sample/Lot
-                                if stock_as not in ["Sample", "Lot"]:
-                                    admin_supabase.table("stock_ledger").insert({
-                                        "ops_document_id": ops_document_id,
-                                        "product_id": p["product_id"],
-                                        "entity_type": st.session_state.ops_to_entity_type,
-                                        "entity_id": st.session_state.ops_to_entity_id,
-                                        "txn_date": date.isoformat(),
-                                        "qty_in": qty,
-                                        "qty_out": 0,
-                                        "closing_qty": 0,
-                                        "direction": "IN",
-                                        "narration": f"OPS {stock_direction} - {stock_as}"
-                                    }).execute()
 
 
 
