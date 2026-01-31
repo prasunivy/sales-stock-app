@@ -16,6 +16,14 @@ def route_module():
         st.session_state.active_module = "OPS"
         st.rerun()
 
+    if st.sidebar.button("📞 Daily Call Report"):
+        st.session_state.active_module = "DCR"
+        st.rerun()
+    
+    if st.sidebar.button("🔍 Doctor Fetch"):
+        st.session_state.active_module = "DOCTOR_FETCH"
+        st.rerun()
+
     active = st.session_state.get("active_module")
 
     if active == "STATEMENT":
@@ -23,6 +31,12 @@ def route_module():
 
     elif active == "OPS":
         run_ops()
+
+    elif active == "DCR":              
+        run_dcr()                      
+    
+    elif active == "DOCTOR_FETCH":     
+        run_doctor_fetch()
 
     else:
         st.title("🏠 Home")
