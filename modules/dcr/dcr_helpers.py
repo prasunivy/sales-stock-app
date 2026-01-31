@@ -11,15 +11,16 @@ from modules.dcr.dcr_database import get_dcr_by_id
 def get_current_user_id():
     """
     Get current logged-in user's ID
-    Works with Supabase auth
+    Compatible with app.py authentication system
     """
+    # Check if user is authenticated
     user = st.session_state.get("auth_user")
     
-    if hasattr(user, "id"):
+    if user and hasattr(user, "id"):
         return user.id
     
-    # Fallback for test mode
-    st.error("❌ User not authenticated")
+    # If not authenticated
+    st.error("❌ User not authenticated. Please login first.")
     st.stop()
 
 
