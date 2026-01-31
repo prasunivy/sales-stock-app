@@ -2,6 +2,8 @@ import streamlit as st
 
 from modules.statement.statement_main import run_statement
 from modules.ops.ops_main import run_ops
+from modules.dcr.dcr_main import run_dcr             
+from modules.dcr.doctor_fetch import run_doctor_fetch
 
 def route_module():
     st.sidebar.subheader("📂 Modules")
