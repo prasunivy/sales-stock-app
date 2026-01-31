@@ -1,6 +1,6 @@
 """
 Doctor Fetch Module
-Allows users to update doctor details and view 360° profiles
+Allows users to update doctor details and view 360 degree profiles
 """
 
 import streamlit as st
@@ -46,13 +46,13 @@ def show_doctor_fetch_home():
             st.rerun()
     
     if st.button("🏠 Home"):
-        st.session_state.doctor_fetch_mode = None
+        st.session_state.active_module = None
         st.rerun()
 
 
 def show_update_doctor_flow():
     """
-    Update doctor: Territory → Doctor → Update Form
+    Update doctor: Territory -> Doctor -> Update Form
     """
     st.write("### ✏️ Update Doctor Details")
     
@@ -290,10 +290,10 @@ def show_doctor_update_form():
 
 def show_fetch_doctor_flow():
     """
-    Fetch doctor: Territory → Doctor → 360° Profile
+    Fetch doctor: Territory -> Doctor -> 360 degree Profile
     """
     st.write("### 📊 Fetch Doctor Details")
-    st.info("🚧 360° Doctor Profile view coming soon")
+    st.info("🚧 360 degree Doctor Profile view coming soon")
     
     if st.button("⬅️ Back"):
         st.session_state.doctor_fetch_mode = None
