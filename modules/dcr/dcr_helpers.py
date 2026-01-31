@@ -11,13 +11,17 @@ from modules.dcr.dcr_database import get_dcr_by_id
 def get_current_user_id():
     """
     Get current logged-in user's ID
-    Compatible with app.py authentication system
+    Works with both TEST_MODE and production auth
     """
-    # Check if user is authenticated
     user = st.session_state.get("auth_user")
     
+    # Handle object with .id attribute
     if user and hasattr(user, "id"):
         return user.id
+    
+    # Handle dict with "id" key (TEST_MODE)
+    if user and isinstance(user, dict) and "id" in user:
+        return user["id"]
     
     # If not authenticated
     st.error("❌ User not authenticated. Please login first.")
