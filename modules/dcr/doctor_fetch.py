@@ -298,30 +298,3 @@ def show_fetch_doctor_flow():
     if st.button("⬅️ Back"):
         st.session_state.doctor_fetch_mode = None
         st.rerun()
-```
-
----
-
-**✅ ALL 5 FILES COMPLETE!**
-
----
-
-## **✅ SECTION 2 COMPLETE**
-
-**What you just created:**
-- 5 Python files in `modules/dcr/` folder
-- Complete DCR module code
-- Doctor Fetch module code
-- All database operations
-- All helper functions
-
-**Your folder should now look like:**
-```
-sales-stock-app/
-└── modules/
-    └── dcr/
-        ├── __init__.py          ✅
-        ├── dcr_main.py          ✅
-        ├── dcr_database.py      ✅
-        ├── dcr_helpers.py       ✅
-        └── doctor_fetch.py      ✅
