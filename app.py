@@ -695,7 +695,7 @@ if (
 ):
     st.stop()
 # SAFETY CHECK — REQUIRED STATE (USER ONLY)
-if role == "user" and st.session_state.get("engine_stage") != "reports":
+if role == "user" and st.session_state.get("engine_stage") not in ["reports", "dcr", "doctor_fetch", None]:
 
     if not all(st.session_state.get(k) is not None for k in required_keys):
         st.error("❌ Statement context incomplete. Please restart from sidebar.")
