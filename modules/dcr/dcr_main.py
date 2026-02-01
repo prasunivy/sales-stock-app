@@ -142,6 +142,9 @@ def show_stage_1_header():
     """Stage 1: Basic Information"""
     st.write("### Stage 1/4: Basic Information")
     
+    if st.session_state.get("dcr_report_id"):
+        st.info("ℹ️ **Editing existing DCR** - You can modify the details below")
+    
     try:
         current_user_id = get_current_user_id()
     except:
@@ -166,9 +169,25 @@ def show_stage_1_header():
         st.error("❌ Cannot create DCR for future date")
         return
     
-    if check_duplicate_dcr(selected_user_id, report_date):
-        st.error("❌ DCR already exists for this date")
-        return
+    # Check duplicate only if creating NEW DCR (not editing)
+    if not st.session_state.get("dcr_report_id"):
+        # Creating new DCR - check for duplicates
+        if check_duplicate_dcr(selected_user_id, report_date):
+            st.error("❌ DCR already exists for this date")
+            if st.button("⬅️ Back to Home"):
+                st.session_state.dcr_current_step = 0
+                st.session_state.active_module = None
+                st.rerun()
+            return
+    else:
+        # Editing existing DCR - allow it
+        # But prevent changing to a date that has another DCR
+        existing_dcr = get_dcr_by_id(st.session_state.dcr_report_id)
+        if existing_dcr and str(existing_dcr.get('report_date')) != str(report_date):
+            # User is trying to change the date
+            if check_duplicate_dcr(selected_user_id, report_date):
+                st.error("❌ Another DCR already exists for this date. Cannot change to this date.")
+                return
     
     # Area type
     area_type = st.radio(
@@ -312,12 +331,13 @@ def show_stage_2_visits():
                     help="Select one or more products"
                 )
                 
-                visited_with_options = [m['id'] for m in managers]
+                # Add "single" option + managers
+                visited_with_options = ["single"] + [m['id'] for m in managers]
                 visited_with = st.multiselect(
                     "Visited With * (Required)",
                     options=visited_with_options,
-                    format_func=lambda x: next((m['username'] for m in managers if m['id'] == x), x),
-                    help="Select who accompanied you (required)"
+                    format_func=lambda x: "Self (Alone)" if x == "single" else next((m['username'] for m in managers if m['id'] == x), x),
+                    help="Select 'Self' if alone, or select who accompanied you"
                 )
                 
                 submit_doctor = st.form_submit_button("➕ Add Doctor")
@@ -560,9 +580,27 @@ def show_stage_4_preview():
     doctor_visits = dcr_data.get('doctor_visits', [])
     if doctor_visits:
         for visit in doctor_visits:
+            # Resolve visited_with to names
+            visited_with_raw = visit.get('visited_with', 'single')
+            if visited_with_raw == 'single' or not visited_with_raw:
+                visited_with_display = "Self (Alone)"
+            else:
+                # It's a comma-separated list of IDs
+                ids = visited_with_raw.split(',')
+                # Resolve to names
+                managers = get_managers_list()
+                names = []
+                for id_val in ids:
+                    if id_val == 'single':
+                        names.append("Self")
+                    else:
+                        manager_name = next((m['username'] for m in managers if m['id'] == id_val), id_val)
+                        names.append(manager_name)
+                visited_with_display = ', '.join(names)
+        
             st.write(f"• Dr. {visit['doctor_name']}")
             st.write(f"  Products: {', '.join(visit['product_names'])}")
-            st.write(f"  With: {visit.get('visited_with', 'Single')}")
+            st.write(f"  With: {visited_with_display}")
     else:
         st.write("None")
     
