@@ -43,12 +43,20 @@ def run_dcr():
     # Initialize session state
     init_dcr_session_state()
     
-    # Get current user info
-    user_id = get_current_user_id()
-    role = st.session_state.get("role", "user")
-    
-    # Show title
+    # Show title FIRST (before checking auth)
     st.title("📞 Daily Call Report")
+    
+    # Check authentication
+    try:
+        user_id = get_current_user_id()
+        role = st.session_state.get("role", "user")
+    except Exception as e:
+        st.error(f"❌ Authentication Error: {str(e)}")
+        st.info("**Debug Info:**")
+        st.write(f"- auth_user in session: {st.session_state.get('auth_user') is not None}")
+        st.write(f"- role in session: {st.session_state.get('role')}")
+        st.write(f"- Available keys: {list(st.session_state.keys())}")
+        st.stop()
     
     # Route based on state
     if st.session_state.get("dcr_submit_done"):
