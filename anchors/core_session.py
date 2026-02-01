@@ -33,7 +33,7 @@ def handle_login():
     
     if TEST_MODE:
         # Auto-login in test mode
-        st.session_state.auth_user = {"id": "00000000-0000-0000-0000-000000000001"}
+        st.session_state.auth_user = {"id": "90f4e90b-f0c6-410d-b29a-c38f935fd57c"}
         st.session_state.role = "admin"
     
     if not st.session_state.auth_user:
