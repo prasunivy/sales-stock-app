@@ -392,15 +392,28 @@ def get_user_territories(user_id):
     Get territories assigned to user
     Returns list of {id, name}
     """
-    result = safe_exec(
-        admin_supabase.table("user_territories")
-        .select("territories(id, name)")
-        .eq("user_id", user_id),
-        "Error loading user territories"
-    )
+    try:
+        result = safe_exec(
+            admin_supabase.table("user_territories")
+            .select("territory_id, territories(id, name)")
+            .eq("user_id", user_id),
+            "Error loading user territories"
+        )
+        
+        # Extract territories from nested structure
+        territories = []
+        for r in result:
+            if r.get("territories"):
+                territories.append({
+                    "id": r["territories"]["id"],
+                    "name": r["territories"]["name"]
+                })
+        
+        return territories
     
-    return [r["territories"] for r in result if r.get("territories")]
-
+    except Exception as e:
+        st.error(f"Error in get_user_territories: {str(e)}")
+        return []
 
 def get_doctors_by_territories(territory_ids):
     """
