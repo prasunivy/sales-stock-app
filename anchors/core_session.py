@@ -27,19 +27,59 @@ def init_session():
 def handle_login():
     """
     Handle authentication
-    TEST_MODE: auto-login as admin
+    Shows login form if not authenticated
     """
     init_session()
     
-    if TEST_MODE:
-        # Auto-login in test mode
-        st.session_state.auth_user = {"id": "90f4e90b-f0c6-410d-b29a-c38f935fd57c"}
-        st.session_state.role = "admin"
+    # Check if already logged in
+    if st.session_state.auth_user:
+        return  # User is authenticated, continue to app
     
-    if not st.session_state.auth_user:
-        st.title("🔐 Login")
-        st.write("Authentication required")
-        st.stop()
+    # Show login screen
+    st.title("🔐 Ivy Pharmaceuticals")
+    st.write("### Please Login")
     
-    if TEST_MODE:
-        st.sidebar.warning("🧪 TEST MODE ENABLED")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login", type="primary")
+        
+        if submit:
+            if not username or not password:
+                st.error("Please enter username and password")
+            else:
+                try:
+                    from anchors.supabase_client import supabase, safe_exec
+                    
+                    # Convert username to email
+                    user_check = safe_exec(
+                        supabase.table("users")
+                        .select("id, is_active, role")
+                        .eq("username", username)
+                        .limit(1)
+                    )
+                    
+                    if not user_check or not user_check[0]["is_active"]:
+                        st.error("❌ Invalid or inactive user")
+                        st.stop()
+                    
+                    email = f"{username}@internal.local"
+                    
+                    # Authenticate with Supabase
+                    auth_response = supabase.auth.sign_in_with_password({
+                        "email": email,
+                        "password": password
+                    })
+                    
+                    # Store in session
+                    st.session_state.auth_user = auth_response.user
+                    st.session_state.role = user_check[0]["role"]
+                    
+                    st.success(f"✅ Welcome, {username}!")
+                    st.rerun()
+                
+                except Exception as e:
+                    st.error(f"❌ Login failed: {str(e)}")
+    
+    # Stop execution until logged in
+    st.stop()
