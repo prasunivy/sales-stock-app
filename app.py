@@ -545,6 +545,16 @@ if role == "user":
 if role == "admin":
 
     st.sidebar.markdown("### 🛠 Admin")
+    st.sidebar.divider()
+    if st.sidebar.button("📞 Daily Call Report", key="admin_nav_dcr"):
+        st.session_state.engine_stage = "dcr"
+        st.session_state.admin_section = None
+        st.rerun()
+    
+    if st.sidebar.button("🔍 Doctor Fetch", key="admin_nav_doctor_fetch"):
+        st.session_state.engine_stage = "doctor_fetch"
+        st.session_state.admin_section = None
+        st.rerun()
     # --------------------------------------------------
     # 🧪 ADMIN DEBUG PANEL (TEMPORARY)
     # --------------------------------------------------
