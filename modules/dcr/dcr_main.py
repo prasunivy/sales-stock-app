@@ -454,8 +454,37 @@ def show_stage_4_preview():
     """Stage 4: Preview & Submit"""
     st.write("### Stage 4/4: Preview & Submit")
     
-    dcr_id = st.session_state.dcr_report_id
-    dcr_data = get_dcr_by_id(dcr_id)
+    dcr_id = st.session_state.get("dcr_report_id")
+    
+    # Safety check
+    if not dcr_id:
+        st.error("❌ No DCR found. Please start over.")
+        if st.button("🏠 Back to Home"):
+            st.session_state.dcr_current_step = 0
+            st.session_state.active_module = None
+            st.rerun()
+        return
+    
+    try:
+        dcr_data = get_dcr_by_id(dcr_id)
+    except Exception as e:
+        st.error(f"❌ Error loading DCR: {str(e)}")
+        if st.button("🏠 Back to Home"):
+            st.session_state.dcr_report_id = None
+            st.session_state.dcr_current_step = 0
+            st.session_state.active_module = None
+            st.rerun()
+        return
+    
+    # Check if data is valid
+    if not dcr_data or not dcr_data.get('report_date'):
+        st.error("❌ DCR data is incomplete or corrupted")
+        if st.button("🏠 Back to Home"):
+            st.session_state.dcr_report_id = None
+            st.session_state.dcr_current_step = 0
+            st.session_state.active_module = None
+            st.rerun()
+        return
     
     # Header
     st.write("---")
@@ -536,9 +565,20 @@ def show_stage_4_preview():
             st.rerun()
     with col2:
         if st.button("❌ Cancel"):
-            st.session_state.dcr_report_id = None
-            st.session_state.dcr_current_step = 0
-            st.rerun()
+            if st.session_state.get("dcr_delete_confirm"):
+                # Actually delete
+                delete_dcr_soft(dcr_id, get_current_user_id())
+                # Clear state
+                st.session_state.dcr_report_id = None
+                st.session_state.dcr_current_step = 0
+                st.session_state.dcr_delete_confirm = False
+                st.session_state.active_module = None
+                st.success("DCR cancelled and deleted")
+                st.rerun()
+            else:
+                # Show confirmation
+                st.session_state.dcr_delete_confirm = True
+                st.warning("⚠️ Click again to confirm cancellation")
 
 
 def show_post_submit_screen():
