@@ -76,10 +76,11 @@ def show_home_screen():
     """
     Home screen with options: New DCR or View History
     """
-    # Check if we should show form instead
-    if st.session_state.get("dcr_current_step", 0) >= 1:
-        show_dcr_flow()
-        return
+    # CRITICAL: Clear any leftover state first
+    if st.session_state.get("dcr_current_step"):
+        st.session_state.dcr_current_step = 0
+    if st.session_state.get("dcr_report_id"):
+        st.session_state.dcr_report_id = None
     
     st.write("### What would you like to do?")
     
@@ -87,8 +88,14 @@ def show_home_screen():
     
     with col1:
         if st.button("➕ New Daily Report", type="primary", use_container_width=True):
-            st.session_state.dcr_home_action = "NEW"
-            st.session_state.dcr_current_step = 1  # Set step immediately
+            # Clear everything first
+            for key in list(st.session_state.keys()):
+                if key.startswith("dcr_"):
+                    del st.session_state[key]
+            
+            # Initialize fresh
+            init_dcr_session_state()
+            st.session_state.dcr_current_step = 1
             st.rerun()
     
     with col2:
@@ -98,7 +105,7 @@ def show_home_screen():
     
     # Handle history action
     if st.session_state.get("dcr_home_action") == "HISTORY":
-        st.session_state.dcr_home_action = None  # Clear action
+        st.session_state.dcr_home_action = None
         show_monthly_history()
 
 
@@ -254,7 +261,13 @@ def show_stage_1_header():
         if st.button("View Existing DCR"):
             st.info("View existing DCR feature coming soon")
         if st.button("⬅️ Back to Home"):
-            st.session_state.dcr_home_action = None
+            # Clear all DCR state
+            for key in list(st.session_state.keys()):
+                if key.startswith("dcr_"):
+                    del st.session_state[key]
+    
+            # Go back to main menu
+            st.session_state.active_module = None
             st.rerun()
         return
     
@@ -274,13 +287,21 @@ def show_stage_1_header():
     # Territory selection (skip if MEETING)
     selected_territories = []
     if area_type != "MEETING":
-        st.write("**Select Territories**")
+    st.write("**Select Territories**")
+    
+    try:
+        user_territories = get_user_territories(selected_user_id)
         
-        try:
-            user_territories = get_user_territories(selected_user_id)
-        except Exception as e:
-            st.error(f"Error loading territories: {str(e)}")
-            user_territories = []
+        # DEBUG: Show what we found
+        st.info(f"DEBUG: Found {len(user_territories)} territories for user {selected_user_id}")
+        if user_territories:
+            st.write("Territories found:")
+            for t in user_territories:
+                st.write(f"  - {t['name']} (ID: {t['id']})")
+        
+    except Exception as e:
+        st.error(f"Error loading territories: {str(e)}")
+        user_territories = []
         
         if not user_territories:
             st.warning("⚠️ No territories assigned to you.")
