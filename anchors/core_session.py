@@ -1,6 +1,6 @@
 import streamlit as st
 
-TEST_MODE = True
+TEST_MODE = False
 
 def init_session():
     """
