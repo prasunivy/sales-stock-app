@@ -199,13 +199,21 @@ def show_stage_1_header():
     st.write("### Stage 1/4: Basic Information")
     
     role = st.session_state.get("role")
-    current_user_id = get_current_user_id()
+    
+    # Get current user ID
+    try:
+        current_user_id = get_current_user_id()
+    except:
+        st.error("Unable to get user ID. Please refresh and try again.")
+        if st.button("⬅️ Back to Home"):
+            st.session_state.dcr_home_action = None
+            st.rerun()
+        return
     
     # User selection (admin only)
     if role == "admin":
-        st.write("**Select User** (Admin Mode)")
-        # TODO: Add user dropdown for admin
-        selected_user_id = current_user_id
+        st.write("**Admin Mode:** Creating DCR for user")
+        selected_user_id = current_user_id  # For now, admin creates for themselves
     else:
         selected_user_id = current_user_id
     
@@ -220,14 +228,19 @@ def show_stage_1_header():
     # Validate date
     if report_date > date.today():
         st.error("❌ Cannot create DCR for future date")
+        if st.button("⬅️ Back to Home"):
+            st.session_state.dcr_home_action = None
+            st.rerun()
         return
     
     # Check duplicate
     if check_duplicate_dcr(selected_user_id, report_date):
         st.error("❌ DCR already exists for this date")
         if st.button("View Existing DCR"):
-            # TODO: Load existing DCR
-            pass
+            st.info("View existing DCR feature coming soon")
+        if st.button("⬅️ Back to Home"):
+            st.session_state.dcr_home_action = None
+            st.rerun()
         return
     
     # Area type
@@ -247,10 +260,20 @@ def show_stage_1_header():
     selected_territories = []
     if area_type != "MEETING":
         st.write("**Select Territories**")
-        user_territories = get_user_territories(selected_user_id)
+        
+        try:
+            user_territories = get_user_territories(selected_user_id)
+        except Exception as e:
+            st.error(f"Error loading territories: {str(e)}")
+            user_territories = []
         
         if not user_territories:
-            st.warning("⚠️ No territories assigned to you. Contact admin.")
+            st.warning("⚠️ No territories assigned to you.")
+            st.info("**For testing:** You can still proceed by selecting MEETING area type, which doesn't require territories.")
+            
+            if st.button("⬅️ Back to Home"):
+                st.session_state.dcr_home_action = None
+                st.rerun()
             return
         
         selected_territories = st.multiselect(
@@ -262,6 +285,9 @@ def show_stage_1_header():
         
         if not selected_territories:
             st.warning("⚠️ Please select at least one territory")
+            if st.button("⬅️ Back to Home"):
+                st.session_state.dcr_home_action = None
+                st.rerun()
             return
     
     # Preview
@@ -275,43 +301,52 @@ def show_stage_1_header():
         st.write(f"🗺️ Territories: {', '.join(territory_names)}")
     
     # Save & Next
-    col1, col2 = st.columns([1, 3])
+    st.write("---")
+    col1, col2 = st.columns([1, 1])
+    
     with col1:
-        if st.button("💾 Save & Next", type="primary"):
-            # Create or update DCR
-            if not st.session_state.get("dcr_report_id"):
-                dcr_id = create_dcr_draft(
-                    user_id=selected_user_id,
-                    report_date=report_date,
-                    area_type=area_type,
-                    territory_ids=selected_territories,
-                    created_by=current_user_id
-                )
-                st.session_state.dcr_report_id = dcr_id
-            else:
-                save_dcr_header(
-                    dcr_id=st.session_state.dcr_report_id,
-                    area_type=area_type,
-                    territory_ids=selected_territories
-                )
+        if st.button("💾 Save & Next", type="primary", use_container_width=True):
+            try:
+                # Create or update DCR
+                if not st.session_state.get("dcr_report_id"):
+                    dcr_id = create_dcr_draft(
+                        user_id=selected_user_id,
+                        report_date=report_date,
+                        area_type=area_type,
+                        territory_ids=selected_territories,
+                        created_by=current_user_id
+                    )
+                    st.session_state.dcr_report_id = dcr_id
+                else:
+                    save_dcr_header(
+                        dcr_id=st.session_state.dcr_report_id,
+                        area_type=area_type,
+                        territory_ids=selected_territories
+                    )
+                
+                # Store in session
+                st.session_state.dcr_user_id = selected_user_id
+                st.session_state.dcr_report_date = report_date
+                st.session_state.dcr_area_type = area_type
+                st.session_state.dcr_territory_ids = selected_territories
+                
+                # Advance to next stage
+                if area_type == "MEETING":
+                    st.session_state.dcr_current_step = 3  # Skip visits, go to expenses
+                else:
+                    st.session_state.dcr_current_step = 2
+                
+                st.success("✅ Saved! Moving to next stage...")
+                st.rerun()
             
-            # Store in session
-            st.session_state.dcr_user_id = selected_user_id
-            st.session_state.dcr_report_date = report_date
-            st.session_state.dcr_area_type = area_type
-            st.session_state.dcr_territory_ids = selected_territories
-            
-            # Advance to next stage
-            if area_type == "MEETING":
-                st.session_state.dcr_current_step = 3  # Skip visits, go to expenses
-            else:
-                st.session_state.dcr_current_step = 2
-            
-            st.rerun()
+            except Exception as e:
+                st.error(f"❌ Error saving DCR: {str(e)}")
     
     with col2:
-        if st.button("🏠 Home"):
+        if st.button("🏠 Back to Home", use_container_width=True):
             st.session_state.dcr_home_action = None
+            st.session_state.dcr_report_id = None
+            st.session_state.dcr_current_step = 1
             st.rerun()
 
 
