@@ -284,6 +284,10 @@ def get_dcr_by_id(dcr_id):
     Load complete DCR data with all related records
     Returns dict with all DCR information
     """
+    # Validate dcr_id
+    if not dcr_id or dcr_id == "None" or str(dcr_id) == "None":
+        return {}
+        
     # Get main record
     dcr = safe_exec(
         admin_supabase.table("dcr_reports")
