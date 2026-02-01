@@ -58,12 +58,17 @@ def run_dcr():
         st.write(f"- Available keys: {list(st.session_state.keys())}")
         st.stop()
     
-    # Route based on state
+    # Route based on state (ORDER MATTERS!)
     if st.session_state.get("dcr_submit_done"):
         show_post_submit_screen()
+    elif st.session_state.get("dcr_current_step", 0) >= 1:
+        # User is in the middle of creating DCR
+        show_dcr_flow()
     elif st.session_state.get("dcr_report_id"):
+        # Resume existing draft
         show_dcr_flow()
     else:
+        # Show home screen
         show_home_screen()
 
 
@@ -71,6 +76,11 @@ def show_home_screen():
     """
     Home screen with options: New DCR or View History
     """
+    # Check if we should show form instead
+    if st.session_state.get("dcr_current_step", 0) >= 1:
+        show_dcr_flow()
+        return
+    
     st.write("### What would you like to do?")
     
     col1, col2 = st.columns(2)
@@ -78,6 +88,7 @@ def show_home_screen():
     with col1:
         if st.button("➕ New Daily Report", type="primary", use_container_width=True):
             st.session_state.dcr_home_action = "NEW"
+            st.session_state.dcr_current_step = 1  # Set step immediately
             st.rerun()
     
     with col2:
@@ -85,13 +96,9 @@ def show_home_screen():
             st.session_state.dcr_home_action = "HISTORY"
             st.rerun()
     
-    # Handle action
-    if st.session_state.get("dcr_home_action") == "NEW":
-        st.session_state.dcr_home_action = None
-        st.session_state.dcr_current_step = 1
-        st.rerun()
-    
-    elif st.session_state.get("dcr_home_action") == "HISTORY":
+    # Handle history action
+    if st.session_state.get("dcr_home_action") == "HISTORY":
+        st.session_state.dcr_home_action = None  # Clear action
         show_monthly_history()
 
 
