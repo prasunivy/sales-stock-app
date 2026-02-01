@@ -265,7 +265,10 @@ def show_stage_1_header():
     
     with col2:
         if st.button("🏠 Back to Home", use_container_width=True):
+            # Clear ALL DCR state
             st.session_state.dcr_current_step = 0
+            st.session_state.dcr_report_id = None
+            st.session_state.engine_stage = None  
             st.session_state.active_module = None
             st.rerun()
 
