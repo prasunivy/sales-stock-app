@@ -364,6 +364,20 @@ if st.sidebar.button("📊 Reports", key="nav_reports"):
 # ======================================================
 if role == "user":
 
+    # DCR MODULE FOR USERS
+    st.sidebar.divider()
+    st.sidebar.subheader("📞 Daily Call Report")
+    
+    if st.sidebar.button("➕ New Daily Report", key="user_nav_dcr"):
+        st.session_state.engine_stage = "dcr"
+        st.session_state.admin_section = None
+        st.rerun()
+    
+    if st.sidebar.button("🔍 Doctor Fetch", key="user_nav_doctor_fetch"):
+        st.session_state.engine_stage = "doctor_fetch"
+        st.session_state.admin_section = None
+        st.rerun()
+
     st.sidebar.divider()
     st.sidebar.subheader("🗂 My Statements")
 
