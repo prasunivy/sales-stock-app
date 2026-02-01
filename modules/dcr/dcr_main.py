@@ -284,34 +284,34 @@ def show_stage_2_visits():
                         remove_doctor_visit(visit['id'])
                         st.rerun()
         
-        # Add new doctor form
-        with st.form("add_doctor_form"):
-            st.write("**Add Doctor Visit**")
-    
-            # Get already added doctor IDs to prevent duplicates
-            added_doctor_ids = [v['doctor_id'] for v in existing_visits]
-            available_doctors = [d for d in doctors if d['id'] not in added_doctor_ids]
-    
-            if not available_doctors:
-                st.info("✅ All doctors in this territory have been added")
-            else:
+        # Get already added doctor IDs to prevent duplicates
+        added_doctor_ids = [v['doctor_id'] for v in existing_visits]
+        available_doctors = [d for d in doctors if d['id'] not in added_doctor_ids]
+        
+        if not available_doctors:
+            st.info("✅ All doctors in this territory have been added")
+        else:
+            # Add new doctor form
+            with st.form("add_doctor_form"):
+                st.write("**Add Doctor Visit**")
+                
                 # Add placeholder option
                 doctor_options = [None] + [d['id'] for d in available_doctors]
-        
+                
                 selected_doctor = st.selectbox(
                     "Select Doctor *",
                     options=doctor_options,
                     format_func=lambda x: "-- Select a doctor --" if x is None else next((f"{d['name']} ({d.get('specialization', 'N/A')})" for d in available_doctors if d['id'] == x), x),
                     index=0
                 )
-        
+                
                 selected_products = st.multiselect(
                     "Products Promoted *",
                     options=[p['id'] for p in products],
                     format_func=lambda x: next((p['name'] for p in products if p['id'] == x), x),
                     help="Select one or more products"
                 )
-        
+                
                 visited_with_options = [m['id'] for m in managers]
                 visited_with = st.multiselect(
                     "Visited With * (Required)",
@@ -319,9 +319,9 @@ def show_stage_2_visits():
                     format_func=lambda x: next((m['username'] for m in managers if m['id'] == x), x),
                     help="Select who accompanied you (required)"
                 )
-            
-            submit_doctor = st.form_submit_button("➕ Add Doctor")
-    
+                
+                submit_doctor = st.form_submit_button("➕ Add Doctor")
+                
                 if submit_doctor:
                     # Validation
                     if selected_doctor is None:
@@ -339,27 +339,30 @@ def show_stage_2_visits():
                             visited_with=",".join(visited_with)
                         )
                         st.success("✅ Doctor visit added!")
-                        st.rerun()    
+                        st.rerun()
+    
+    # ========================================
     # CHEMISTS SECTION
+    # ========================================
     st.write("---")
     st.write("#### 🏪 Chemist Visits")
-
+    
     chemists = get_chemists_by_territories(territory_ids)
-
+    
     if not chemists:
         st.warning("⚠️ No chemists found in selected territories")
     else:
         # Get existing chemist IDs safely
         existing_chemist_ids = dcr_data.get('chemist_ids', [])
-    
+        
         # Ensure it's a list
         if not isinstance(existing_chemist_ids, list):
             existing_chemist_ids = []
-    
+        
         # Filter existing IDs to only include valid ones
         valid_chemist_ids = [c['id'] for c in chemists]
         safe_defaults = [cid for cid in existing_chemist_ids if cid in valid_chemist_ids]
-    
+        
         selected_chemists = st.multiselect(
             "Select Chemists Visited",
             options=valid_chemist_ids,
@@ -367,9 +370,9 @@ def show_stage_2_visits():
             default=safe_defaults,
             help="Check the chemists you visited today. You can select multiple."
         )
-
+        
         st.info(f"✓ Selected: {len(selected_chemists)} chemist(s)")
-    
+        
         if st.button("💾 Save Chemists"):
             save_chemist_visits(dcr_id, selected_chemists)
             st.success("Chemist visits saved!")
@@ -393,58 +396,52 @@ def show_stage_2_visits():
     
     # Add gift form
     if existing_visits:
-        with st.form("add_gift_form"):
-            st.write("**Add Gift**")
-    
-            # Get valid doctor IDs
-            doctor_options = [v['doctor_id'] for v in existing_visits]
-    
-            if not doctor_options:
-                st.warning("Add doctor visits first before adding gifts")
-            else:
-                # Get doctors who already have gifts
-                doctors_with_gifts = [g['doctor_id'] for g in existing_gifts]
-                available_gift_doctors = [d for d in doctor_options if d not in doctors_with_gifts]
+        # Get doctors who already have gifts
+        doctors_with_gifts = [g['doctor_id'] for g in existing_gifts]
+        available_gift_doctors = [v['doctor_id'] for v in existing_visits if v['doctor_id'] not in doctors_with_gifts]
         
-                if not available_gift_doctors:
-                    st.info("✅ All visited doctors already have gifts recorded")
-                else:
-                    # Add placeholder
-                    gift_doctor_options = [None] + available_gift_doctors
-            
-                    gift_doctor = st.selectbox(
-                        "Select Doctor *",
-                        options=gift_doctor_options,
-                        format_func=lambda x: "-- Select a doctor --" if x is None else next((v['doctor_name'] for v in existing_visits if v['doctor_id'] == x), "Unknown"),
-                        index=0
-                    )
-            
-                    gift_description = st.text_input(
-                        "Gift Description *",
-                        placeholder="e.g., Medical Books, Calendar, Pen Set",
-                        help="Enter what gift was given"
-                    )
-            
-                    gift_amount = st.number_input(
-                        "Gift Amount (₹) *",
-                        min_value=0.0,
-                        step=10.0,
-                        help="Enter the value of the gift"
-                    )
-            
-            submit_gift = st.form_submit_button("➕ Add Gift")
-        
-                    if submit_gift:
-                        if gift_doctor is None:
-                            st.error("❌ Please select a doctor")
-                        elif not gift_description or not gift_description.strip():
-                            st.error("❌ Please enter gift description")
-                        elif gift_amount <= 0:
-                            st.error("❌ Gift amount must be greater than zero")
-                        else:
-                            save_gift(dcr_id, gift_doctor, gift_description, gift_amount)
-                            st.success("✅ Gift added!")
-                            st.rerun()
+        if not available_gift_doctors:
+            st.info("✅ All visited doctors already have gifts recorded")
+        else:
+            with st.form("add_gift_form"):
+                st.write("**Add Gift**")
+                
+                # Add placeholder
+                gift_doctor_options = [None] + available_gift_doctors
+                
+                gift_doctor = st.selectbox(
+                    "Select Doctor *",
+                    options=gift_doctor_options,
+                    format_func=lambda x: "-- Select a doctor --" if x is None else next((v['doctor_name'] for v in existing_visits if v['doctor_id'] == x), "Unknown"),
+                    index=0
+                )
+                
+                gift_description = st.text_input(
+                    "Gift Description *",
+                    placeholder="e.g., Medical Books, Calendar, Pen Set",
+                    help="Enter what gift was given"
+                )
+                
+                gift_amount = st.number_input(
+                    "Gift Amount (₹) *",
+                    min_value=0.0,
+                    step=10.0,
+                    help="Enter the value of the gift"
+                )
+                
+                submit_gift = st.form_submit_button("➕ Add Gift")
+                
+                if submit_gift:
+                    if gift_doctor is None:
+                        st.error("❌ Please select a doctor")
+                    elif not gift_description or not gift_description.strip():
+                        st.error("❌ Please enter gift description")
+                    elif gift_amount <= 0:
+                        st.error("❌ Gift amount must be greater than zero")
+                    else:
+                        save_gift(dcr_id, gift_doctor, gift_description, gift_amount)
+                        st.success("✅ Gift added!")
+                        st.rerun()
     
     # Navigation
     st.write("---")
@@ -457,7 +454,6 @@ def show_stage_2_visits():
         if st.button("💾 Save & Next ➡️", type="primary"):
             st.session_state.dcr_current_step = 3
             st.rerun()
-
 def show_stage_3_expenses():
     """Stage 3: Expenses"""
     st.write("### Stage 3/4: Expenses")
