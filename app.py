@@ -345,8 +345,21 @@ if not st.session_state.auth_user:
 # ======================================================
 # AFTER LOGIN SUCCESS
 # ======================================================
-role = st.session_state.role
 user_id = st.session_state.auth_user.id
+role = st.session_state.role
+
+
+# ======================================================
+# DCR MODULE ROUTING (PRIORITY - BEFORE SIDEBAR)
+# ======================================================
+if st.session_state.get("engine_stage") == "dcr":
+    run_dcr()
+    st.stop()
+
+if st.session_state.get("engine_stage") == "doctor_fetch":
+    run_doctor_fetch()
+    st.stop()
+
 
 # ======================================================
 # SIDEBAR
