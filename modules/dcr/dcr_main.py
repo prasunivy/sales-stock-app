@@ -319,26 +319,28 @@ def show_stage_2_visits():
                     st.success("Doctor visit added!")
                     st.rerun()
     
-    # ========================================
     # CHEMISTS SECTION
-    # ========================================
     st.write("---")
     st.write("#### 🏪 Chemist Visits")
-    
+
     chemists = get_chemists_by_territories(territory_ids)
-    
+
     if not chemists:
         st.warning("⚠️ No chemists found in selected territories")
     else:
         existing_chemist_ids = dcr_data.get('chemist_ids', [])
-        
+    
+        # Filter existing IDs to only include valid ones
+        valid_chemist_ids = [c['id'] for c in chemists]
+        safe_defaults = [cid for cid in existing_chemist_ids if cid in valid_chemist_ids]
+    
         selected_chemists = st.multiselect(
             "Select Chemists Visited",
-            options=[c['id'] for c in chemists],
+            options=valid_chemist_ids,
             format_func=lambda x: next((c['name'] for c in chemists if c['id'] == x), x),
-            default=existing_chemist_ids
+            default=safe_defaults
         )
-        
+    
         if st.button("💾 Save Chemists"):
             save_chemist_visits(dcr_id, selected_chemists)
             st.success("Chemist visits saved!")
@@ -364,12 +366,18 @@ def show_stage_2_visits():
     if existing_visits:
         with st.form("add_gift_form"):
             st.write("**Add Gift**")
-            
-            gift_doctor = st.selectbox(
-                "Select Doctor",
-                options=[v['doctor_id'] for v in existing_visits],
-                format_func=lambda x: next((v['doctor_name'] for v in existing_visits if v['doctor_id'] == x), x)
-            )
+        
+            # Get valid doctor IDs
+            doctor_options = [v['doctor_id'] for v in existing_visits]
+        
+            if not doctor_options:
+                st.warning("Add doctor visits first before adding gifts")
+            else:
+                gift_doctor = st.selectbox(
+                    "Select Doctor",
+                    options=doctor_options,
+                    format_func=lambda x: next((v['doctor_name'] for v in existing_visits if v['doctor_id'] == x), "Unknown")
+                )
             
             gift_description = st.text_input("Gift Description")
             gift_amount = st.number_input("Gift Amount (₹)", min_value=0.0, step=10.0)
