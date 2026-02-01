@@ -122,12 +122,26 @@ def show_stage_1_header():
         st.write("**Select Territories**")
         
         try:
+            # Add debug before calling function
+            st.write(f"**DEBUG:** Looking for territories for user: `{current_user_id}`")
+    
             user_territories = get_user_territories(current_user_id)
-            
-            st.info(f"DEBUG: Found {len(user_territories)} territories")
+    
+            st.info(f"**DEBUG:** Found {len(user_territories)} territories")
+    
             if user_territories:
+                st.success("✅ Territories loaded successfully:")
                 for t in user_territories:
-                    st.write(f"  - {t.get('name', 'Unknown')} (ID: {t.get('id', 'N/A')})")
+                    st.write(f"  - **{t.get('name', 'Unknown')}** (ID: `{t.get('id', 'N/A')}`)")
+            else:
+                st.warning("⚠️ get_user_territories() returned empty list")
+        
+                # Additional debug: Check database directly
+                st.write("**Checking database directly...**")
+                from anchors.supabase_client import admin_supabase
+        
+                direct_check = admin_supabase.table("user_territories").select("*").eq("user_id", current_user_id).execute()
+                st.write(f"Direct query result: {direct_check.data}")
             
         except Exception as e:
             st.error(f"Error loading territories: {str(e)}")
