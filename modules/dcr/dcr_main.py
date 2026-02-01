@@ -328,7 +328,12 @@ def show_stage_2_visits():
     if not chemists:
         st.warning("⚠️ No chemists found in selected territories")
     else:
+        # Get existing chemist IDs safely
         existing_chemist_ids = dcr_data.get('chemist_ids', [])
+    
+        # Ensure it's a list
+        if not isinstance(existing_chemist_ids, list):
+            existing_chemist_ids = []
     
         # Filter existing IDs to only include valid ones
         valid_chemist_ids = [c['id'] for c in chemists]
