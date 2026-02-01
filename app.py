@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 from datetime import datetime, date, timedelta
+from modules.dcr.dcr_main import run_dcr
+from modules.dcr.doctor_fetch import run_doctor_fetch
 
 
 # ======================================================
@@ -434,7 +436,20 @@ if role == "user":
 
                 
 
-
+    # DCR MODULE FOR USERS
+    st.sidebar.divider()
+    st.sidebar.subheader("📞 Daily Call Report")
+    
+    if st.sidebar.button("➕ New Daily Report", key="user_nav_dcr"):
+        st.session_state.engine_stage = "dcr"
+        st.session_state.admin_section = None
+        st.rerun()
+    
+    if st.sidebar.button("🔍 Doctor Fetch", key="user_nav_doctor_fetch"):
+        st.session_state.engine_stage = "doctor_fetch"
+        st.session_state.admin_section = None
+        st.rerun()
+    
     # --------------------------------------------------
     # ➕ CREATE / RESUME NEW STATEMENT
     # --------------------------------------------------
@@ -2213,6 +2228,16 @@ if role == "admin":
             st.dataframe(df, use_container_width=True)
         else:
             st.warning("No data for selected period")
+# ======================================================
+# DCR MODULE
+# ======================================================
+if st.session_state.get("engine_stage") == "dcr":
+    run_dcr()
+    st.stop()
+
+if st.session_state.get("engine_stage") == "doctor_fetch":
+    run_doctor_fetch()
+    st.stop()
 # ======================================================
 # ======================================================
 # REPORTS & MATRICES
