@@ -302,9 +302,22 @@ def get_dcr_by_id(dcr_id):
     
     dcr_data = dcr[0]
     
-    # Parse JSONB fields
-    territory_ids = json.loads(dcr_data.get("territory_ids") or "[]")
-    chemist_ids = json.loads(dcr_data.get("chemist_ids") or "[]")
+    # Parse JSONB fields safely
+    try:
+        territory_ids = json.loads(dcr_data.get("territory_ids") or "[]")
+    except:
+        territory_ids = []
+
+    try:
+        chemist_ids = json.loads(dcr_data.get("chemist_ids") or "[]")
+    except:
+        chemist_ids = []
+
+    # Ensure they're lists
+    if not isinstance(territory_ids, list):
+        territory_ids = []
+    if not isinstance(chemist_ids, list):
+        chemist_ids = []
     
     # Get territory names
     territory_names = []
