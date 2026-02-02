@@ -3461,7 +3461,7 @@ This action will:
         st.subheader("🧾 Invoice Register")
 
         invoices = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, created_at, from_entity_type, from_entity_id, to_entity_type, to_entity_id")  \
+            .select("id, ops_no, ops_date, reference_no, created_at") \
             .eq("ops_type", "STOCK_OUT") \
             .eq("stock_as", "normal") \
             .eq("is_deleted", False) \
@@ -3480,9 +3480,7 @@ This action will:
                 with c1:
                     
                     st.write(f"📄 **OPS No:** {inv['ops_no']}")
-                    # Display party name
-                    party_name = resolve_entity_name(inv.get('to_entity_type'), inv.get('to_entity_id'))
-                    st.caption(f"Party: {party_name}")
+                    
 
 
                 with c2:
