@@ -545,12 +545,18 @@ def run_ops():
         st.divider()
 
         # -------- Totals --------
+        # Calculate the actual final invoice total
+        final_invoice_total = total_net + total_tax
+        
         st.markdown(f"""
-    ### 💰 Totals
-    - **Gross:** ₹ {total_gross:,.2f}
-    - **Tax:** ₹ {total_tax:,.2f}
-    - **Discount:** ₹ {total_discount:,.2f}
-    - **Net Amount:** ₹ {total_net:,.2f}
+    ### 💰 Invoice Breakdown
+    - **Gross Amount:** ₹ {total_gross:,.2f}
+    - **Less: Discount:** ₹ {total_discount:,.2f}
+    - **Taxable Amount (Net):** ₹ {total_net:,.2f}
+    - **Add: GST/Tax:** ₹ {total_tax:,.2f}
+    
+    ---
+    ### 📌 FINAL INVOICE TOTAL: ₹ {final_invoice_total:,.2f}
     """)
 
         
