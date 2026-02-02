@@ -512,14 +512,17 @@ def run_ops():
             .eq("ops_document_id", ops_id) \
             .execute().data or []
 
-        total_gross = total_tax = total_discount = total_net = 0
-
+        # Get amounts from first line (all lines have same document-level amounts)
+        if lines:
+            first_line = lines[0]
+            total_gross = first_line["gross_amount"]
+            total_tax = first_line["tax_amount"]
+            total_discount = first_line["discount_amount"]
+            total_net = first_line["net_amount"]
+        else:
+            total_gross = total_tax = total_discount = total_net = 0
         for line in lines:
-            total_gross += line["gross_amount"]
-            total_tax += line["tax_amount"]
-            total_discount += line["discount_amount"]
-            total_net += line["net_amount"]
-
+            
             with st.container():
                 c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
 
@@ -549,15 +552,15 @@ def run_ops():
         final_invoice_total = total_net + total_tax
         
         st.markdown(f"""
-    ### 💰 Invoice Breakdown
-    - **Gross Amount:** ₹ {total_gross:,.2f}
-    - **Less: Discount:** ₹ {total_discount:,.2f}
-    - **Taxable Amount (Net):** ₹ {total_net:,.2f}
-    - **Add: GST/Tax:** ₹ {total_tax:,.2f}
+        ### 💰 Invoice Breakdown
+        - **Gross Amount:** ₹ {total_gross:,.2f}
+        - **Less: Discount:** ₹ {total_discount:,.2f}
+        - **Taxable Amount (Net):** ₹ {total_net:,.2f}
+        - **Add: GST/Tax:** ₹ {total_tax:,.2f}
     
-    ---
-    ### 📌 FINAL INVOICE TOTAL: ₹ {final_invoice_total:,.2f}
-    """)
+        ---
+        ### 📌 FINAL INVOICE TOTAL: ₹ {final_invoice_total:,.2f}
+        """)
 
         
         st.divider()
