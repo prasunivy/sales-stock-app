@@ -264,6 +264,10 @@ def run_ops():
         st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
         st.rerun()
 
+    if st.sidebar.button("🗄️ Archived Invoices"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED"
+        st.rerun()
+
     if st.sidebar.button("📝 Credit Notes"):
         st.session_state.ops_section = "DOCUMENT_BROWSER_CREDIT_NOTES"
         st.rerun()
@@ -3481,7 +3485,45 @@ This action will:
             st.info("No invoices found")
             st.stop()
 
+        # Fetch party names and invoice totals for all invoices
+        invoice_ids = [inv["id"] for inv in invoices]
+        
+        # Get party info from financial_ledger
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", invoice_ids) \
+            .execute().data or []
+        
+        # Get invoice totals from ops_lines (first line only)
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", invoice_ids) \
+            .execute().data or []
+        
+        # Create lookup dictionaries
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        
+        # Get first line's net_amount for each invoice (all lines have same total)
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:  # Only take first line
+                total_lookup[doc_id] = line["net_amount"]
+
         for inv in invoices:
+            # Get party name
+            party_id = party_lookup.get(inv["id"])
+            if party_id:
+                # Find party name from stockists
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+            
+            # Get invoice total
+            invoice_total = total_lookup.get(inv["id"], 0)
 
             with st.container():
                 c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
@@ -3489,7 +3531,7 @@ This action will:
                 with c1:
                     
                     st.write(f"📄 **OPS No:** {inv['ops_no']}")
-                    
+                    st.caption(f"👤 {party_name}")
 
 
                 with c2:
@@ -3497,7 +3539,8 @@ This action will:
 
                 with c3:
                     
-                    st.write(f"**Invoice Ref:** {inv.get('reference_no') or '-'}")
+                    st.write(f"**Ref:** {inv.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{invoice_total:,.2f}**")
 
                 with c4:
                     b1, b2, b3 = st.columns(3)
@@ -3526,6 +3569,178 @@ This action will:
 
 
                 st.divider()
+    # =========================
+    # DOCUMENT BROWSER — ARCHIVED INVOICES
+    # =========================
+    elif section == "DOCUMENT_BROWSER_ARCHIVED":
+        st.subheader("🗄️ Archived Invoices (Deleted/Edited)")
+        
+        st.info("""
+        📌 This shows invoices that have been deleted or edited.
+        These records are kept for audit purposes.
+        """)
+
+        archived = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, updated_at") \
+            .eq("ops_type", "STOCK_OUT") \
+            .eq("stock_as", "normal") \
+            .eq("is_deleted", True) \
+            .order("updated_at", desc=True) \
+            .execute().data
+
+        if not archived:
+            st.success("✅ No archived invoices found")
+            st.stop()
+
+        # Fetch party names and totals for archived invoices
+        invoice_ids = [inv["id"] for inv in archived]
+        
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", invoice_ids) \
+            .execute().data or []
+        
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", invoice_ids) \
+            .execute().data or []
+        
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:
+                total_lookup[doc_id] = line["net_amount"]
+
+        for inv in archived:
+            # Get party name
+            party_id = party_lookup.get(inv["id"])
+            if party_id:
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+            
+            invoice_total = total_lookup.get(inv["id"], 0)
+
+            with st.container():
+                c1, c2, c3 = st.columns([4, 3, 3])
+
+                with c1:
+                    st.write(f"🗄️ **{inv['ops_no']}**")
+                    st.caption(f"👤 {party_name}")
+
+                with c2:
+                    st.write(f"**Date:** {inv['ops_date']}")
+                    st.caption(f"Archived: {inv['updated_at'][:10]}")
+
+                with c3:
+                    st.write(f"**Ref:** {inv.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{invoice_total:,.2f}**")
+                    if st.button("👁 View", key=f"view_arch_{inv['id']}"):
+                        st.session_state.selected_ops_id = inv["id"]
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
+                        st.rerun()
+
+                st.divider()
+
+    # =========================
+    # DOCUMENT BROWSER — ARCHIVE VIEW (READ ONLY)
+    # =========================
+    elif section == "DOCUMENT_BROWSER_ARCHIVE_VIEW":
+
+        ops_id = st.session_state.get("selected_ops_id")
+
+        if not ops_id:
+            st.error("Invoice not found")
+            st.stop()
+
+        # Fetch archived invoice
+        invoice = admin_supabase.table("ops_documents") \
+            .select("*") \
+            .eq("id", ops_id) \
+            .eq("is_deleted", True) \
+            .single() \
+            .execute().data
+
+        if not invoice:
+            st.error("Archived invoice does not exist")
+            st.stop()
+
+        st.subheader(f"🗄️ Archived Invoice — {invoice['ops_no']}")
+        
+        st.warning("⚠️ This is an ARCHIVED invoice (deleted or edited)")
+
+        st.markdown(f"""
+    **Date:** {invoice['ops_date']}  
+    **Reference:** {invoice.get('reference_no') or '-'}  
+    **Archived Date:** {invoice.get('updated_at', 'N/A')}
+    """)
+
+        st.divider()
+
+        # Fetch Line Items
+        lines = admin_supabase.table("ops_lines") \
+            .select("*") \
+            .eq("ops_document_id", ops_id) \
+            .execute().data or []
+
+        # Get amounts from first line
+        if lines:
+            first_line = lines[0]
+            total_gross = first_line["gross_amount"]
+            total_tax = first_line["tax_amount"]
+            total_discount = first_line["discount_amount"]
+            total_net = first_line["net_amount"]
+        else:
+            total_gross = total_tax = total_discount = total_net = 0
+
+        # Display product lines
+        for line in lines:
+            with st.container():
+                c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
+
+                with c1:
+                    product = next(
+                        (p["name"] for p in st.session_state.products_master if p["id"] == line["product_id"]),
+                        "Unknown Product"
+                    )
+                    st.write(product)
+
+                with c2:
+                    st.write(f"Sale: {line['sale_qty']}")
+
+                with c3:
+                    st.write(f"Free: {line['free_qty']}")
+
+                with c4:
+                    st.write(f"Gross: ₹{line['gross_amount']:,.2f}")
+
+                with c5:
+                    st.write(f"Net: ₹{line['net_amount']:,.2f}")
+
+        st.divider()
+
+        # Totals
+        st.markdown(f"""
+    ### 💰 Invoice Breakdown
+    - **Gross Amount:** ₹ {total_gross:,.2f}
+    - **Less: Discount:** ₹ {total_discount:,.2f}
+    - **Taxable Amount:** ₹ {total_gross - total_discount:,.2f}
+    - **Add: GST/Tax:** ₹ {total_tax:,.2f}
+    
+    ---
+    ### 📌 FINAL INVOICE TOTAL: ₹ {total_net:,.2f}
+    """)
+
+        st.divider()
+
+        if st.button("⬅ Back to Archive List"):
+            st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED"
+            st.rerun()
+                
     # =========================
     # DOCUMENT BROWSER — CREDIT NOTES
     # =========================
