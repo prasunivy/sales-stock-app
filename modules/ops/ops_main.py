@@ -549,7 +549,7 @@ def run_ops():
 
         # -------- Totals --------
         # Calculate the actual final invoice total
-        final_invoice_total = total_net + total_tax
+        
         
         st.markdown(f"""
         ### 💰 Invoice Breakdown
@@ -559,7 +559,7 @@ def run_ops():
         - **Add: GST/Tax:** ₹ {total_tax:,.2f}
     
         ---
-        ### 📌 FINAL INVOICE TOTAL: ₹ {final_invoice_total:,.2f}
+        ### 📌 FINAL INVOICE TOTAL: ₹ {total_net:,.2f}
         """)
 
         
