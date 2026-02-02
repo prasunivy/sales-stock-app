@@ -272,16 +272,33 @@ def run_ops():
         st.session_state.ops_section = "DOCUMENT_BROWSER_CREDIT_NOTES"
         st.rerun()
 
+    if st.sidebar.button("🗄️ Archived Credit Notes"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_CN"
+        st.rerun()
+
     if st.sidebar.button("🔄 Transfers"):
         st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFERS"
+        st.rerun()
+
+    if st.sidebar.button("🗄️ Archived Transfers"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_TRANSFERS"
         st.rerun()
 
     if st.sidebar.button("🎁 Samples & Lots"):
         st.session_state.ops_section = "DOCUMENT_BROWSER_SAMPLES"
         st.rerun()
 
+    if st.sidebar.button("🗄️ Archived Samples/Lots"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_SAMPLES"
+        st.rerun()
+
+
     if st.sidebar.button("🛒 Purchases"):
         st.session_state.ops_section = "DOCUMENT_BROWSER_PURCHASES"
+        st.rerun()
+
+    if st.sidebar.button("🗄️ Archived Purchases"):
+        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_PURCHASES"
         st.rerun()
     
 
@@ -3759,24 +3776,141 @@ This action will:
             st.info("No credit notes found")
             st.stop()
 
+        # Fetch party names and totals
+        doc_ids = [d["id"] for d in docs]
+        
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:
+                total_lookup[doc_id] = line["net_amount"]
+
         for doc in docs:
+            # Get party name
+            party_id = party_lookup.get(doc["id"])
+            if party_id:
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+            
+            doc_total = total_lookup.get(doc["id"], 0)
+
             with st.container():
-                c1, c2, c3 = st.columns([4, 3, 3])
+                c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
 
                 with c1:
-                    st.write(f"📝 **{doc['ops_no']}** | {doc['ops_date']}")
+                    st.write(f"📝 **{doc['ops_no']}**")
+                    st.caption(f"👤 {party_name}")
 
                 with c2:
-                    st.write(doc.get("narration", "-"))
+                    st.write(doc['ops_date'])
 
                 with c3:
-                    if st.button("🗑 Delete", key=f"del_cn_{doc['id']}"):
-                        st.session_state.selected_ops_id = doc["id"]
-                        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
-                        st.rerun()
+                    st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{doc_total:,.2f}**")
+
+                with c4:
+                    b1, b2 = st.columns(2)
+                    
+                    with b1:
+                        if st.button("👁 View", key=f"view_cn_{doc['id']}"):
+                            st.session_state.selected_ops_id = doc["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
+                            st.rerun()
+                    
+                    with b2:
+                        if st.button("🗑 Delete", key=f"del_cn_{doc['id']}"):
+                            st.session_state.selected_ops_id = doc["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                            st.rerun()
 
                 st.divider()
-
+    # =========================
+    # DOCUMENT BROWSER — ARCHIVED CREDIT NOTES
+    # =========================
+    elif section == "DOCUMENT_BROWSER_ARCHIVED_CN":
+        st.subheader("🗄️ Archived Credit Notes")
+        
+        st.info("📌 This shows credit notes that have been deleted or edited.")
+        
+        docs = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, updated_at") \
+            .eq("stock_as", "adjustment") \
+            .ilike("narration", "%credit%") \
+            .eq("is_deleted", True) \
+            .order("updated_at", desc=True) \
+            .execute().data
+        
+        if not docs:
+            st.success("✅ No archived credit notes")
+            st.stop()
+        
+        # Fetch party names and totals
+        doc_ids = [d["id"] for d in docs]
+        
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:
+                total_lookup[doc_id] = line["net_amount"]
+        
+        for doc in docs:
+            party_id = party_lookup.get(doc["id"])
+            if party_id:
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+            
+            doc_total = total_lookup.get(doc["id"], 0)
+            
+            with st.container():
+                c1, c2, c3 = st.columns([4, 3, 3])
+                
+                with c1:
+                    st.write(f"🗄️ **{doc['ops_no']}**")
+                    st.caption(f"👤 {party_name}")
+                
+                with c2:
+                    st.write(f"**Date:** {doc['ops_date']}")
+                    st.caption(f"Archived: {doc['updated_at'][:10]}")
+                
+                with c3:
+                    st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{doc_total:,.2f}**")
+                    if st.button("👁 View", key=f"view_arch_cn_{doc['id']}"):
+                        st.session_state.selected_ops_id = doc["id"]
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
+                        st.rerun()
+                
+                st.divider()
     # =========================
     # DOCUMENT BROWSER — TRANSFERS
     # =========================
@@ -3813,6 +3947,77 @@ This action will:
                 st.divider()
 
     # =========================
+    # DOCUMENT BROWSER — ARCHIVED TRANSFERS
+    # =========================
+    elif section == "DOCUMENT_BROWSER_ARCHIVED_TRANSFERS":
+        st.subheader("🗄️ Archived Transfers")
+        
+        st.info("📌 This shows transfers that have been deleted or edited.")
+        
+        docs = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, updated_at") \
+            .ilike("narration", "%transfer%") \
+            .eq("is_deleted", True) \
+            .order("updated_at", desc=True) \
+            .execute().data
+        
+        if not docs:
+            st.success("✅ No archived transfers")
+            st.stop()
+        
+        # Fetch party names and totals
+        doc_ids = [d["id"] for d in docs]
+        
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:
+                total_lookup[doc_id] = line["net_amount"]
+        
+        for doc in docs:
+            party_id = party_lookup.get(doc["id"])
+            if party_id:
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+            
+            doc_total = total_lookup.get(doc["id"], 0)
+            
+            with st.container():
+                c1, c2, c3 = st.columns([4, 3, 3])
+                
+                with c1:
+                    st.write(f"🗄️ **{doc['ops_no']}**")
+                    st.caption(f"👤 {party_name}")
+                
+                with c2:
+                    st.write(f"**Date:** {doc['ops_date']}")
+                    st.caption(f"Archived: {doc['updated_at'][:10]}")
+                
+                with c3:
+                    st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{doc_total:,.2f}**")
+                    if st.button("👁 View", key=f"view_arch_tr_{doc['id']}"):
+                        st.session_state.selected_ops_id = doc["id"]
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
+                        st.rerun()
+                
+                st.divider()
+    # =========================
     # DOCUMENT BROWSER — SAMPLES & LOTS
     # =========================
     elif section == "DOCUMENT_BROWSER_SAMPLES":
@@ -3848,6 +4053,77 @@ This action will:
                 st.divider()
 
     # =========================
+    # DOCUMENT BROWSER — ARCHIVED SAMPLES & LOTS
+    # =========================
+    elif section == "DOCUMENT_BROWSER_ARCHIVED_SAMPLES":
+        st.subheader("🗄️ Archived Samples & Lots")
+        
+        st.info("📌 This shows samples/lots that have been deleted or edited.")
+        
+        docs = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, updated_at") \
+            .or_("narration.ilike.%sample%,narration.ilike.%lot%") \
+            .eq("is_deleted", True) \
+            .order("updated_at", desc=True) \
+            .execute().data
+        
+        if not docs:
+            st.success("✅ No archived samples/lots")
+            st.stop()
+        
+        # Fetch party names and totals
+        doc_ids = [d["id"] for d in docs]
+        
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:
+                total_lookup[doc_id] = line["net_amount"]
+        
+        for doc in docs:
+            party_id = party_lookup.get(doc["id"])
+            if party_id:
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+            
+            doc_total = total_lookup.get(doc["id"], 0)
+            
+            with st.container():
+                c1, c2, c3 = st.columns([4, 3, 3])
+                
+                with c1:
+                    st.write(f"🗄️ **{doc['ops_no']}**")
+                    st.caption(f"👤 {party_name}")
+                
+                with c2:
+                    st.write(f"**Date:** {doc['ops_date']}")
+                    st.caption(f"Archived: {doc['updated_at'][:10]}")
+                
+                with c3:
+                    st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{doc_total:,.2f}**")
+                    if st.button("👁 View", key=f"view_arch_sl_{doc['id']}"):
+                        st.session_state.selected_ops_id = doc["id"]
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
+                        st.rerun()
+                
+                st.divider()
+    # =========================
     # DOCUMENT BROWSER — PURCHASES
     # =========================
     elif section == "DOCUMENT_BROWSER_PURCHASES":
@@ -3880,6 +4156,77 @@ This action will:
                         st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
                         st.rerun()
 
+                st.divider()
+    # =========================
+    # DOCUMENT BROWSER — ARCHIVED PURCHASES
+    # =========================
+    elif section == "DOCUMENT_BROWSER_ARCHIVED_PURCHASES":
+        st.subheader("🗄️ Archived Purchases")
+        
+        st.info("📌 This shows purchases that have been deleted or edited.")
+        
+        docs = admin_supabase.table("ops_documents") \
+            .select("id, ops_no, ops_date, reference_no, updated_at") \
+            .eq("ops_type", "STOCK_IN") \
+            .eq("is_deleted", True) \
+            .order("updated_at", desc=True) \
+            .execute().data
+        
+        if not docs:
+            st.success("✅ No archived purchases")
+            st.stop()
+        
+        # Fetch party names and totals
+        doc_ids = [d["id"] for d in docs]
+        
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+        
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:
+                total_lookup[doc_id] = line["net_amount"]
+        
+        for doc in docs:
+            party_id = party_lookup.get(doc["id"])
+            if party_id:
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+            
+            doc_total = total_lookup.get(doc["id"], 0)
+            
+            with st.container():
+                c1, c2, c3 = st.columns([4, 3, 3])
+                
+                with c1:
+                    st.write(f"🗄️ **{doc['ops_no']}**")
+                    st.caption(f"👤 {party_name}")
+                
+                with c2:
+                    st.write(f"**Date:** {doc['ops_date']}")
+                    st.caption(f"Archived: {doc['updated_at'][:10]}")
+                
+                with c3:
+                    st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{doc_total:,.2f}**")
+                    if st.button("👁 View", key=f"view_arch_pur_{doc['id']}"):
+                        st.session_state.selected_ops_id = doc["id"]
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
+                        st.rerun()
+                
                 st.divider()
     # ========================
     # DOCUMENT BROWSER — FREIGHT
