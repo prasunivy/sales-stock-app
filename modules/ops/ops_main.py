@@ -555,7 +555,7 @@ def run_ops():
         ### 💰 Invoice Breakdown
         - **Gross Amount:** ₹ {total_gross:,.2f}
         - **Less: Discount:** ₹ {total_discount:,.2f}
-        - **Taxable Amount (Net):** ₹ {total_net:,.2f}
+        - **Taxable Amount (Net):** ₹ {total_gross - total_discount:,.2f}
         - **Add: GST/Tax:** ₹ {total_tax:,.2f}
     
         ---
