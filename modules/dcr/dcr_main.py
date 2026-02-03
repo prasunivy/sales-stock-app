@@ -39,6 +39,13 @@ def run_dcr():
     """Main entry point for DCR module"""
     init_dcr_session_state()
     
+    # If coming from sidebar fresh (no masters mode, no step, no report_id)
+    # Reset to home screen
+    if (not st.session_state.get("dcr_masters_mode") 
+        and not st.session_state.get("dcr_report_id")
+        and not st.session_state.get("dcr_submit_done")):
+        st.session_state.dcr_current_step = 0
+    
     st.title("📞 Daily Call Report")
     
     try:
