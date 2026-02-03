@@ -1759,12 +1759,12 @@ This action will:
                                 "qty_out": qty,
                                 "closing_qty": 0,
                                 "direction": "OUT",
-                                "narration": f"Stock OUT - {stock_as} - To {st.session_state.ops_to_entity_type}"
+                                "narration": f"Stock OUT - {doc_stock_as} - To {st.session_state.ops_to_entity_type}"
                             }).execute()
                             
                             # ✅ CREATE STOCK IN FOR RECEIVER (TO entity)
                             # SKIP ONLY if stock_as is Sample or Lot
-                            if stock_as not in ["Sample", "Lot"]:
+                            if doc_stock_as not in ["Sample", "Lot"]:
                                 admin_supabase.table("stock_ledger").insert({
                                     "ops_document_id": ops_document_id,
                                     "product_id": p["product_id"],
@@ -1775,7 +1775,7 @@ This action will:
                                     "qty_out": 0,
                                     "closing_qty": 0,
                                     "direction": "IN",
-                                    "narration": f"Stock IN - {stock_as} - From {st.session_state.ops_from_entity_type}"
+                                    "narration": f"Stock IN - {doc_stock_as} - From {st.session_state.ops_from_entity_type}"
                                 }).execute()
 
 
