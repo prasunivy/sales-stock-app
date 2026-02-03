@@ -3848,20 +3848,26 @@ This action will:
                     st.write(f"**💰 ₹{doc_total:,.2f}**")
 
                 with c4:
-                    b1, b2 = st.columns(2)
+                    b1, b2, b3 = st.columns(3)
                     
                     with b1:
                         if st.button("👁 View", key=f"view_cn_{doc['id']}"):
                             st.session_state.selected_ops_id = doc["id"]
                             st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
                             st.rerun()
-                    
+
                     with b2:
+                        if st.button("✏️ Edit", key=f"edit_cn_{doc['id']}"):
+                            st.session_state.edit_source_ops_id = doc["id"]
+                            st.session_state.edit_mode = True
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_EDIT"
+                            st.rerun()
+                    
+                    with b3:
                         if st.button("🗑 Delete", key=f"del_cn_{doc['id']}"):
                             st.session_state.selected_ops_id = doc["id"]
                             st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
                             st.rerun()
-
                 st.divider()
     # =========================
     # DOCUMENT BROWSER — ARCHIVED CREDIT NOTES
@@ -3945,21 +3951,74 @@ This action will:
             st.info("No transfers found")
             st.stop()
 
+        doc_ids = [d["id"] for d in docs]
+
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:
+                total_lookup[doc_id] = line["net_amount"]
+
         for doc in docs:
+            party_id = party_lookup.get(doc["id"])
+            if party_id:
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+
+            doc_total = total_lookup.get(doc["id"], 0)
+
             with st.container():
-                c1, c2, c3 = st.columns([4, 3, 3])
+                c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
 
                 with c1:
-                    st.write(f"🔄 **{doc['ops_no']}** | {doc['ops_date']}")
+                    st.write(f"🔄 **{doc['ops_no']}**")
+                    st.caption(f"👤 {party_name}")
 
                 with c2:
-                    st.write(doc.get("narration", "-"))
+                    st.write(doc["ops_date"])
 
                 with c3:
-                    if st.button("🗑 Delete", key=f"del_tr_{doc['id']}"):
-                        st.session_state.selected_ops_id = doc["id"]
-                        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
-                        st.rerun()
+                    st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{doc_total:,.2f}**")
+
+                with c4:
+                    b1, b2, b3 = st.columns(3)
+
+                    with b1:
+                        if st.button("👁 View", key=f"view_tr_{doc['id']}"):
+                            st.session_state.selected_ops_id = doc["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
+                            st.rerun()
+
+                    with b2:
+                        if st.button("✏️ Edit", key=f"edit_tr_{doc['id']}"):
+                            st.session_state.edit_source_ops_id = doc["id"]
+                            st.session_state.edit_mode = True
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_EDIT"
+                            st.rerun()
+
+                    with b3:
+                        if st.button("🗑 Delete", key=f"del_tr_{doc['id']}"):
+                            st.session_state.selected_ops_id = doc["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                            st.rerun()
+
+                st.divider()
 
                 st.divider()
 
@@ -4046,21 +4105,72 @@ This action will:
             st.info("No samples/lots found")
             st.stop()
 
+        doc_ids = [d["id"] for d in docs]
+
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:
+                total_lookup[doc_id] = line["net_amount"]
+
         for doc in docs:
+            party_id = party_lookup.get(doc["id"])
+            if party_id:
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+
+            doc_total = total_lookup.get(doc["id"], 0)
+
             with st.container():
-                c1, c2, c3 = st.columns([4, 3, 3])
+                c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
 
                 with c1:
-                    st.write(f"🎁 **{doc['ops_no']}** | {doc['ops_date']}")
+                    st.write(f"🎁 **{doc['ops_no']}**")
+                    st.caption(f"👤 {party_name}")
 
                 with c2:
-                    st.write(doc.get("narration", "-"))
+                    st.write(doc["ops_date"])
 
                 with c3:
-                    if st.button("🗑 Delete", key=f"del_sl_{doc['id']}"):
-                        st.session_state.selected_ops_id = doc["id"]
-                        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
-                        st.rerun()
+                    st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{doc_total:,.2f}**")
+
+                with c4:
+                    b1, b2, b3 = st.columns(3)
+
+                    with b1:
+                        if st.button("👁 View", key=f"view_sl_{doc['id']}"):
+                            st.session_state.selected_ops_id = doc["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
+                            st.rerun()
+
+                    with b2:
+                        if st.button("✏️ Edit", key=f"edit_sl_{doc['id']}"):
+                            st.session_state.edit_source_ops_id = doc["id"]
+                            st.session_state.edit_mode = True
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_EDIT"
+                            st.rerun()
+
+                    with b3:
+                        if st.button("🗑 Delete", key=f"del_sl_{doc['id']}"):
+                            st.session_state.selected_ops_id = doc["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                            st.rerun()
 
                 st.divider()
 
@@ -4147,21 +4257,72 @@ This action will:
             st.info("No purchases found")
             st.stop()
 
+        doc_ids = [d["id"] for d in docs]
+
+        ledger_data = admin_supabase.table("financial_ledger") \
+            .select("ops_document_id, party_id") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+
+        lines_data = admin_supabase.table("ops_lines") \
+            .select("ops_document_id, net_amount") \
+            .in_("ops_document_id", doc_ids) \
+            .execute().data or []
+
+        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+        total_lookup = {}
+        for line in lines_data:
+            doc_id = line["ops_document_id"]
+            if doc_id not in total_lookup:
+                total_lookup[doc_id] = line["net_amount"]
+
         for doc in docs:
+            party_id = party_lookup.get(doc["id"])
+            if party_id:
+                party_name = next(
+                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                    "Unknown Party"
+                )
+            else:
+                party_name = "Company"
+
+            doc_total = total_lookup.get(doc["id"], 0)
+
             with st.container():
-                c1, c2, c3 = st.columns([4, 3, 3])
+                c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
 
                 with c1:
-                    st.write(f"🛒 **{doc['ops_no']}** | {doc['ops_date']}")
+                    st.write(f"🛒 **{doc['ops_no']}**")
+                    st.caption(f"👤 {party_name}")
 
                 with c2:
-                    st.write(doc.get("narration", "-"))
+                    st.write(doc["ops_date"])
 
                 with c3:
-                    if st.button("🗑 Delete", key=f"del_pur_{doc['id']}"):
-                        st.session_state.selected_ops_id = doc["id"]
-                        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
-                        st.rerun()
+                    st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
+                    st.write(f"**💰 ₹{doc_total:,.2f}**")
+
+                with c4:
+                    b1, b2, b3 = st.columns(3)
+
+                    with b1:
+                        if st.button("👁 View", key=f"view_pur_{doc['id']}"):
+                            st.session_state.selected_ops_id = doc["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
+                            st.rerun()
+
+                    with b2:
+                        if st.button("✏️ Edit", key=f"edit_pur_{doc['id']}"):
+                            st.session_state.edit_source_ops_id = doc["id"]
+                            st.session_state.edit_mode = True
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_EDIT"
+                            st.rerun()
+
+                    with b3:
+                        if st.button("🗑 Delete", key=f"del_pur_{doc['id']}"):
+                            st.session_state.selected_ops_id = doc["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                            st.rerun()
 
                 st.divider()
     # =========================
