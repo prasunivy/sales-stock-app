@@ -31,6 +31,8 @@ from modules.dcr.dcr_helpers import (
     validate_date,
     get_current_user_id
 )
+from modules.dcr.doctors_master import run_doctors_master
+from modules.dcr.chemists_master import run_chemists_master
 
 
 def run_dcr():
@@ -46,6 +48,15 @@ def run_dcr():
         st.error(f"❌ Authentication Error: {str(e)}")
         st.stop()
     
+    # Check if in masters mode
+    if st.session_state.get("dcr_masters_mode") == "DOCTORS":
+        run_doctors_master()
+        return
+    
+    if st.session_state.get("dcr_masters_mode") == "CHEMISTS":
+        run_chemists_master()
+        return
+    
     # Route based on state
     if st.session_state.get("dcr_submit_done"):
         show_post_submit_screen()
@@ -56,9 +67,10 @@ def run_dcr():
 
 
 def show_home_screen():
-    """Home screen"""
+    """Home screen with DCR options and Masters"""
     st.write("### What would you like to do?")
     
+    # DCR Actions
     col1, col2 = st.columns(2)
     
     with col1:
@@ -69,6 +81,23 @@ def show_home_screen():
     with col2:
         if st.button("📅 View My Reports", use_container_width=True):
             show_monthly_history()
+    
+    # Masters Section
+    st.write("---")
+    st.write("### 📚 Masters (Manage Data)")
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        if st.button("👨‍⚕️ Doctors Master", use_container_width=True):
+            st.session_state.dcr_masters_mode = "DOCTORS"
+            st.rerun()
+    
+    with col4:
+        if st.button("🏪 Chemists Master", use_container_width=True):
+            st.session_state.dcr_masters_mode = "CHEMISTS"
+            st.rerun()
+
 
 
 def show_monthly_history():
