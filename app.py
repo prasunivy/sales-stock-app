@@ -569,13 +569,13 @@ if role == "admin":
     st.sidebar.divider()
     if st.sidebar.button("📞 Daily Call Report", key="admin_nav_dcr"):
     # Clear all DCR state before entering
-    for key in list(st.session_state.keys()):
-        if key.startswith("dcr_"):
-            del st.session_state[key]
+        for key in list(st.session_state.keys()):
+            if key.startswith("dcr_"):
+                del st.session_state[key]
     
-    st.session_state.engine_stage = "dcr"
-    st.session_state.admin_section = None
-    st.rerun()
+        st.session_state.engine_stage = "dcr"
+        st.session_state.admin_section = None
+        st.rerun()
     
     if st.sidebar.button("🔍 Doctor Fetch", key="admin_nav_doctor_fetch"):
         st.session_state.engine_stage = "doctor_fetch"
