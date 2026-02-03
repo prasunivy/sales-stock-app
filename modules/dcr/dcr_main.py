@@ -280,6 +280,9 @@ def show_stage_2_visits():
     territory_ids = st.session_state.dcr_territory_ids
     
     dcr_data = get_dcr_by_id(dcr_id)
+    # Initialize variables at the top to avoid UnboundLocalError
+    existing_visits = dcr_data.get('doctor_visits', []) 
+    existing_gifts = dcr_data.get('gifts', [])
     
     # ========================================
     # DOCTORS SECTION
