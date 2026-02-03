@@ -1657,13 +1657,38 @@ This action will:
                         st.error("❌ OPS entity binding incomplete. Please restart OPS.")
                         st.stop()
                         
-                    # 🔑 DETERMINE OPS DOCUMENT NATURE (INVOICE VS ADJUSTMENT)
+                    # 🔑 DETERMINE OPS DOCUMENT NATURE
                     doc_stock_as = st.session_state.ops_master_payload.get("stock_as")
-                    is_invoice = (doc_stock_as == "Invoice")
 
-                    ops_type_val = "STOCK_OUT" if is_invoice else "ADJUSTMENT"
-                    stock_as_val = "normal" if is_invoice else "adjustment"
-                    direction_val = "OUT" if is_invoice else "ADJUST"
+                    # ops_type
+                    if doc_stock_as == "Invoice":
+                        ops_type_val = "STOCK_OUT"
+                    elif doc_stock_as == "Purchase":
+                        ops_type_val = "STOCK_IN"
+                    else:
+                        ops_type_val = "ADJUSTMENT"
+
+                    # stock_as (what gets saved in DB column)
+                    if doc_stock_as == "Invoice":
+                        stock_as_val = "normal"
+                    elif doc_stock_as == "Purchase":
+                        stock_as_val = "purchase"
+                    elif doc_stock_as == "Transfer":
+                        stock_as_val = "transfer"
+                    elif doc_stock_as == "Credit Note":
+                        stock_as_val = "credit_note"
+                    elif doc_stock_as in ["Sample", "Lot"]:
+                        stock_as_val = doc_stock_as.lower()   # "sample" or "lot"
+                    else:
+                        stock_as_val = "adjustment"
+
+                    # direction
+                    if doc_stock_as in ["Invoice", "Transfer", "Sample", "Lot", "Damage", "Return to Purchaser"]:
+                        direction_val = "OUT"
+                    elif doc_stock_as in ["Purchase", "Credit Note", "Return", "Replace"]:
+                        direction_val = "IN"
+                    else:
+                        direction_val = "ADJUST"
                     try:
                         response = admin_supabase.table("ops_documents").insert({
                             "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
@@ -1671,7 +1696,7 @@ This action will:
                             "ops_type": ops_type_val,
                             "stock_as": stock_as_val,
                             "direction": direction_val,
-                            "narration": "OPS test submit from UI",
+                            "narration": f"{doc_stock_as} - {st.session_state.ops_from_entity_type} to {st.session_state.ops_to_entity_type}",
                             "reference_no": reference_no,
                             "created_by": user_id
                         }).execute()
@@ -1763,7 +1788,7 @@ This action will:
                             }).execute()
                             
                             # ✅ CREATE STOCK IN FOR RECEIVER (TO entity)
-                            # SKIP ONLY if stock_as is Sample or Lot
+                            # SKIP ONLY if doc_stock_as is Sample or Lot
                             if doc_stock_as not in ["Sample", "Lot"]:
                                 admin_supabase.table("stock_ledger").insert({
                                     "ops_document_id": ops_document_id,
@@ -3766,8 +3791,7 @@ This action will:
 
         docs = admin_supabase.table("ops_documents") \
             .select("id, ops_no, ops_date, reference_no, narration") \
-            .eq("stock_as", "adjustment") \
-            .ilike("narration", "%credit%") \
+            .eq("stock_as", "credit_note") \
             .eq("is_deleted", False) \
             .order("ops_date", desc=True) \
             .execute().data
@@ -3844,41 +3868,38 @@ This action will:
     # =========================
     elif section == "DOCUMENT_BROWSER_ARCHIVED_CN":
         st.subheader("🗄️ Archived Credit Notes")
-        
-        st.info("📌 This shows credit notes that have been deleted or edited.")
-        
+        st.info("📌 These are credit notes that were deleted or replaced by an edit.")
+
         docs = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, updated_at") \
-            .eq("stock_as", "adjustment") \
-            .ilike("narration", "%credit%") \
+            .select("id, ops_no, ops_date, reference_no, narration, updated_at") \
+            .eq("stock_as", "credit_note") \
             .eq("is_deleted", True) \
             .order("updated_at", desc=True) \
             .execute().data
-        
+
         if not docs:
             st.success("✅ No archived credit notes")
             st.stop()
-        
-        # Fetch party names and totals
+
         doc_ids = [d["id"] for d in docs]
-        
+
         ledger_data = admin_supabase.table("financial_ledger") \
             .select("ops_document_id, party_id") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
-        
+
         lines_data = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
-        
+
         party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
         total_lookup = {}
         for line in lines_data:
-            doc_id = line["ops_document_id"]
-            if doc_id not in total_lookup:
-                total_lookup[doc_id] = line["net_amount"]
-        
+            did = line["ops_document_id"]
+            if did not in total_lookup:
+                total_lookup[did] = line["net_amount"]
+
         for doc in docs:
             party_id = party_lookup.get(doc["id"])
             if party_id:
@@ -3888,20 +3909,17 @@ This action will:
                 )
             else:
                 party_name = "Company"
-            
+
             doc_total = total_lookup.get(doc["id"], 0)
-            
+
             with st.container():
                 c1, c2, c3 = st.columns([4, 3, 3])
-                
                 with c1:
                     st.write(f"🗄️ **{doc['ops_no']}**")
                     st.caption(f"👤 {party_name}")
-                
                 with c2:
                     st.write(f"**Date:** {doc['ops_date']}")
-                    st.caption(f"Archived: {doc['updated_at'][:10]}")
-                
+                    st.caption(f"Archived: {doc.get('updated_at', '-')[:10]}")
                 with c3:
                     st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
                     st.write(f"**💰 ₹{doc_total:,.2f}**")
@@ -3909,7 +3927,6 @@ This action will:
                         st.session_state.selected_ops_id = doc["id"]
                         st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
                         st.rerun()
-                
                 st.divider()
     # =========================
     # DOCUMENT BROWSER — TRANSFERS
@@ -3919,7 +3936,7 @@ This action will:
 
         docs = admin_supabase.table("ops_documents") \
             .select("id, ops_no, ops_date, reference_no, narration") \
-            .ilike("narration", "%transfer%") \
+            .eq("stock_as", "transfer") \
             .eq("is_deleted", False) \
             .order("ops_date", desc=True) \
             .execute().data
@@ -3951,40 +3968,38 @@ This action will:
     # =========================
     elif section == "DOCUMENT_BROWSER_ARCHIVED_TRANSFERS":
         st.subheader("🗄️ Archived Transfers")
-        
-        st.info("📌 This shows transfers that have been deleted or edited.")
-        
+        st.info("📌 These are transfers that were deleted or replaced by an edit.")
+
         docs = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, updated_at") \
-            .ilike("narration", "%transfer%") \
+            .select("id, ops_no, ops_date, reference_no, narration, updated_at") \
+            .eq("stock_as", "transfer") \
             .eq("is_deleted", True) \
             .order("updated_at", desc=True) \
             .execute().data
-        
+
         if not docs:
             st.success("✅ No archived transfers")
             st.stop()
-        
-        # Fetch party names and totals
+
         doc_ids = [d["id"] for d in docs]
-        
+
         ledger_data = admin_supabase.table("financial_ledger") \
             .select("ops_document_id, party_id") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
-        
+
         lines_data = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
-        
+
         party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
         total_lookup = {}
         for line in lines_data:
-            doc_id = line["ops_document_id"]
-            if doc_id not in total_lookup:
-                total_lookup[doc_id] = line["net_amount"]
-        
+            did = line["ops_document_id"]
+            if did not in total_lookup:
+                total_lookup[did] = line["net_amount"]
+
         for doc in docs:
             party_id = party_lookup.get(doc["id"])
             if party_id:
@@ -3994,20 +4009,17 @@ This action will:
                 )
             else:
                 party_name = "Company"
-            
+
             doc_total = total_lookup.get(doc["id"], 0)
-            
+
             with st.container():
                 c1, c2, c3 = st.columns([4, 3, 3])
-                
                 with c1:
                     st.write(f"🗄️ **{doc['ops_no']}**")
                     st.caption(f"👤 {party_name}")
-                
                 with c2:
                     st.write(f"**Date:** {doc['ops_date']}")
-                    st.caption(f"Archived: {doc['updated_at'][:10]}")
-                
+                    st.caption(f"Archived: {doc.get('updated_at', '-')[:10]}")
                 with c3:
                     st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
                     st.write(f"**💰 ₹{doc_total:,.2f}**")
@@ -4015,8 +4027,8 @@ This action will:
                         st.session_state.selected_ops_id = doc["id"]
                         st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
                         st.rerun()
-                
                 st.divider()
+
     # =========================
     # DOCUMENT BROWSER — SAMPLES & LOTS
     # =========================
@@ -4025,7 +4037,7 @@ This action will:
 
         docs = admin_supabase.table("ops_documents") \
             .select("id, ops_no, ops_date, reference_no, narration") \
-            .or_("narration.ilike.%sample%,narration.ilike.%lot%") \
+            .or_("stock_as.eq.sample,stock_as.eq.lot") \
             .eq("is_deleted", False) \
             .order("ops_date", desc=True) \
             .execute().data
@@ -4057,40 +4069,38 @@ This action will:
     # =========================
     elif section == "DOCUMENT_BROWSER_ARCHIVED_SAMPLES":
         st.subheader("🗄️ Archived Samples & Lots")
-        
-        st.info("📌 This shows samples/lots that have been deleted or edited.")
-        
+        st.info("📌 These are samples/lots that were deleted or replaced by an edit.")
+
         docs = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, updated_at") \
-            .or_("narration.ilike.%sample%,narration.ilike.%lot%") \
+            .select("id, ops_no, ops_date, reference_no, narration, updated_at") \
+            .or_("stock_as.eq.sample,stock_as.eq.lot") \
             .eq("is_deleted", True) \
             .order("updated_at", desc=True) \
             .execute().data
-        
+
         if not docs:
             st.success("✅ No archived samples/lots")
             st.stop()
-        
-        # Fetch party names and totals
+
         doc_ids = [d["id"] for d in docs]
-        
+
         ledger_data = admin_supabase.table("financial_ledger") \
             .select("ops_document_id, party_id") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
-        
+
         lines_data = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
-        
+
         party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
         total_lookup = {}
         for line in lines_data:
-            doc_id = line["ops_document_id"]
-            if doc_id not in total_lookup:
-                total_lookup[doc_id] = line["net_amount"]
-        
+            did = line["ops_document_id"]
+            if did not in total_lookup:
+                total_lookup[did] = line["net_amount"]
+
         for doc in docs:
             party_id = party_lookup.get(doc["id"])
             if party_id:
@@ -4100,20 +4110,17 @@ This action will:
                 )
             else:
                 party_name = "Company"
-            
+
             doc_total = total_lookup.get(doc["id"], 0)
-            
+
             with st.container():
                 c1, c2, c3 = st.columns([4, 3, 3])
-                
                 with c1:
                     st.write(f"🗄️ **{doc['ops_no']}**")
                     st.caption(f"👤 {party_name}")
-                
                 with c2:
                     st.write(f"**Date:** {doc['ops_date']}")
-                    st.caption(f"Archived: {doc['updated_at'][:10]}")
-                
+                    st.caption(f"Archived: {doc.get('updated_at', '-')[:10]}")
                 with c3:
                     st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
                     st.write(f"**💰 ₹{doc_total:,.2f}**")
@@ -4121,8 +4128,8 @@ This action will:
                         st.session_state.selected_ops_id = doc["id"]
                         st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
                         st.rerun()
-                
                 st.divider()
+
     # =========================
     # DOCUMENT BROWSER — PURCHASES
     # =========================
@@ -4131,7 +4138,7 @@ This action will:
 
         docs = admin_supabase.table("ops_documents") \
             .select("id, ops_no, ops_date, reference_no, narration") \
-            .eq("ops_type", "STOCK_IN") \
+            .eq("stock_as", "purchase") \
             .eq("is_deleted", False) \
             .order("ops_date", desc=True) \
             .execute().data
@@ -4162,40 +4169,38 @@ This action will:
     # =========================
     elif section == "DOCUMENT_BROWSER_ARCHIVED_PURCHASES":
         st.subheader("🗄️ Archived Purchases")
-        
-        st.info("📌 This shows purchases that have been deleted or edited.")
-        
+        st.info("📌 These are purchases that were deleted or replaced by an edit.")
+
         docs = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, updated_at") \
-            .eq("ops_type", "STOCK_IN") \
+            .select("id, ops_no, ops_date, reference_no, narration, updated_at") \
+            .eq("stock_as", "purchase") \
             .eq("is_deleted", True) \
             .order("updated_at", desc=True) \
             .execute().data
-        
+
         if not docs:
             st.success("✅ No archived purchases")
             st.stop()
-        
-        # Fetch party names and totals
+
         doc_ids = [d["id"] for d in docs]
-        
+
         ledger_data = admin_supabase.table("financial_ledger") \
             .select("ops_document_id, party_id") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
-        
+
         lines_data = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
-        
+
         party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
         total_lookup = {}
         for line in lines_data:
-            doc_id = line["ops_document_id"]
-            if doc_id not in total_lookup:
-                total_lookup[doc_id] = line["net_amount"]
-        
+            did = line["ops_document_id"]
+            if did not in total_lookup:
+                total_lookup[did] = line["net_amount"]
+
         for doc in docs:
             party_id = party_lookup.get(doc["id"])
             if party_id:
@@ -4205,20 +4210,17 @@ This action will:
                 )
             else:
                 party_name = "Company"
-            
+
             doc_total = total_lookup.get(doc["id"], 0)
-            
+
             with st.container():
                 c1, c2, c3 = st.columns([4, 3, 3])
-                
                 with c1:
                     st.write(f"🗄️ **{doc['ops_no']}**")
                     st.caption(f"👤 {party_name}")
-                
                 with c2:
                     st.write(f"**Date:** {doc['ops_date']}")
-                    st.caption(f"Archived: {doc['updated_at'][:10]}")
-                
+                    st.caption(f"Archived: {doc.get('updated_at', '-')[:10]}")
                 with c3:
                     st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
                     st.write(f"**💰 ₹{doc_total:,.2f}**")
@@ -4226,7 +4228,6 @@ This action will:
                         st.session_state.selected_ops_id = doc["id"]
                         st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
                         st.rerun()
-                
                 st.divider()
     # ========================
     # DOCUMENT BROWSER — FREIGHT
