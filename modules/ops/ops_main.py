@@ -3821,13 +3821,42 @@ This action will:
                 total_lookup[doc_id] = line["net_amount"]
 
         for doc in docs:
-            # Get party name
             party_id = party_lookup.get(doc["id"])
             if party_id:
-                party_name = next(
-                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
-                    "Unknown Party"
-                )
+                # Try all entity masters to find the party name
+                party_name = None
+                
+                # Try CNF
+                if not party_name:
+                    party_name = next(
+                        (c["name"] for c in st.session_state.cnfs_master if c["id"] == party_id),
+                        None
+                    )
+                
+                # Try User
+                if not party_name:
+                    party_name = next(
+                        (u["username"] for u in st.session_state.users_master if u["id"] == party_id),
+                        None
+                    )
+                
+                # Try Stockist
+                if not party_name:
+                    party_name = next(
+                        (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                        None
+                    )
+                
+                # Try Purchaser
+                if not party_name:
+                    party_name = next(
+                        (p["name"] for p in st.session_state.purchasers_master if p["id"] == party_id),
+                        None
+                    )
+                
+                # Fallback
+                if not party_name:
+                    party_name = "Unknown Party"
             else:
                 party_name = "Company"
             
@@ -3973,10 +4002,40 @@ This action will:
         for doc in docs:
             party_id = party_lookup.get(doc["id"])
             if party_id:
-                party_name = next(
-                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
-                    "Unknown Party"
-                )
+                # Try all entity masters to find the party name
+                party_name = None
+                
+                # Try CNF
+                if not party_name:
+                    party_name = next(
+                        (c["name"] for c in st.session_state.cnfs_master if c["id"] == party_id),
+                        None
+                    )
+                
+                # Try User
+                if not party_name:
+                    party_name = next(
+                        (u["username"] for u in st.session_state.users_master if u["id"] == party_id),
+                        None
+                    )
+                
+                # Try Stockist
+                if not party_name:
+                    party_name = next(
+                        (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                        None
+                    )
+                
+                # Try Purchaser
+                if not party_name:
+                    party_name = next(
+                        (p["name"] for p in st.session_state.purchasers_master if p["id"] == party_id),
+                        None
+                    )
+                
+                # Fallback
+                if not party_name:
+                    party_name = "Unknown Party"
             else:
                 party_name = "Company"
 
@@ -4127,10 +4186,40 @@ This action will:
         for doc in docs:
             party_id = party_lookup.get(doc["id"])
             if party_id:
-                party_name = next(
-                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
-                    "Unknown Party"
-                )
+                # Try all entity masters to find the party name
+                party_name = None
+                
+                # Try CNF
+                if not party_name:
+                    party_name = next(
+                        (c["name"] for c in st.session_state.cnfs_master if c["id"] == party_id),
+                        None
+                    )
+                
+                # Try User
+                if not party_name:
+                    party_name = next(
+                        (u["username"] for u in st.session_state.users_master if u["id"] == party_id),
+                        None
+                    )
+                
+                # Try Stockist
+                if not party_name:
+                    party_name = next(
+                        (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                        None
+                    )
+                
+                # Try Purchaser
+                if not party_name:
+                    party_name = next(
+                        (p["name"] for p in st.session_state.purchasers_master if p["id"] == party_id),
+                        None
+                    )
+                
+                # Fallback
+                if not party_name:
+                    party_name = "Unknown Party"
             else:
                 party_name = "Company"
 
@@ -4279,10 +4368,40 @@ This action will:
         for doc in docs:
             party_id = party_lookup.get(doc["id"])
             if party_id:
-                party_name = next(
-                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
-                    "Unknown Party"
-                )
+                # Try all entity masters to find the party name
+                party_name = None
+                
+                # Try CNF
+                if not party_name:
+                    party_name = next(
+                        (c["name"] for c in st.session_state.cnfs_master if c["id"] == party_id),
+                        None
+                    )
+                
+                # Try User
+                if not party_name:
+                    party_name = next(
+                        (u["username"] for u in st.session_state.users_master if u["id"] == party_id),
+                        None
+                    )
+                
+                # Try Stockist
+                if not party_name:
+                    party_name = next(
+                        (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
+                        None
+                    )
+                
+                # Try Purchaser
+                if not party_name:
+                    party_name = next(
+                        (p["name"] for p in st.session_state.purchasers_master if p["id"] == party_id),
+                        None
+                    )
+                
+                # Fallback
+                if not party_name:
+                    party_name = "Unknown Party"
             else:
                 party_name = "Company"
 
