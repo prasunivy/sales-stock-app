@@ -1766,10 +1766,6 @@ This action will:
                             "from_entity_id": st.session_state.ops_from_entity_id,
                             "to_entity_type": st.session_state.ops_to_entity_type,
                             "to_entity_id": st.session_state.ops_to_entity_id,
-                            "from_entity_type": st.session_state.ops_from_entity_type,
-                            "from_entity_id": st.session_state.ops_from_entity_id,
-                            "to_entity_type": st.session_state.ops_to_entity_type,
-                            "to_entity_id": st.session_state.ops_to_entity_id,
                             "created_by": user_id
                         }).execute()
 
