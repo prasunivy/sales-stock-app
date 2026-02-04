@@ -3584,7 +3584,7 @@ This action will:
         st.subheader("🧾 Invoice Register")
 
         invoices = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, created_at") \
+            .select("id, ops_no, ops_date, reference_no, created_at, from_entity_type, from_entity_id, to_entity_type, to_entity_id, narration") \
             .eq("ops_type", "STOCK_OUT") \
             .eq("stock_as", "normal") \
             .eq("is_deleted", False) \
@@ -3595,75 +3595,67 @@ This action will:
             st.info("No invoices found")
             st.stop()
 
-        # Fetch party names and invoice totals for all invoices
+        # Fetch invoice totals
         invoice_ids = [inv["id"] for inv in invoices]
         
-        # Get party info from financial_ledger
-        ledger_data = admin_supabase.table("financial_ledger") \
-            .select("ops_document_id, party_id") \
-            .in_("ops_document_id", invoice_ids) \
-            .execute().data or []
-        
-        # Get invoice totals from ops_lines (first line only)
         lines_data = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .in_("ops_document_id", invoice_ids) \
             .execute().data or []
         
-        # Create lookup dictionaries
-        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
-        
-        # Get first line's net_amount for each invoice (all lines have same total)
+        # Get first line's net_amount for each invoice
         total_lookup = {}
         for line in lines_data:
             doc_id = line["ops_document_id"]
-            if doc_id not in total_lookup:  # Only take first line
+            if doc_id not in total_lookup:
                 total_lookup[doc_id] = line["net_amount"]
 
         for inv in invoices:
-            # Get party name
-            party_id = party_lookup.get(inv["id"])
-            if party_id:
-                # Find party name from stockists
-                party_name = next(
-                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
-                    "Unknown Party"
-                )
-            else:
-                party_name = "Company"
-            
             # Get invoice total
             invoice_total = total_lookup.get(inv["id"], 0)
+
+            # Get From entity
+            from_type, from_name = resolve_entity_display_name(
+                inv.get('from_entity_type'),
+                inv.get('from_entity_id'),
+                inv.get('narration')
+            )
+
+            # Get To entity
+            to_type = inv.get('to_entity_type')
+            to_id = inv.get('to_entity_id')
+            if to_type:
+                _, to_name = resolve_entity_display_name(to_type, to_id, None)
+            else:
+                try:
+                    parts = inv.get('narration', '').split(' to ')
+                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+                except:
+                    to_name = "Unknown"
 
             with st.container():
                 c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
 
                 with c1:
-                    
-                    st.write(f"📄 **OPS No:** {inv['ops_no']}")
-                    st.caption(f"👤 {party_name}")
-
+                    st.write(f"📄 **{inv['ops_no']}**")
+                    st.caption(f"📤 {from_name} → 📥 {to_name}")
 
                 with c2:
                     st.write(inv["ops_date"])
 
                 with c3:
-                    
                     st.write(f"**Ref:** {inv.get('reference_no') or '-'}")
                     st.write(f"**💰 ₹{invoice_total:,.2f}**")
 
                 with c4:
                     b1, b2, b3 = st.columns(3)
 
-                    
                     with b1:
                         if st.button("👁 View", key=f"view_{inv['id']}"):
                             st.session_state.selected_ops_id = inv["id"]
                             st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
                             st.rerun()
 
-
-                    
                     with b2:
                         if st.button("✏️ Edit", key=f"edit_{inv['id']}"):
                             st.session_state.edit_source_ops_id = inv["id"]
@@ -3677,8 +3669,8 @@ This action will:
                             st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
                             st.rerun()
 
-
                 st.divider()
+
     # =========================
     # DOCUMENT BROWSER — ARCHIVED INVOICES
     # =========================
