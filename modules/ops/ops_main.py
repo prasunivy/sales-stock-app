@@ -3614,23 +3614,30 @@ This action will:
             # Get invoice total
             invoice_total = total_lookup.get(inv["id"], 0)
 
-            # Get From entity
-            from_type, from_name = resolve_entity_display_name(
-                inv.get('from_entity_type'),
-                inv.get('from_entity_id'),
-                inv.get('narration')
-            )
-
-            # Get To entity
-            to_type = inv.get('to_entity_type')
-            to_id = inv.get('to_entity_id')
-            if to_type:
-                _, to_name = resolve_entity_display_name(to_type, to_id, None)
+            # Get From and To entities (handles old and new documents)
+            from_entity_type = inv.get('from_entity_type')
+            to_entity_type = inv.get('to_entity_type')
+            
+            if from_entity_type and to_entity_type:
+                # New document: use database columns
+                from_type, from_name = resolve_entity_display_name(from_entity_type, inv.get('from_entity_id'), None)
+                to_type, to_name = resolve_entity_display_name(to_entity_type, inv.get('to_entity_id'), None)
             else:
+                # Old document: parse narration "Invoice - Company to Stockist"
+                narration = inv.get('narration', '')
                 try:
-                    parts = inv.get('narration', '').split(' to ')
-                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+                    if ' - ' in narration and ' to ' in narration:
+                        # Split by " - " to get "Company to Stockist"
+                        parts = narration.split(' - ')[1]
+                        # Split by " to " to get From and To
+                        from_to = parts.split(' to ')
+                        from_name = from_to[0].strip()
+                        to_name = from_to[1].strip()
+                    else:
+                        from_name = "Unknown"
+                        to_name = "Unknown"
                 except:
+                    from_name = "Unknown"
                     to_name = "Unknown"
 
             with st.container():
@@ -3876,23 +3883,28 @@ This action will:
         for doc in docs:
             doc_total = total_lookup.get(doc["id"], 0)
 
-            # Get From entity
-            from_type, from_name = resolve_entity_display_name(
-                doc.get('from_entity_type'),
-                doc.get('from_entity_id'),
-                doc.get('narration')
-            )
-
-            # Get To entity
-            to_type = doc.get('to_entity_type')
-            to_id = doc.get('to_entity_id')
-            if to_type:
-                _, to_name = resolve_entity_display_name(to_type, to_id, None)
+            # Get From and To entities (handles old and new documents)
+            from_entity_type = doc.get('from_entity_type')
+            to_entity_type = doc.get('to_entity_type')
+            
+            if from_entity_type and to_entity_type:
+                # New document: use database columns
+                from_type, from_name = resolve_entity_display_name(from_entity_type, doc.get('from_entity_id'), None)
+                to_type, to_name = resolve_entity_display_name(to_entity_type, doc.get('to_entity_id'), None)
             else:
+                # Old document: parse narration
+                narration = doc.get('narration', '')
                 try:
-                    parts = doc.get('narration', '').split(' to ')
-                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+                    if ' - ' in narration and ' to ' in narration:
+                        parts = narration.split(' - ')[1]
+                        from_to = parts.split(' to ')
+                        from_name = from_to[0].strip()
+                        to_name = from_to[1].strip()
+                    else:
+                        from_name = "Unknown"
+                        to_name = "Unknown"
                 except:
+                    from_name = "Unknown"
                     to_name = "Unknown"
 
             with st.container():
@@ -4030,23 +4042,28 @@ This action will:
         for doc in docs:
             doc_total = total_lookup.get(doc["id"], 0)
 
-            # Get From entity
-            from_type, from_name = resolve_entity_display_name(
-                doc.get('from_entity_type'),
-                doc.get('from_entity_id'),
-                doc.get('narration')
-            )
-
-            # Get To entity
-            to_type = doc.get('to_entity_type')
-            to_id = doc.get('to_entity_id')
-            if to_type:
-                _, to_name = resolve_entity_display_name(to_type, to_id, None)
+            # Get From and To entities (handles old and new documents)
+            from_entity_type = doc.get('from_entity_type')
+            to_entity_type = doc.get('to_entity_type')
+            
+            if from_entity_type and to_entity_type:
+                # New document: use database columns
+                from_type, from_name = resolve_entity_display_name(from_entity_type, doc.get('from_entity_id'), None)
+                to_type, to_name = resolve_entity_display_name(to_entity_type, doc.get('to_entity_id'), None)
             else:
+                # Old document: parse narration
+                narration = doc.get('narration', '')
                 try:
-                    parts = doc.get('narration', '').split(' to ')
-                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+                    if ' - ' in narration and ' to ' in narration:
+                        parts = narration.split(' - ')[1]
+                        from_to = parts.split(' to ')
+                        from_name = from_to[0].strip()
+                        to_name = from_to[1].strip()
+                    else:
+                        from_name = "Unknown"
+                        to_name = "Unknown"
                 except:
+                    from_name = "Unknown"
                     to_name = "Unknown"
 
             with st.container():
@@ -4185,23 +4202,28 @@ This action will:
         for doc in docs:
             doc_total = total_lookup.get(doc["id"], 0)
 
-            # Get From entity
-            from_type, from_name = resolve_entity_display_name(
-                doc.get('from_entity_type'),
-                doc.get('from_entity_id'),
-                doc.get('narration')
-            )
-
-            # Get To entity
-            to_type = doc.get('to_entity_type')
-            to_id = doc.get('to_entity_id')
-            if to_type:
-                _, to_name = resolve_entity_display_name(to_type, to_id, None)
+            # Get From and To entities (handles old and new documents)
+            from_entity_type = doc.get('from_entity_type')
+            to_entity_type = doc.get('to_entity_type')
+            
+            if from_entity_type and to_entity_type:
+                # New document: use database columns
+                from_type, from_name = resolve_entity_display_name(from_entity_type, doc.get('from_entity_id'), None)
+                to_type, to_name = resolve_entity_display_name(to_entity_type, doc.get('to_entity_id'), None)
             else:
+                # Old document: parse narration
+                narration = doc.get('narration', '')
                 try:
-                    parts = doc.get('narration', '').split(' to ')
-                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+                    if ' - ' in narration and ' to ' in narration:
+                        parts = narration.split(' - ')[1]
+                        from_to = parts.split(' to ')
+                        from_name = from_to[0].strip()
+                        to_name = from_to[1].strip()
+                    else:
+                        from_name = "Unknown"
+                        to_name = "Unknown"
                 except:
+                    from_name = "Unknown"
                     to_name = "Unknown"
 
             with st.container():
@@ -4340,23 +4362,28 @@ This action will:
         for doc in docs:
             doc_total = total_lookup.get(doc["id"], 0)
 
-            # Get From entity
-            from_type, from_name = resolve_entity_display_name(
-                doc.get('from_entity_type'),
-                doc.get('from_entity_id'),
-                doc.get('narration')
-            )
-
-            # Get To entity
-            to_type = doc.get('to_entity_type')
-            to_id = doc.get('to_entity_id')
-            if to_type:
-                _, to_name = resolve_entity_display_name(to_type, to_id, None)
+            # Get From and To entities (handles old and new documents)
+            from_entity_type = doc.get('from_entity_type')
+            to_entity_type = doc.get('to_entity_type')
+            
+            if from_entity_type and to_entity_type:
+                # New document: use database columns
+                from_type, from_name = resolve_entity_display_name(from_entity_type, doc.get('from_entity_id'), None)
+                to_type, to_name = resolve_entity_display_name(to_entity_type, doc.get('to_entity_id'), None)
             else:
+                # Old document: parse narration
+                narration = doc.get('narration', '')
                 try:
-                    parts = doc.get('narration', '').split(' to ')
-                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+                    if ' - ' in narration and ' to ' in narration:
+                        parts = narration.split(' - ')[1]
+                        from_to = parts.split(' to ')
+                        from_name = from_to[0].strip()
+                        to_name = from_to[1].strip()
+                    else:
+                        from_name = "Unknown"
+                        to_name = "Unknown"
                 except:
+                    from_name = "Unknown"
                     to_name = "Unknown"
 
             with st.container():
