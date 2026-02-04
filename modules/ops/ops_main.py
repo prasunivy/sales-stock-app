@@ -34,6 +34,51 @@ def resolve_entity_name(entity_type, entity_id):
         return "Destroyed"
 
     return "Unknown"
+def resolve_entity_display_name(entity_type, entity_id, doc_narration=None):
+    """Get entity display name with fallback to parsing narration for old docs."""
+    
+    # If we have entity_type from database, use it
+    if entity_type:
+        if entity_type == "Company":
+            return ("Company", "Company")
+        elif entity_type == "CNF":
+            name = next(
+                (c["name"] for c in st.session_state.cnfs_master if c["id"] == entity_id),
+                "Unknown CNF"
+            )
+            return ("CNF", name)
+        elif entity_type == "User":
+            name = next(
+                (u["username"] for u in st.session_state.users_master if u["id"] == entity_id),
+                "Unknown User"
+            )
+            return ("User", name)
+        elif entity_type == "Stockist":
+            name = next(
+                (s["name"] for s in st.session_state.stockists_master if s["id"] == entity_id),
+                "Unknown Stockist"
+            )
+            return ("Stockist", name)
+        elif entity_type == "Purchaser":
+            name = next(
+                (p["name"] for p in st.session_state.purchasers_master if p["id"] == entity_id),
+                "Unknown Purchaser"
+            )
+            return ("Purchaser", name)
+        else:
+            return (entity_type, entity_type)
+    
+    # Fallback: parse narration for old documents
+    if doc_narration:
+        try:
+            parts = doc_narration.split(' - ')
+            if len(parts) >= 2:
+                entity_part = parts[1].strip()
+                return (entity_part, entity_part)
+        except:
+            pass
+    
+    return ("Unknown", "Unknown")
 
 
 
@@ -516,13 +561,32 @@ def run_ops():
             st.error("Invoice does not exist or was deleted")
             st.stop()
 
-        st.subheader(f"🧾 Invoice View — {invoice['ops_no']}")
+        st.subheader(f"🧾 Document View — {invoice['ops_no']}")
+
+        # -------- Resolve Entity Names --------
+        from_type, from_name = resolve_entity_display_name(
+            invoice.get('from_entity_type'),
+            invoice.get('from_entity_id'),
+            invoice.get('narration')
+        )
+
+        to_type = invoice.get('to_entity_type')
+        to_id = invoice.get('to_entity_id')
+        if to_type:
+            _, to_name = resolve_entity_display_name(to_type, to_id, None)
+        else:
+            try:
+                parts = invoice.get('narration', '').split(' to ')
+                to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+            except:
+                to_name = "Unknown"
 
         # -------- Header Details --------
         st.markdown(f"""
     **Date:** {invoice['ops_date']}  
     **Reference:** {invoice.get('reference_no') or '-'}  
-    **Narration:** {invoice.get('narration')}
+    **From:** {from_type} — {from_name}  
+    **To:** {to_type if to_type else 'Unknown'} — {to_name}
     """)
 
         st.divider()
@@ -1698,6 +1762,10 @@ This action will:
                             "direction": direction_val,
                             "narration": f"{doc_stock_as} - {st.session_state.ops_from_entity_type} to {st.session_state.ops_to_entity_type}",
                             "reference_no": reference_no,
+                            "from_entity_type": st.session_state.ops_from_entity_type,
+                            "from_entity_id": st.session_state.ops_from_entity_id,
+                            "to_entity_type": st.session_state.ops_to_entity_type,
+                            "to_entity_id": st.session_state.ops_to_entity_id,
                             "from_entity_type": st.session_state.ops_from_entity_type,
                             "from_entity_id": st.session_state.ops_from_entity_id,
                             "to_entity_type": st.session_state.ops_to_entity_type,
@@ -3799,24 +3867,18 @@ This action will:
             .eq("is_deleted", False) \
             .order("ops_date", desc=True) \
             .execute().data
+
         if not docs:
             st.info("No credit notes found")
             st.stop()
 
-        # Fetch party names and totals
         doc_ids = [d["id"] for d in docs]
-        
-        ledger_data = admin_supabase.table("financial_ledger") \
-            .select("ops_document_id, party_id") \
-            .in_("ops_document_id", doc_ids) \
-            .execute().data or []
-        
+
         lines_data = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
-        
-        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
+
         total_lookup = {}
         for line in lines_data:
             doc_id = line["ops_document_id"]
@@ -3824,56 +3886,36 @@ This action will:
                 total_lookup[doc_id] = line["net_amount"]
 
         for doc in docs:
-            party_id = party_lookup.get(doc["id"])
-            if party_id:
-                # Try all entity masters to find the party name
-                party_name = None
-                
-                # Try CNF
-                if not party_name:
-                    party_name = next(
-                        (c["name"] for c in st.session_state.cnfs_master if c["id"] == party_id),
-                        None
-                    )
-                
-                # Try User
-                if not party_name:
-                    party_name = next(
-                        (u["username"] for u in st.session_state.users_master if u["id"] == party_id),
-                        None
-                    )
-                
-                # Try Stockist
-                if not party_name:
-                    party_name = next(
-                        (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
-                        None
-                    )
-                
-                # Try Purchaser
-                if not party_name:
-                    party_name = next(
-                        (p["name"] for p in st.session_state.purchasers_master if p["id"] == party_id),
-                        None
-                    )
-                
-                # Fallback
-                if not party_name:
-                    party_name = "Unknown Party"
-            else:
-                party_name = "Company"
-            
             doc_total = total_lookup.get(doc["id"], 0)
+
+            # Get From entity
+            from_type, from_name = resolve_entity_display_name(
+                doc.get('from_entity_type'),
+                doc.get('from_entity_id'),
+                doc.get('narration')
+            )
+
+            # Get To entity
+            to_type = doc.get('to_entity_type')
+            to_id = doc.get('to_entity_id')
+            if to_type:
+                _, to_name = resolve_entity_display_name(to_type, to_id, None)
+            else:
+                try:
+                    parts = doc.get('narration', '').split(' to ')
+                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+                except:
+                    to_name = "Unknown"
 
             with st.container():
                 c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
 
                 with c1:
                     st.write(f"📝 **{doc['ops_no']}**")
-                    st.caption(f"👤 {party_name}")
+                    st.caption(f"📤 {from_name} → 📥 {to_name}")
 
                 with c2:
-                    st.write(doc['ops_date'])
+                    st.write(doc["ops_date"])
 
                 with c3:
                     st.write(f"**Ref:** {doc.get('reference_no') or '-'}")
@@ -3881,7 +3923,7 @@ This action will:
 
                 with c4:
                     b1, b2, b3 = st.columns(3)
-                    
+
                     with b1:
                         if st.button("👁 View", key=f"view_cn_{doc['id']}"):
                             st.session_state.selected_ops_id = doc["id"]
@@ -3894,12 +3936,13 @@ This action will:
                             st.session_state.edit_mode = True
                             st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_EDIT"
                             st.rerun()
-                    
+
                     with b3:
                         if st.button("🗑 Delete", key=f"del_cn_{doc['id']}"):
                             st.session_state.selected_ops_id = doc["id"]
                             st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
                             st.rerun()
+
                 st.divider()
     # =========================
     # DOCUMENT BROWSER — ARCHIVED CREDIT NOTES
@@ -4006,19 +4049,15 @@ This action will:
                 doc.get('narration')
             )
 
-            # Get To entity (parse second part of narration)
+            # Get To entity
             to_type = doc.get('to_entity_type')
             to_id = doc.get('to_entity_id')
             if to_type:
                 _, to_name = resolve_entity_display_name(to_type, to_id, None)
             else:
-                # Parse narration: "Transfer - Company to User"
                 try:
                     parts = doc.get('narration', '').split(' to ')
-                    if len(parts) >= 2:
-                        to_name = parts[1].strip()
-                    else:
-                        to_name = "Unknown"
+                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
                 except:
                     to_name = "Unknown"
 
@@ -4132,7 +4171,7 @@ This action will:
         st.subheader("🎁 Sample & Lot Register")
 
         docs = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, narration") \
+            .select("id, ops_no, ops_date, reference_no, narration, from_entity_type, from_entity_id, to_entity_type, to_entity_id") \
             .or_("stock_as.eq.sample,stock_as.eq.lot") \
             .eq("is_deleted", False) \
             .order("ops_date", desc=True) \
@@ -4144,17 +4183,11 @@ This action will:
 
         doc_ids = [d["id"] for d in docs]
 
-        ledger_data = admin_supabase.table("financial_ledger") \
-            .select("ops_document_id, party_id") \
-            .in_("ops_document_id", doc_ids) \
-            .execute().data or []
-
         lines_data = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
 
-        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
         total_lookup = {}
         for line in lines_data:
             doc_id = line["ops_document_id"]
@@ -4162,53 +4195,33 @@ This action will:
                 total_lookup[doc_id] = line["net_amount"]
 
         for doc in docs:
-            party_id = party_lookup.get(doc["id"])
-            if party_id:
-                # Try all entity masters to find the party name
-                party_name = None
-                
-                # Try CNF
-                if not party_name:
-                    party_name = next(
-                        (c["name"] for c in st.session_state.cnfs_master if c["id"] == party_id),
-                        None
-                    )
-                
-                # Try User
-                if not party_name:
-                    party_name = next(
-                        (u["username"] for u in st.session_state.users_master if u["id"] == party_id),
-                        None
-                    )
-                
-                # Try Stockist
-                if not party_name:
-                    party_name = next(
-                        (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
-                        None
-                    )
-                
-                # Try Purchaser
-                if not party_name:
-                    party_name = next(
-                        (p["name"] for p in st.session_state.purchasers_master if p["id"] == party_id),
-                        None
-                    )
-                
-                # Fallback
-                if not party_name:
-                    party_name = "Unknown Party"
-            else:
-                party_name = "Company"
-
             doc_total = total_lookup.get(doc["id"], 0)
+
+            # Get From entity
+            from_type, from_name = resolve_entity_display_name(
+                doc.get('from_entity_type'),
+                doc.get('from_entity_id'),
+                doc.get('narration')
+            )
+
+            # Get To entity
+            to_type = doc.get('to_entity_type')
+            to_id = doc.get('to_entity_id')
+            if to_type:
+                _, to_name = resolve_entity_display_name(to_type, to_id, None)
+            else:
+                try:
+                    parts = doc.get('narration', '').split(' to ')
+                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+                except:
+                    to_name = "Unknown"
 
             with st.container():
                 c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
 
                 with c1:
                     st.write(f"🎁 **{doc['ops_no']}**")
-                    st.caption(f"👤 {party_name}")
+                    st.caption(f"📤 {from_name} → 📥 {to_name}")
 
                 with c2:
                     st.write(doc["ops_date"])
@@ -4240,7 +4253,6 @@ This action will:
                             st.rerun()
 
                 st.divider()
-
     # =========================
     # DOCUMENT BROWSER — ARCHIVED SAMPLES & LOTS
     # =========================
@@ -4314,7 +4326,7 @@ This action will:
         st.subheader("🛒 Purchase Register")
 
         docs = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, narration") \
+            .select("id, ops_no, ops_date, reference_no, narration, from_entity_type, from_entity_id, to_entity_type, to_entity_id") \
             .eq("stock_as", "purchase") \
             .eq("is_deleted", False) \
             .order("ops_date", desc=True) \
@@ -4326,17 +4338,11 @@ This action will:
 
         doc_ids = [d["id"] for d in docs]
 
-        ledger_data = admin_supabase.table("financial_ledger") \
-            .select("ops_document_id, party_id") \
-            .in_("ops_document_id", doc_ids) \
-            .execute().data or []
-
         lines_data = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
 
-        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
         total_lookup = {}
         for line in lines_data:
             doc_id = line["ops_document_id"]
@@ -4344,53 +4350,33 @@ This action will:
                 total_lookup[doc_id] = line["net_amount"]
 
         for doc in docs:
-            party_id = party_lookup.get(doc["id"])
-            if party_id:
-                # Try all entity masters to find the party name
-                party_name = None
-                
-                # Try CNF
-                if not party_name:
-                    party_name = next(
-                        (c["name"] for c in st.session_state.cnfs_master if c["id"] == party_id),
-                        None
-                    )
-                
-                # Try User
-                if not party_name:
-                    party_name = next(
-                        (u["username"] for u in st.session_state.users_master if u["id"] == party_id),
-                        None
-                    )
-                
-                # Try Stockist
-                if not party_name:
-                    party_name = next(
-                        (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
-                        None
-                    )
-                
-                # Try Purchaser
-                if not party_name:
-                    party_name = next(
-                        (p["name"] for p in st.session_state.purchasers_master if p["id"] == party_id),
-                        None
-                    )
-                
-                # Fallback
-                if not party_name:
-                    party_name = "Unknown Party"
-            else:
-                party_name = "Company"
-
             doc_total = total_lookup.get(doc["id"], 0)
+
+            # Get From entity
+            from_type, from_name = resolve_entity_display_name(
+                doc.get('from_entity_type'),
+                doc.get('from_entity_id'),
+                doc.get('narration')
+            )
+
+            # Get To entity
+            to_type = doc.get('to_entity_type')
+            to_id = doc.get('to_entity_id')
+            if to_type:
+                _, to_name = resolve_entity_display_name(to_type, to_id, None)
+            else:
+                try:
+                    parts = doc.get('narration', '').split(' to ')
+                    to_name = parts[1].strip() if len(parts) >= 2 else "Unknown"
+                except:
+                    to_name = "Unknown"
 
             with st.container():
                 c1, c2, c3, c4 = st.columns([3, 2, 3, 4])
 
                 with c1:
                     st.write(f"🛒 **{doc['ops_no']}**")
-                    st.caption(f"👤 {party_name}")
+                    st.caption(f"📤 {from_name} → 📥 {to_name}")
 
                 with c2:
                     st.write(doc["ops_date"])
