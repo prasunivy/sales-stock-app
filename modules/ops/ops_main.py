@@ -3097,18 +3097,11 @@ This action will:
 
                 # Update payment allocation status
                 if total_allocated > 0:
-                    payment_ledger = admin_supabase.table("financial_ledger")\
-                        .select("credit")\
-                        .eq("ops_document_id", payment_ops_id)\
-                        .single()\
-                        .execute().data
-    
-                    if payment_ledger:
-                        payment_total = float(payment_ledger["credit"])
-                        if total_allocated >= payment_total:
-                            alloc_status = "FULLY_ALLOCATED"
-                        else:
-                            alloc_status = "PARTIALLY_ALLOCATED"
+                    # Use gross amount from session state (correct approach)
+                    payment_total = st.session_state.pay_amounts["gross"]
+                    
+                    if total_allocated >= payment_total:
+                        alloc_status = "FULLY_ALLOCATED"
                     else:
                         alloc_status = "PARTIALLY_ALLOCATED"
                 else:
