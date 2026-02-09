@@ -2497,14 +2497,32 @@ This action will:
         st.divider()
         st.subheader("🧾 Optional Invoice Settlement (Preview Only)")
 
-        # Fetch invoices (READ ONLY)
-        invoice_resp = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date") \
-            .eq("ops_type", "STOCK_OUT") \
-            .eq("stock_as", "normal") \
-            .eq("is_deleted", False) \
-            .order("ops_date", desc=True) \
-            .execute()
+        
+        # Fetch invoices for the FROM entity only
+        from_entity_id = st.session_state.pay_from_entity_id
+        from_entity_type = st.session_state.pay_from_entity_type
+        
+        if from_entity_type == "Company" or not from_entity_id:
+            # If paying FROM Company, show all invoices
+            invoice_resp = admin_supabase.table("ops_documents") \
+                .select("id, ops_no, ops_date, to_entity_id, to_entity_type") \
+                .eq("ops_type", "STOCK_OUT") \
+                .eq("stock_as", "normal") \
+                .eq("is_deleted", False) \
+                .order("ops_date", desc=True) \
+                .execute()
+        else:
+            # Show only invoices where TO entity matches payment FROM entity
+            invoice_resp = admin_supabase.table("ops_documents") \
+                .select("id, ops_no, ops_date, to_entity_id, to_entity_type") \
+                .eq("ops_type", "STOCK_OUT") \
+                .eq("stock_as", "normal") \
+                .eq("to_entity_type", from_entity_type) \
+                .eq("to_entity_id", from_entity_id) \
+                .eq("is_deleted", False) \
+                .order("ops_date", desc=True) \
+                .execute()
+        
 
         invoices = invoice_resp.data or []
 
@@ -2516,14 +2534,23 @@ This action will:
             if "pay_invoice_allocations" not in st.session_state:
                 st.session_state.pay_invoice_allocations = {}
 
+            
             for inv in invoices:
-                cols = st.columns([3, 2, 2])
+                # Get entity name for display
+                if inv.get("to_entity_type") and inv.get("to_entity_id"):
+                    entity_name = resolve_entity_name(inv["to_entity_type"], inv["to_entity_id"])
+                else:
+                    entity_name = "Company"
+                
+                cols = st.columns([4, 2, 2])
 
                 with cols[0]:
                     st.write(f"📄 {inv['ops_no']}")
+                    st.caption(f"Party: {entity_name}")
 
                 with cols[1]:
                     st.write(inv["ops_date"])
+        
 
                 with cols[2]:
                     amt = st.number_input(
@@ -2578,6 +2605,26 @@ This action will:
         # =========================
         # DATE RANGE FILTER (OUTSTANDING ONLY)
         # =========================
+
+        # =========================
+        # STOCKIST FILTER
+        # =========================
+        st.markdown("### 🔍 Filter by Stockist (Optional)")
+        
+        filter_stockist = st.selectbox(
+            "Select Stockist",
+            ["All Stockists"] + [s["name"] for s in st.session_state.stockists_master],
+            key="filter_stockist_outstanding"
+        )
+        
+        selected_stockist_id = None
+        if filter_stockist != "All Stockists":
+            selected_stockist_id = next(
+                (s["id"] for s in st.session_state.stockists_master if s["name"] == filter_stockist),
+                None
+            )
+        
+        st.divider()
         st.markdown("### 📅 Filter Invoices by Date (Optional)")
 
         date_col1, date_col2 = st.columns(2)
@@ -2598,10 +2645,14 @@ This action will:
 
         # ---- 4️⃣ Fetch invoices ----
         invoice_query = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date") \
+            .select("id, ops_no, ops_date, to_entity_id, to_entity_type") \
             .eq("ops_type", "STOCK_OUT") \
             .eq("stock_as", "normal") \
             .eq("is_deleted", False)
+
+        # Add stockist filter if selected
+        if selected_stockist_id:
+            invoice_query = invoice_query.eq("to_entity_type", "Stockist").eq("to_entity_id", selected_stockist_id)
 
         if from_date:
             invoice_query = invoice_query.gte("ops_date", from_date.isoformat())
