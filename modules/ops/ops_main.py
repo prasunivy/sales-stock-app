@@ -2393,6 +2393,7 @@ This action will:
         # =========================
         # LINE-4 — PAYMENT META
         # =========================
+        pay_date = st.date_input("Payment Date")
         payment_mode = st.selectbox(
             "Payment Mode",
             ["Cash", "Bank Transfer", "UPI", "Cheque", "NEFT/RTGS", "IMPS"]
