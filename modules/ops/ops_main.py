@@ -2965,17 +2965,19 @@ This action will:
                 net_amt = st.session_state.pay_amounts["net"]
 
                 # ---------- DETERMINE DR / CR ----------
+                # Money Received from party = CREDIT (reduces their outstanding)
+                # Money Paid to party = DEBIT (increases their outstanding)
                 if payment_direction == "Money Received":
-                    debit = net_amt
-                    credit = 0
+                    debit = 0
+                    credit = net_amt
                     party_id = (
                         None
                         if st.session_state.pay_from_entity_type == "Company"
                         else st.session_state.pay_from_entity_id
                     )
                 else:  # Money Paid
-                    debit = 0
-                    credit = net_amt
+                    debit = net_amt
+                    credit = 0
                     party_id = (
                         None
                         if st.session_state.pay_to_entity_type == "Company"
@@ -3010,15 +3012,43 @@ This action will:
 
                 payment_ops_id = doc_resp.data[0]["id"]
 
-                # ---------- INSERT FINANCIAL LEDGER ----------
+                # ---------- INSERT FINANCIAL LEDGER (THREE SEPARATE ENTRIES) ----------
+                gross_amt = st.session_state.pay_amounts["gross"]
+                discount_amt = st.session_state.pay_amounts["discount"]
+                net_amt = st.session_state.pay_amounts["net"]
+                
+                # Entry 1: Gross Receipt - This affects the balance
                 admin_supabase.table("financial_ledger").insert({
                     "ops_document_id": payment_ops_id,
                     "txn_date": pay_date.isoformat(),
                     "party_id": party_id,
-                    "debit": debit,
-                    "credit": credit,
+                    "debit": 0 if payment_direction == "Money Received" else gross_amt,
+                    "credit": gross_amt if payment_direction == "Money Received" else 0,
                     "closing_balance": 0,
-                    "narration": pay_narration or "Payment entry"
+                    "narration": f"{pay_narration or 'Payment'} - Gross Receipt: ₹{gross_amt:,.2f}"
+                }).execute()
+                
+                # Entry 2: Discount - For records only (no balance effect as it's already in gross)
+                if discount_amt > 0:
+                    admin_supabase.table("financial_ledger").insert({
+                        "ops_document_id": payment_ops_id,
+                        "txn_date": pay_date.isoformat(),
+                        "party_id": party_id,
+                        "debit": 0,
+                        "credit": 0,
+                        "closing_balance": 0,
+                        "narration": f"{pay_narration or 'Payment'} - Discount Given: ₹{discount_amt:,.2f} (included in gross)"
+                    }).execute()
+                
+                # Entry 3: Net Amount - For records only (no balance effect as it's already in gross)
+                admin_supabase.table("financial_ledger").insert({
+                    "ops_document_id": payment_ops_id,
+                    "txn_date": pay_date.isoformat(),
+                    "party_id": party_id,
+                    "debit": 0,
+                    "credit": 0,
+                    "closing_balance": 0,
+                    "narration": f"{pay_narration or 'Payment'} - Net Amount: ₹{net_amt:,.2f} (gross - discount)"
                 }).execute()
                 # =========================
                 # PHASE-3 STEP-3.2 — INSERT PAYMENT SETTLEMENTS (OPTIONAL)
