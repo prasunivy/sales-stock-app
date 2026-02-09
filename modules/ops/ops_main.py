@@ -3002,10 +3002,10 @@ This action will:
                     "created_by": user_id,
                     "payment_mode": payment_mode,
                     "payment_details": payment_details if payment_details else None,
-                    "from_entity_type": from_entity_type,
-                    "from_entity_id": from_entity_id,
-                    "to_entity_type": to_entity_type,
-                    "to_entity_id": to_entity_id
+                    "from_entity_type": st.session_state.pay_from_entity_type,
+                    "from_entity_id": st.session_state.pay_from_entity_id,
+                    "to_entity_type": st.session_state.pay_to_entity_type,
+                    "to_entity_id": st.session_state.pay_to_entity_id
                 }).execute()
 
                 payment_ops_id = doc_resp.data[0]["id"]
