@@ -2685,10 +2685,16 @@ This action will:
             
 
             # =========================
-            # 📥 EXPORT OUTSTANDING TO EXCEL (READ-ONLY)
+            # 📥 EXPORT OUTSTANDING TO PDF
             # =========================
-            import pandas as pd
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib import colors
+            from reportlab.lib.units import inch
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT
             from io import BytesIO
+            from datetime import datetime
 
             export_rows = []
 
@@ -2707,32 +2713,143 @@ This action will:
                     settled_amt = settled_totals.get(inv_id, 0)
                     outstanding_amt = invoice_amt - settled_amt
 
-                    export_rows.append({
-                        "Invoice No": inv["ops_no"],
-                        "Date": inv["ops_date"],
-                        "Party": party_name,
-                        "Invoice Amount": invoice_amt,
-                        "Settled Amount": settled_amt,
-                        "Outstanding": outstanding_amt
-                    })
+                    export_rows.append([
+                        inv["ops_no"],
+                        inv["ops_date"],
+                        party_name,
+                        f"₹{invoice_amt:,.2f}",
+                        f"₹{settled_amt:,.2f}",
+                        f"₹{outstanding_amt:,.2f}"
+                    ])
 
             if export_rows:
-                df_outstanding = pd.DataFrame(export_rows)
-
-                output = BytesIO()
-                with pd.ExcelWriter(output) as writer:
-
-                    df_outstanding.to_excel(
-                        writer,
-                        index=False,
-                        sheet_name="Outstanding Report"
-                    )
-
+                # Create PDF
+                buffer = BytesIO()
+                doc = SimpleDocTemplate(
+                    buffer,
+                    pagesize=landscape(A4),
+                    rightMargin=30,
+                    leftMargin=30,
+                    topMargin=30,
+                    bottomMargin=30
+                )
+                
+                elements = []
+                styles = getSampleStyleSheet()
+                
+                # Title
+                title_style = ParagraphStyle(
+                    'CustomTitle',
+                    parent=styles['Heading1'],
+                    fontSize=18,
+                    textColor=colors.HexColor('#667eea'),
+                    spaceAfter=20,
+                    alignment=TA_CENTER
+                )
+                
+                title = Paragraph("Invoice Outstanding Report", title_style)
+                elements.append(title)
+                
+                # Date subtitle
+                subtitle_style = ParagraphStyle(
+                    'Subtitle',
+                    parent=styles['Normal'],
+                    fontSize=10,
+                    textColor=colors.grey,
+                    alignment=TA_CENTER,
+                    spaceAfter=20
+                )
+                
+                date_str = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+                subtitle = Paragraph(f"Generated on {date_str}", subtitle_style)
+                elements.append(subtitle)
+                elements.append(Spacer(1, 0.2*inch))
+                
+                # Table header
+                table_data = [[
+                    'Invoice No',
+                    'Date',
+                    'Party',
+                    'Invoice Amount',
+                    'Settled Amount',
+                    'Outstanding'
+                ]]
+                
+                # Add data rows
+                table_data.extend(export_rows)
+                
+                # Add grand total row
+                total_invoice = sum(invoice_totals.get(inv["id"], 0) for inv in invoices)
+                total_settled = sum(settled_totals.get(inv["id"], 0) for inv in invoices)
+                total_outstanding = total_invoice - total_settled
+                
+                table_data.append([
+                    'TOTAL',
+                    '',
+                    '',
+                    f"₹{total_invoice:,.2f}",
+                    f"₹{total_settled:,.2f}",
+                    f"₹{total_outstanding:,.2f}"
+                ])
+                
+                # Create table
+                table = Table(table_data, colWidths=[2*inch, 1.2*inch, 2*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+                
+                # Style the table
+                table.setStyle(TableStyle([
+                    # Header row
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 11),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('TOPPADDING', (0, 0), (-1, 0), 12),
+                    
+                    # Data rows
+                    ('BACKGROUND', (0, 1), (-1, -2), colors.white),
+                    ('TEXTCOLOR', (0, 1), (-1, -2), colors.black),
+                    ('ALIGN', (0, 1), (2, -2), 'LEFT'),
+                    ('ALIGN', (3, 1), (-1, -2), 'RIGHT'),
+                    ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -2), 9),
+                    ('TOPPADDING', (0, 1), (-1, -2), 6),
+                    ('BOTTOMPADDING', (0, 1), (-1, -2), 6),
+                    
+                    # Total row
+                    ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f0f0f0')),
+                    ('TEXTCOLOR', (0, -1), (-1, -1), colors.black),
+                    ('ALIGN', (0, -1), (-1, -1), 'RIGHT'),
+                    ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, -1), (-1, -1), 10),
+                    ('TOPPADDING', (0, -1), (-1, -1), 10),
+                    ('BOTTOMPADDING', (0, -1), (-1, -1), 10),
+                    
+                    # Grid
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                    ('LINEBELOW', (0, 0), (-1, 0), 2, colors.HexColor('#667eea')),
+                    ('LINEABOVE', (0, -1), (-1, -1), 2, colors.HexColor('#667eea')),
+                    
+                    # Alternating row colors
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f9f9f9')])
+                ]))
+                
+                elements.append(table)
+                
+                # Build PDF
+                doc.build(elements)
+                
+                # Get PDF data
+                pdf_data = buffer.getvalue()
+                buffer.close()
+                
+                # Download button
                 st.download_button(
-                    label="📥 Export Outstanding to Excel",
-                    data=output.getvalue(),
-                    file_name="invoice_outstanding_report.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    label="📥 Download Outstanding Report (PDF)",
+                    data=pdf_data,
+                    file_name=f"invoice_outstanding_report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
                 )
 
         to_disp = resolve_entity_name(
