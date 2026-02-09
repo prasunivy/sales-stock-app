@@ -2865,7 +2865,7 @@ This action will:
         st.write("From:", from_disp)
         st.write("To:", to_disp)
         st.write("Date:", pay_date)
-        st.write("Mode:", pay_mode)
+        st.write("Mode:", payment_mode)
         st.write("Reference:", pay_ref)
         st.write("Narration:", pay_narration)
         st.write("Net Receipt (Ledger Impact):", st.session_state.pay_amounts["net"])
@@ -2881,7 +2881,7 @@ This action will:
                 f"From: {from_disp}\n"
                 f"To: {to_disp}\n"
                 f"Date: {pay_date}\n"
-                f"Mode: {pay_mode}\n"
+                f"Mode: {payment_mode}\n"
                 f"Reference: {pay_ref}\n"
                 f"Narration: {pay_narration}\n\n"
                 f"Gross: {st.session_state.pay_amounts['gross']}\n"
