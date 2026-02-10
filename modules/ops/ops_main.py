@@ -3396,7 +3396,7 @@ This action will:
         ledger_rows = (
             admin_supabase.table("financial_ledger")
             .select(
-                "id, txn_date, debit, credit, narration, ops_document_id"
+                "id, txn_date, debit, credit, narration, ops_document_id, gross_amount, discount_amount, net_amount"
             )
             .eq("party_id", party_id)
             .gte("txn_date", from_date.isoformat())
@@ -3511,20 +3511,25 @@ This action will:
             if ops_doc.get("reference_no"):
                 invoice_no = ops_doc["reference_no"]
 
-            # Gross vs Net (for payments)
+            # Gross vs Net (for payments) 
             gross_receipt = ""
             discount_amt = ""
             net_receipt = ""
             
             if credit > 0:
                 # This is a payment/credit
-                discount_amt = payment_settlements.get(row["ops_document_id"], 0)
+                # Use the new columns if they exist and have values
+                gross_val = float(row.get("gross_amount") or 0)
+                discount_val = float(row.get("discount_amount") or 0)
+                net_val = float(row.get("net_amount") or 0)
                 
-                if discount_amt > 0:
-                    gross_receipt = f"{credit + discount_amt:,.2f}"
-                    discount_amt = f"{discount_amt:,.2f}"
-                    net_receipt = f"{credit:,.2f}"
+                if gross_val > 0:
+                    # New payment with all three amounts stored
+                    gross_receipt = f"{gross_val:,.2f}"
+                    discount_amt = f"{discount_val:,.2f}" if discount_val > 0 else ""
+                    net_receipt = f"{net_val:,.2f}"
                 else:
+                    # Old payment without the new columns - use credit as fallback
                     gross_receipt = f"{credit:,.2f}"
                     net_receipt = f"{credit:,.2f}"
 
