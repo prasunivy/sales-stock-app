@@ -3012,43 +3012,23 @@ This action will:
 
                 payment_ops_id = doc_resp.data[0]["id"]
 
-                # ---------- INSERT FINANCIAL LEDGER (THREE SEPARATE ENTRIES) ----------
+                # ---------- INSERT FINANCIAL LEDGER (ONE ENTRY WITH ALL AMOUNTS) ----------
                 gross_amt = st.session_state.pay_amounts["gross"]
                 discount_amt = st.session_state.pay_amounts["discount"]
                 net_amt = st.session_state.pay_amounts["net"]
                 
-                # Entry 1: Gross Receipt - THIS IS THE ONLY ONE THAT AFFECTS BALANCE
+                # Single entry with gross, discount, and net amounts visible
                 admin_supabase.table("financial_ledger").insert({
                     "ops_document_id": payment_ops_id,
                     "txn_date": pay_date.isoformat(),
                     "party_id": party_id,
                     "debit": 0 if payment_direction == "Money Received" else gross_amt,
                     "credit": gross_amt if payment_direction == "Money Received" else 0,
+                    "gross_amount": gross_amt,
+                    "discount_amount": discount_amt,
+                    "net_amount": net_amt,
                     "closing_balance": 0,
-                    "narration": f"{pay_narration or 'Payment'} - Gross Receipt: ₹{gross_amt:,.2f}"
-                }).execute()
-                
-                # Entry 2: Discount - INFO ONLY (₹0 credit, amount shown in narration)
-                if discount_amt > 0:
-                    admin_supabase.table("financial_ledger").insert({
-                        "ops_document_id": payment_ops_id,
-                        "txn_date": pay_date.isoformat(),
-                        "party_id": party_id,
-                        "debit": 0,
-                        "credit": 0,
-                        "closing_balance": 0,
-                        "narration": f"{pay_narration or 'Payment'} - Discount Given: ₹{discount_amt:,.2f} (info only - included in gross)"
-                    }).execute()
-                
-                # Entry 3: Net Cash - INFO ONLY (₹0 credit, amount shown in narration)
-                admin_supabase.table("financial_ledger").insert({
-                    "ops_document_id": payment_ops_id,
-                    "txn_date": pay_date.isoformat(),
-                    "party_id": party_id,
-                    "debit": 0,
-                    "credit": 0,
-                    "closing_balance": 0,
-                    "narration": f"{pay_narration or 'Payment'} - Net Cash Received: ₹{net_amt:,.2f} (actual cash in hand)"
+                    "narration": f"{pay_narration or 'Payment'} - Gross: ₹{gross_amt:,.2f}, Discount: ₹{discount_amt:,.2f}, Net: ₹{net_amt:,.2f}"
                 }).execute()
                 # =========================
                 # PHASE-3 STEP-3.2 — INSERT PAYMENT SETTLEMENTS (OPTIONAL)
