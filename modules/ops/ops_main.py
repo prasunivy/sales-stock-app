@@ -3017,7 +3017,7 @@ This action will:
                 discount_amt = st.session_state.pay_amounts["discount"]
                 net_amt = st.session_state.pay_amounts["net"]
                 
-                # Entry 1: Gross Receipt - This is what reduces the balance
+                # Entry 1: Gross Receipt - THIS IS THE ONLY ONE THAT AFFECTS BALANCE
                 admin_supabase.table("financial_ledger").insert({
                     "ops_document_id": payment_ops_id,
                     "txn_date": pay_date.isoformat(),
@@ -3028,27 +3028,27 @@ This action will:
                     "narration": f"{pay_narration or 'Payment'} - Gross Receipt: ₹{gross_amt:,.2f}"
                 }).execute()
                 
-                # Entry 2: Discount Given - Shows discount amount (stored for future reference)
+                # Entry 2: Discount - INFO ONLY (₹0 credit, amount shown in narration)
                 if discount_amt > 0:
                     admin_supabase.table("financial_ledger").insert({
                         "ops_document_id": payment_ops_id,
                         "txn_date": pay_date.isoformat(),
                         "party_id": party_id,
                         "debit": 0,
-                        "credit": discount_amt if payment_direction == "Money Received" else 0,
+                        "credit": 0,
                         "closing_balance": 0,
-                        "narration": f"{pay_narration or 'Payment'} - Discount Given: ₹{discount_amt:,.2f} (included in gross, not additional)"
+                        "narration": f"{pay_narration or 'Payment'} - Discount Given: ₹{discount_amt:,.2f} (info only - included in gross)"
                     }).execute()
                 
-                # Entry 3: Net Cash Received - Shows actual cash in hand (stored for future reference)
+                # Entry 3: Net Cash - INFO ONLY (₹0 credit, amount shown in narration)
                 admin_supabase.table("financial_ledger").insert({
                     "ops_document_id": payment_ops_id,
                     "txn_date": pay_date.isoformat(),
                     "party_id": party_id,
                     "debit": 0,
-                    "credit": net_amt if payment_direction == "Money Received" else 0,
+                    "credit": 0,
                     "closing_balance": 0,
-                    "narration": f"{pay_narration or 'Payment'} - Net Cash Received: ₹{net_amt:,.2f} (gross - discount)"
+                    "narration": f"{pay_narration or 'Payment'} - Net Cash Received: ₹{net_amt:,.2f} (actual cash in hand)"
                 }).execute()
                 # =========================
                 # PHASE-3 STEP-3.2 — INSERT PAYMENT SETTLEMENTS (OPTIONAL)
