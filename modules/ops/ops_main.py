@@ -5498,253 +5498,253 @@ This action will:
                 st.error("❌ Failed to submit freight entry")
                 st.exception(e)
 
-        # =========================
-        # ALLOCATE UNALLOCATED PAYMENTS
-        # =========================
-        elif section == "ALLOCATE_PAYMENTS":
-            st.subheader("🔗 Allocate Unallocated Payments")
+    # =========================
+    # ALLOCATE UNALLOCATED PAYMENTS
+    # =========================
+    elif section == "ALLOCATE_PAYMENTS":
+        st.subheader("🔗 Allocate Unallocated Payments")
         
-            st.info("""
-            📌 This module allows you to allocate previously unallocated payments to invoices.
-            """)
+        st.info("""
+        📌 This module allows you to allocate previously unallocated payments to invoices.
+        """)
         
-            # Fetch unallocated/partially allocated payments
-            unallocated_payments = admin_supabase.table("ops_documents")\
-                .select("id, ops_no, ops_date, reference_no, from_entity_type, from_entity_id, payment_mode")\
-                .eq("ops_type", "ADJUSTMENT")\
-                .in_("allocation_status", ["UNALLOCATED", "PARTIALLY_ALLOCATED"])\
-                .order("ops_date", desc=True)\
-                .execute().data
+        # Fetch unallocated/partially allocated payments
+        unallocated_payments = admin_supabase.table("ops_documents")\
+            .select("id, ops_no, ops_date, reference_no, from_entity_type, from_entity_id, payment_mode")\
+            .eq("ops_type", "ADJUSTMENT")\
+            .in_("allocation_status", ["UNALLOCATED", "PARTIALLY_ALLOCATED"])\
+            .order("ops_date", desc=True)\
+            .execute().data
         
-            if not unallocated_payments:
-                st.success("✅ No unallocated payments found!")
-                if st.button("⬅ Back to Menu"):
-                    st.session_state.ops_section = None
-                    st.rerun()
-                st.stop()
+        if not unallocated_payments:
+            st.success("✅ No unallocated payments found!")
+            if st.button("⬅ Back to Menu"):
+                st.session_state.ops_section = None
+                st.rerun()
+            st.stop()
         
-            st.write(f"**Found {len(unallocated_payments)} unallocated/partially allocated payments**")
-            st.divider()
+        st.write(f"**Found {len(unallocated_payments)} unallocated/partially allocated payments**")
+        st.divider()
         
-            # Select payment to allocate
-            payment_options = {}
-            for p in unallocated_payments:
-                # Get entity name
-                if p["from_entity_type"] == "Company":
-                    from_name = "Company"
-                elif p["from_entity_type"] == "Stockist" and p.get("from_entity_id"):
-                    stockist = admin_supabase.table("stockists").select("name").eq("id", p["from_entity_id"]).single().execute()
-                    from_name = stockist.data["name"] if stockist.data else "Unknown"
-                elif p["from_entity_type"] == "CNF" and p.get("from_entity_id"):
-                    cnf = admin_supabase.table("cnfs").select("name").eq("id", p["from_entity_id"]).single().execute()
-                    from_name = cnf.data["name"] if cnf.data else "Unknown"
-                elif p["from_entity_type"] == "User" and p.get("from_entity_id"):
-                    user = admin_supabase.table("users").select("username").eq("id", p["from_entity_id"]).single().execute()
-                    from_name = user.data["username"] if user.data else "Unknown"
-                else:
-                    from_name = p["from_entity_type"]
+        # Select payment to allocate
+        payment_options = {}
+        for p in unallocated_payments:
+            # Get entity name
+            if p["from_entity_type"] == "Company":
+                from_name = "Company"
+            elif p["from_entity_type"] == "Stockist" and p.get("from_entity_id"):
+                stockist = admin_supabase.table("stockists").select("name").eq("id", p["from_entity_id"]).single().execute()
+                from_name = stockist.data["name"] if stockist.data else "Unknown"
+            elif p["from_entity_type"] == "CNF" and p.get("from_entity_id"):
+                cnf = admin_supabase.table("cnfs").select("name").eq("id", p["from_entity_id"]).single().execute()
+                from_name = cnf.data["name"] if cnf.data else "Unknown"
+            elif p["from_entity_type"] == "User" and p.get("from_entity_id"):
+                user = admin_supabase.table("users").select("username").eq("id", p["from_entity_id"]).single().execute()
+                from_name = user.data["username"] if user.data else "Unknown"
+            else:
+                from_name = p["from_entity_type"]
             
-                display_text = f"{p['ops_no']} - {p['ops_date']} - {from_name} - {p.get('payment_mode', 'N/A')}"
-                payment_options[display_text] = p['id']
+            display_text = f"{p['ops_no']} - {p['ops_date']} - {from_name} - {p.get('payment_mode', 'N/A')}"
+            payment_options[display_text] = p['id']
         
-            selected_payment_display = st.selectbox("Select Payment to Allocate", list(payment_options.keys()))
-            selected_payment_id = payment_options[selected_payment_display]
+        selected_payment_display = st.selectbox("Select Payment to Allocate", list(payment_options.keys()))
+        selected_payment_id = payment_options[selected_payment_display]
         
-            # Get payment details
-            payment = admin_supabase.table("ops_documents")\
-                .select("*")\
-                .eq("id", selected_payment_id)\
-                .single()\
-                .execute().data
+        # Get payment details
+        payment = admin_supabase.table("ops_documents")\
+            .select("*")\
+            .eq("id", selected_payment_id)\
+            .single()\
+            .execute().data
         
-            # Get payment amount from financial_ledger
-            payment_ledger = admin_supabase.table("financial_ledger")\
-                .select("credit")\
-                .eq("ops_document_id", selected_payment_id)\
-                .execute().data
+        # Get payment amount from financial_ledger
+        payment_ledger = admin_supabase.table("financial_ledger")\
+            .select("credit")\
+            .eq("ops_document_id", selected_payment_id)\
+            .execute().data
         
-            total_payment = sum(float(p["credit"]) for p in payment_ledger)
+        total_payment = sum(float(p["credit"]) for p in payment_ledger)
         
-            # Get already allocated amount from payment_settlements
-            allocated_records = admin_supabase.table("payment_settlements")\
-                .select("amount")\
-                .eq("payment_ops_id", selected_payment_id)\
-                .execute().data
+        # Get already allocated amount from payment_settlements
+        allocated_records = admin_supabase.table("payment_settlements")\
+            .select("amount")\
+            .eq("payment_ops_id", selected_payment_id)\
+            .execute().data
         
-            already_allocated = sum(float(a["amount"]) for a in allocated_records)
-            remaining_to_allocate = total_payment - already_allocated
+        already_allocated = sum(float(a["amount"]) for a in allocated_records)
+        remaining_to_allocate = total_payment - already_allocated
         
-            st.success(f"""
-            **Payment Amount:** ₹{total_payment:,.2f}  
-            **Already Allocated:** ₹{already_allocated:,.2f}  
-            **Available to Allocate:** ₹{remaining_to_allocate:,.2f}
-            """)
+        st.success(f"""
+        **Payment Amount:** ₹{total_payment:,.2f}  
+        **Already Allocated:** ₹{already_allocated:,.2f}  
+        **Available to Allocate:** ₹{remaining_to_allocate:,.2f}
+        """)
         
-            if remaining_to_allocate <= 0:
-                st.warning("⚠️ This payment is already fully allocated")
-                if st.button("⬅ Back"):
-                    st.session_state.ops_section = None
-                    st.rerun()
-                st.stop()
+        if remaining_to_allocate <= 0:
+            st.warning("⚠️ This payment is already fully allocated")
+            if st.button("⬅ Back"):
+                st.session_state.ops_section = None
+                st.rerun()
+            st.stop()
         
-            st.divider()
+        st.divider()
         
-            # Get party details from payment
-            from_entity_id = payment.get("from_entity_id")
-            from_entity_type = payment.get("from_entity_type")
+        # Get party details from payment
+        from_entity_id = payment.get("from_entity_id")
+        from_entity_type = payment.get("from_entity_type")
         
-            if not from_entity_id:
-                st.error("Cannot determine party for this payment")
-                st.stop()
+        if not from_entity_id:
+            st.error("Cannot determine party for this payment")
+            st.stop()
         
-            # Fetch outstanding invoices for this party
-            outstanding_invoices = admin_supabase.table("ops_documents")\
-                .select("id, ops_no, ops_date, reference_no, invoice_total, outstanding_balance")\
-                .eq("to_entity_type", from_entity_type)\
-                .eq("to_entity_id", from_entity_id)\
-                .gt("outstanding_balance", 0)\
-                .order("ops_date")\
-                .execute().data
+        # Fetch outstanding invoices for this party
+        outstanding_invoices = admin_supabase.table("ops_documents")\
+            .select("id, ops_no, ops_date, reference_no, invoice_total, outstanding_balance")\
+            .eq("to_entity_type", from_entity_type)\
+            .eq("to_entity_id", from_entity_id)\
+            .gt("outstanding_balance", 0)\
+            .order("ops_date")\
+            .execute().data
         
-            if not outstanding_invoices:
-                st.warning("No outstanding invoices found for this party")
-                if st.button("⬅ Back"):
-                    st.session_state.ops_section = None
-                    st.rerun()
-                st.stop()
+        if not outstanding_invoices:
+            st.warning("No outstanding invoices found for this party")
+            if st.button("⬅ Back"):
+                st.session_state.ops_section = None
+                st.rerun()
+            st.stop()
         
-            st.subheader("📋 Outstanding Invoices")
+        st.subheader("📋 Outstanding Invoices")
         
-            # Allocation inputs
-            allocations = {}
-            total_allocation = 0
+        # Allocation inputs
+        allocations = {}
+        total_allocation = 0
         
-            for inv in outstanding_invoices:
-                with st.container():
-                    col1, col2, col3 = st.columns([3, 2, 2])
+        for inv in outstanding_invoices:
+            with st.container():
+                col1, col2, col3 = st.columns([3, 2, 2])
                 
-                    with col1:
-                        st.write(f"**{inv['ops_no']}**")
-                        st.caption(f"Date: {inv['ops_date']}")
-                        if inv.get('reference_no'):
-                            st.caption(f"Ref: {inv['reference_no']}")
+                with col1:
+                    st.write(f"**{inv['ops_no']}**")
+                    st.caption(f"Date: {inv['ops_date']}")
+                    if inv.get('reference_no'):
+                        st.caption(f"Ref: {inv['reference_no']}")
                 
-                    with col2:
-                        st.write(f"**Total:** ₹{inv['invoice_total']:,.2f}")
-                        st.write(f"**Due:** ₹{inv['outstanding_balance']:,.2f}")
+                with col2:
+                    st.write(f"**Total:** ₹{inv['invoice_total']:,.2f}")
+                    st.write(f"**Due:** ₹{inv['outstanding_balance']:,.2f}")
                 
-                    with col3:
-                        max_allocate = min(
-                            float(inv['outstanding_balance']), 
-                            remaining_to_allocate - total_allocation
-                        )
-                        allocate_amt = st.number_input(
-                            "Allocate ₹",
-                            min_value=0.0,
-                            max_value=max_allocate,
-                            value=0.0,
-                            step=0.01,
-                            key=f"alloc_{inv['id']}"
-                        )
-                        if allocate_amt > 0:
-                            allocations[inv['id']] = allocate_amt
-                            total_allocation += allocate_amt
+                with col3:
+                    max_allocate = min(
+                        float(inv['outstanding_balance']), 
+                        remaining_to_allocate - total_allocation
+                    )
+                    allocate_amt = st.number_input(
+                        "Allocate ₹",
+                        min_value=0.0,
+                        max_value=max_allocate,
+                        value=0.0,
+                        step=0.01,
+                        key=f"alloc_{inv['id']}"
+                    )
+                    if allocate_amt > 0:
+                        allocations[inv['id']] = allocate_amt
+                        total_allocation += allocate_amt
                 
-                    st.divider()
+                st.divider()
         
-            # Show allocation summary
-            st.subheader("📊 Allocation Summary")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Allocating", f"₹{total_allocation:,.2f}")
-            with col2:
-                st.metric("Remaining", f"₹{remaining_to_allocate - total_allocation:,.2f}")
+        # Show allocation summary
+        st.subheader("📊 Allocation Summary")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Allocating", f"₹{total_allocation:,.2f}")
+        with col2:
+            st.metric("Remaining", f"₹{remaining_to_allocate - total_allocation:,.2f}")
         
-            if total_allocation > remaining_to_allocate:
-                st.error("❌ Total allocation exceeds available amount")
-                st.stop()
+        if total_allocation > remaining_to_allocate:
+            st.error("❌ Total allocation exceeds available amount")
+            st.stop()
         
-            st.divider()
+        st.divider()
         
-            # Submit buttons
-            col1, col2 = st.columns(2)
+        # Submit buttons
+        col1, col2 = st.columns(2)
         
-            with col1:
-                if st.button("❌ Cancel"):
-                    st.session_state.ops_section = None
-                    st.rerun()
+        with col1:
+            if st.button("❌ Cancel"):
+                st.session_state.ops_section = None
+                st.rerun()
         
-            with col2:
-                if st.button("✅ Confirm Allocation", type="primary"):
-                    if total_allocation == 0:
-                        st.error("❌ Please allocate at least some amount")
-                        st.stop()
+        with col2:
+            if st.button("✅ Confirm Allocation", type="primary"):
+                if total_allocation == 0:
+                    st.error("❌ Please allocate at least some amount")
+                    st.stop()
                 
-                    try:
-                        user_id = resolve_user_id()
+                try:
+                    user_id = resolve_user_id()
                     
-                        # Create allocation entries
-                        for inv_id, alloc_amt in allocations.items():
-                            # Insert into payment_settlements
-                            admin_supabase.table("payment_settlements").insert({
-                                "payment_ops_id": selected_payment_id,
-                                "invoice_id": inv_id,
-                                "amount": alloc_amt
-                            }).execute()
-                        
-                            # Update invoice
-                            invoice = admin_supabase.table("ops_documents")\
-                                .select("paid_amount, outstanding_balance, invoice_total")\
-                                .eq("id", inv_id)\
-                                .single()\
-                                .execute().data
-                        
-                            if invoice:
-                                new_paid = (invoice.get("paid_amount") or 0) + alloc_amt
-                                new_outstanding = (invoice.get("invoice_total") or 0) - new_paid
-                            
-                                if new_outstanding <= 0:
-                                    status = "PAID"
-                                elif new_paid > 0:
-                                    status = "PARTIAL"
-                                else:
-                                    status = "UNPAID"
-                            
-                                admin_supabase.table("ops_documents").update({
-                                    "paid_amount": new_paid,
-                                    "outstanding_balance": max(0, new_outstanding),
-                                    "payment_status": status
-                                }).eq("id", inv_id).execute()
-                    
-                        # Update payment allocation status
-                        new_total_allocated = already_allocated + total_allocation
-                        if new_total_allocated >= total_payment:
-                            new_status = "FULLY_ALLOCATED"
-                        else:
-                            new_status = "PARTIALLY_ALLOCATED"
-                    
-                        admin_supabase.table("ops_documents").update({
-                            "allocation_status": new_status
-                        }).eq("id", selected_payment_id).execute()
-                    
-                        # Audit log
-                        admin_supabase.table("audit_logs").insert({
-                            "action": "ALLOCATE_PAYMENT",
-                            "target_type": "ops_documents",
-                            "target_id": selected_payment_id,
-                            "performed_by": user_id,
-                            "message": f"Allocated ₹{total_allocation:,.2f} to {len(allocations)} invoices",
-                            "metadata": {"allocations": allocations}
+                    # Create allocation entries
+                    for inv_id, alloc_amt in allocations.items():
+                        # Insert into payment_settlements
+                        admin_supabase.table("payment_settlements").insert({
+                            "payment_ops_id": selected_payment_id,
+                            "invoice_id": inv_id,
+                            "amount": alloc_amt
                         }).execute()
+                        
+                        # Update invoice
+                        invoice = admin_supabase.table("ops_documents")\
+                            .select("paid_amount, outstanding_balance, invoice_total")\
+                            .eq("id", inv_id)\
+                            .single()\
+                            .execute().data
+                        
+                        if invoice:
+                            new_paid = (invoice.get("paid_amount") or 0) + alloc_amt
+                            new_outstanding = (invoice.get("invoice_total") or 0) - new_paid
+                            
+                            if new_outstanding <= 0:
+                                status = "PAID"
+                            elif new_paid > 0:
+                                status = "PARTIAL"
+                            else:
+                                status = "UNPAID"
+                            
+                            admin_supabase.table("ops_documents").update({
+                                "paid_amount": new_paid,
+                                "outstanding_balance": max(0, new_outstanding),
+                                "payment_status": status
+                            }).eq("id", inv_id).execute()
                     
-                        st.success("✅ Payment allocated successfully!")
-                        st.balloons()
+                    # Update payment allocation status
+                    new_total_allocated = already_allocated + total_allocation
+                    if new_total_allocated >= total_payment:
+                        new_status = "FULLY_ALLOCATED"
+                    else:
+                        new_status = "PARTIALLY_ALLOCATED"
                     
-                        if st.button("🔄 Allocate Another"):
-                            st.rerun()
+                    admin_supabase.table("ops_documents").update({
+                        "allocation_status": new_status
+                    }).eq("id", selected_payment_id).execute()
+                    
+                    # Audit log
+                    admin_supabase.table("audit_logs").insert({
+                        "action": "ALLOCATE_PAYMENT",
+                        "target_type": "ops_documents",
+                        "target_id": selected_payment_id,
+                        "performed_by": user_id,
+                        "message": f"Allocated ₹{total_allocation:,.2f} to {len(allocations)} invoices",
+                        "metadata": {"allocations": allocations}
+                    }).execute()
+                    
+                    st.success("✅ Payment allocated successfully!")
+                    st.balloons()
+                    
+                    if st.button("🔄 Allocate Another"):
+                        st.rerun()
                 
-                    except Exception as e:
-                        st.error("❌ Failed to allocate payment")
-                        st.exception(e)
+                except Exception as e:
+                    st.error("❌ Failed to allocate payment")
+                    st.exception(e)
 
 
