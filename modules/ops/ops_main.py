@@ -1852,10 +1852,18 @@ This action will:
 
                         # ---------- UPDATE INVOICE TOTALS (FOR INVOICES ONLY) ----------
                         if ops_type_val == "STOCK_OUT" and stock_as_val == "normal":
+                            # Calculate total from ops_lines (not from session state)
+                            lines_total_resp = admin_supabase.table("ops_lines")\
+                                .select("net_amount")\
+                                .eq("ops_document_id", ops_document_id)\
+                                .execute()
+            
+                            invoice_total = sum(float(line.get("net_amount", 0)) for line in lines_total_resp.data)
+            
                             # This is an invoice, set invoice totals
                             admin_supabase.table("ops_documents").update({
-                                "invoice_total": a["net"],
-                                "outstanding_balance": a["net"],
+                                "invoice_total": invoice_total,
+                                "outstanding_balance": invoice_total,
                                 "payment_status": "UNPAID"
                             }).eq("id", ops_document_id).execute()
 
