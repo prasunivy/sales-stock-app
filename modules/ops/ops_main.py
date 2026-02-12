@@ -5518,7 +5518,7 @@ This action will:
     
         # Fetch ALL adjustment payments first
         all_payments = admin_supabase.table("ops_documents")\
-            .select("id, ops_no, ops_date, reference_no, from_entity_type, from_entity_id, payment_mode, allocation_status")\
+            .select("id, ops_no, ops_date, reference_no, from_entity_type, from_entity_id, to_entity_type, to_entity_id, payment_mode, allocation_status")\
             .eq("ops_type", "ADJUSTMENT")\
             .order("ops_date", desc=True)\
             .execute().data
@@ -5538,13 +5538,139 @@ This action will:
                 st.rerun()
             st.stop()
     
-        st.write(f"**Found {len(unallocated_payments)} unallocated/partially allocated payments**")
+        # =========================
+        # FILTERS SECTION
+        # =========================
+        st.markdown("### 🔍 Filter Payments")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            # Get unique FROM entities (Payment Makers)
+            from_entities = {}
+            for p in unallocated_payments:
+                if p.get("from_entity_type") == "Stockist" and p.get("from_entity_id"):
+                    stockist = next((s for s in st.session_state.stockists_master if s["id"] == p["from_entity_id"]), None)
+                    if stockist:
+                        from_entities[f"Stockist: {stockist['name']}"] = (p["from_entity_type"], p["from_entity_id"])
+                elif p.get("from_entity_type") == "CNF" and p.get("from_entity_id"):
+                    cnf = next((c for c in st.session_state.cnfs_master if c["id"] == p["from_entity_id"]), None)
+                    if cnf:
+                        from_entities[f"CNF: {cnf['name']}"] = (p["from_entity_type"], p["from_entity_id"])
+                elif p.get("from_entity_type") == "User" and p.get("from_entity_id"):
+                    user = next((u for u in st.session_state.users_master if u["id"] == p["from_entity_id"]), None)
+                    if user:
+                        from_entities[f"User: {user['username']}"] = (p["from_entity_type"], p["from_entity_id"])
+            
+            filter_from = st.selectbox(
+                "Payment FROM (Maker)",
+                ["All Makers"] + sorted(list(from_entities.keys())),
+                key="filter_from_allocate"
+            )
+        
+        with col2:
+            # Get unique TO entities (Payment Receivers)
+            to_entities = {}
+            for p in unallocated_payments:
+                if p.get("to_entity_type") == "Company":
+                    to_entities["Company"] = ("Company", None)
+                elif p.get("to_entity_type") == "Stockist" and p.get("to_entity_id"):
+                    stockist = next((s for s in st.session_state.stockists_master if s["id"] == p["to_entity_id"]), None)
+                    if stockist:
+                        to_entities[f"Stockist: {stockist['name']}"] = (p["to_entity_type"], p["to_entity_id"])
+                elif p.get("to_entity_type") == "CNF" and p.get("to_entity_id"):
+                    cnf = next((c for c in st.session_state.cnfs_master if c["id"] == p["to_entity_id"]), None)
+                    if cnf:
+                        to_entities[f"CNF: {cnf['name']}"] = (p["to_entity_type"], p["to_entity_id"])
+                elif p.get("to_entity_type") == "User" and p.get("to_entity_id"):
+                    user = next((u for u in st.session_state.users_master if u["id"] == p["to_entity_id"]), None)
+                    if user:
+                        to_entities[f"User: {user['username']}"] = (p["to_entity_type"], p["to_entity_id"])
+            
+            filter_to = st.selectbox(
+                "Payment TO (Receiver)",
+                ["All Receivers"] + sorted(list(to_entities.keys())),
+                key="filter_to_allocate"
+            )
+        
+        with col3:
+            # Get unique payment modes
+            payment_modes = list(set(p.get("payment_mode") for p in unallocated_payments if p.get("payment_mode")))
+            
+            filter_mode = st.selectbox(
+                "Payment Mode",
+                ["All Modes"] + sorted(payment_modes),
+                key="filter_mode_allocate"
+            )
+        
+        with col4:
+            # Date range filter
+            filter_days = st.selectbox(
+                "Date Range",
+                ["All Dates", "Last 7 Days", "Last 30 Days", "Last 90 Days"],
+                key="filter_date_allocate"
+            )
+        
+        # Apply filters
+        filtered_payments = unallocated_payments.copy()
+        
+        # Filter by FROM entity
+        if filter_from != "All Makers":
+            selected_from = from_entities.get(filter_from)
+            filtered_payments = [
+                p for p in filtered_payments 
+                if p.get("from_entity_type") == selected_from[0] and p.get("from_entity_id") == selected_from[1]
+            ]
+        
+        # Filter by TO entity
+        if filter_to != "All Receivers":
+            selected_to = to_entities.get(filter_to)
+            if selected_to[1] is None:  # Company
+                filtered_payments = [p for p in filtered_payments if p.get("to_entity_type") == "Company"]
+            else:
+                filtered_payments = [
+                    p for p in filtered_payments 
+                    if p.get("to_entity_type") == selected_to[0] and p.get("to_entity_id") == selected_to[1]
+                ]
+        
+        # Filter by payment mode
+        if filter_mode != "All Modes":
+            filtered_payments = [p for p in filtered_payments if p.get("payment_mode") == filter_mode]
+        
+        # Filter by date
+        if filter_days != "All Dates":
+            from datetime import datetime, timedelta
+            
+            if filter_days == "Last 7 Days":
+                cutoff_date = (datetime.now() - timedelta(days=7)).date()
+            elif filter_days == "Last 30 Days":
+                cutoff_date = (datetime.now() - timedelta(days=30)).date()
+            elif filter_days == "Last 90 Days":
+                cutoff_date = (datetime.now() - timedelta(days=90)).date()
+            
+            filtered_payments = [
+                p for p in filtered_payments 
+                if datetime.fromisoformat(p["ops_date"]).date() >= cutoff_date
+            ]
+        
+        st.divider()
+        
+        # Show filtered count
+        st.write(f"**Showing {len(filtered_payments)} of {len(unallocated_payments)} unallocated payments**")
+        
+        if not filtered_payments:
+            st.warning("No payments match the selected filters. Try different filter options.")
+            if st.button("⬅ Back to Menu"):
+                st.session_state.ops_section = None
+                st.rerun()
+            st.stop()
+        
         st.divider()
     
         # Select payment to allocate
         payment_options = {}
-        for p in unallocated_payments:
-            # Get entity name
+        for p in filtered_payments:
+            # Get FROM entity name
             if p["from_entity_type"] == "Company":
                 from_name = "Company"
             elif p["from_entity_type"] == "Stockist" and p.get("from_entity_id"):
@@ -5558,8 +5684,23 @@ This action will:
                 from_name = user.data["username"] if user.data else "Unknown"
             else:
                 from_name = p["from_entity_type"]
+            
+            # Get TO entity name
+            if p["to_entity_type"] == "Company":
+                to_name = "Company"
+            elif p["to_entity_type"] == "Stockist" and p.get("to_entity_id"):
+                stockist = admin_supabase.table("stockists").select("name").eq("id", p["to_entity_id"]).single().execute()
+                to_name = stockist.data["name"] if stockist.data else "Unknown"
+            elif p["to_entity_type"] == "CNF" and p.get("to_entity_id"):
+                cnf = admin_supabase.table("cnfs").select("name").eq("id", p["to_entity_id"]).single().execute()
+                to_name = cnf.data["name"] if cnf.data else "Unknown"
+            elif p["to_entity_type"] == "User" and p.get("to_entity_id"):
+                user = admin_supabase.table("users").select("username").eq("id", p["to_entity_id"]).single().execute()
+                to_name = user.data["username"] if user.data else "Unknown"
+            else:
+                to_name = p["to_entity_type"]
         
-            display_text = f"{p['ops_no']} - {p['ops_date']} - {from_name} - {p.get('payment_mode', 'N/A')}"
+            display_text = f"{p['ops_no']} - {p['ops_date']} - FROM: {from_name} → TO: {to_name} - {p.get('payment_mode', 'N/A')}"
             payment_options[display_text] = p['id']
     
         selected_payment_display = st.selectbox("Select Payment to Allocate", list(payment_options.keys()))
@@ -5604,51 +5745,93 @@ This action will:
     
         st.divider()
     
-        # Get party details from payment
+        # ========================================================================
+        # DETERMINE TARGET STOCKIST (NEW LOGIC!)
+        # ========================================================================
         from_entity_id = payment.get("from_entity_id")
         from_entity_type = payment.get("from_entity_type")
     
         if not from_entity_id:
             st.error("Cannot determine party for this payment")
             st.stop()
-    
-        # Fetch outstanding invoices for this party
-        st.write(f"DEBUG: Looking for invoices where:")
-        st.write(f"  - to_entity_type = {from_entity_type}")
-        st.write(f"  - to_entity_id = {from_entity_id}")
         
-        # Try to fetch ALL documents first
-        all_docs = admin_supabase.table("ops_documents")\
-            .select("id, ops_no, ops_date, ops_type, stock_as, invoice_total, outstanding_balance, to_entity_type, to_entity_id")\
-            .eq("to_entity_type", from_entity_type)\
-            .eq("to_entity_id", from_entity_id)\
-            .order("ops_date")\
-            .execute().data
+        # Initialize target stockist
+        target_stockist_id = None
+        target_stockist_type = None
         
-        st.write(f"DEBUG: Found {len(all_docs)} total documents for this party")
+        if from_entity_type == "Stockist":
+            # Payment FROM Stockist - allocate to THAT Stockist's invoices
+            target_stockist_id = from_entity_id
+            target_stockist_type = "Stockist"
+            st.info(f"💡 This payment is FROM a Stockist. Will show their outstanding invoices.")
         
-        if all_docs:
-            st.write("DEBUG: Document types found:")
-            for doc in all_docs[:5]:  # Show first 5
-                st.write(f"  - {doc['ops_no']}: ops_type={doc.get('ops_type')}, stock_as={doc.get('stock_as')}, invoice_total={doc.get('invoice_total')}, outstanding={doc.get('outstanding_balance')}")
+        elif from_entity_type == "User":
+            # Payment FROM User - need to ask which Stockist this is for
+            st.warning("⚠️ This payment was made by a User/Sales Rep.")
+            st.info("📌 Please select which Stockist this payment was collected from:")
+            
+            # Get Stockists mapped to this User
+            user_stockist_ids = [
+                m["stockist_id"] 
+                for m in st.session_state.user_stockist_map 
+                if m["user_id"] == from_entity_id
+            ]
+            
+            if not user_stockist_ids:
+                st.error("❌ This User has no Stockists mapped!")
+                st.info("Please map this User to Stockists in the master data first.")
+                if st.button("⬅ Back"):
+                    st.session_state.ops_section = None
+                    st.rerun()
+                st.stop()
+            
+            # Get Stockist names
+            user_stockists = {
+                s["name"]: s["id"] 
+                for s in st.session_state.stockists_master 
+                if s["id"] in user_stockist_ids
+            }
+            
+            selected_stockist_name = st.selectbox(
+                "Select Stockist (whose invoices to pay)",
+                list(user_stockists.keys()),
+                key="select_target_stockist"
+            )
+            
+            target_stockist_id = user_stockists[selected_stockist_name]
+            target_stockist_type = "Stockist"
+            
+            st.success(f"✅ Will allocate to invoices for: **{selected_stockist_name}**")
         
-        # Now filter for invoices
+        elif from_entity_type == "CNF":
+            # Payment FROM CNF - rare case
+            st.error("❌ Payments FROM CNF cannot be allocated to invoices.")
+            st.info("CNFs don't have invoices. Please check the payment details.")
+            if st.button("⬅ Back"):
+                st.session_state.ops_section = None
+                st.rerun()
+            st.stop()
+        
+        else:
+            st.error(f"❌ Unknown from_entity_type: {from_entity_type}")
+            st.stop()
+        
+        # ========================================================================
+        # FETCH INVOICES FOR TARGET STOCKIST
+        # ========================================================================
         outstanding_invoices = admin_supabase.table("ops_documents")\
             .select("id, ops_no, ops_date, reference_no, invoice_total, outstanding_balance")\
             .eq("ops_type", "STOCK_OUT")\
             .eq("stock_as", "normal")\
-            .eq("to_entity_type", from_entity_type)\
-            .eq("to_entity_id", from_entity_id)\
+            .eq("to_entity_type", target_stockist_type)\
+            .eq("to_entity_id", target_stockist_id)\
             .gt("outstanding_balance", 0)\
             .eq("is_deleted", False)\
             .order("ops_date")\
             .execute().data
-        
-        st.write(f"DEBUG: Found {len(outstanding_invoices)} outstanding invoices")
     
         if not outstanding_invoices:
-            st.warning("No outstanding invoices found for this party")
-            st.info("This means either: 1) No invoices exist, 2) All invoices are paid, or 3) Invoice data issue")
+            st.warning("No outstanding invoices found for this Stockist")
             if st.button("⬅ Back"):
                 st.session_state.ops_section = None
                 st.rerun()
@@ -5787,6 +5970,7 @@ This action will:
                 except Exception as e:
                     st.error("❌ Failed to allocate payment")
                     st.exception(e)
+
 
 
 
