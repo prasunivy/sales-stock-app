@@ -5502,29 +5502,46 @@ This action will:
     # ALLOCATE UNALLOCATED PAYMENTS
     # =========================
     elif section == "ALLOCATE_PAYMENTS":
+        # DEBUG - Remove after testing
+        st.error("🔴🔴🔴 ALLOCATE_PAYMENTS SECTION IS RUNNING 🔴🔴🔴")
+        st.write(f"DEBUG: section variable = '{section}'")
+        st.write(f"DEBUG: session_state.ops_section = '{st.session_state.ops_section}'")
+        
         st.subheader("🔗 Allocate Unallocated Payments")
     
         st.info("""
         📌 This module allows you to allocate previously unallocated payments to invoices.
         """)
     
-        # Fetch unallocated/partially allocated payments
-        unallocated_payments = admin_supabase.table("ops_documents")\
-            .select("id, ops_no, ops_date, reference_no, from_entity_type, from_entity_id, payment_mode")\
+        # Fetch ALL adjustment payments first
+        all_payments = admin_supabase.table("ops_documents")\
+            .select("id, ops_no, ops_date, reference_no, from_entity_type, from_entity_id, payment_mode, allocation_status")\
             .eq("ops_type", "ADJUSTMENT")\
-            .in_("allocation_status", ["UNALLOCATED", "PARTIALLY_ALLOCATED"])\
             .order("ops_date", desc=True)\
             .execute().data
+        
+        st.write(f"DEBUG: Found {len(all_payments)} total ADJUSTMENT payments")
+        
+        # Filter for unallocated (including NULL)
+        unallocated_payments = [
+            p for p in all_payments 
+            if p.get("allocation_status") in [None, "UNALLOCATED", "PARTIALLY_ALLOCATED"]
+        ]
+        
+        st.write(f"DEBUG: Found {len(unallocated_payments)} unallocated payments")
     
         if not unallocated_payments:
-            st.success("✅ No unallocated payments found!")
+            st.warning("⚠️ No unallocated payments found!")
+            st.info("Create a payment without allocating it first, then come back here.")
             if st.button("⬅ Back to Menu"):
                 st.session_state.ops_section = None
                 st.rerun()
             st.stop()
-    
+        
         st.write(f"**Found {len(unallocated_payments)} unallocated/partially allocated payments**")
         st.divider()
+        
+        
     
         # Select payment to allocate
         payment_options = {}
