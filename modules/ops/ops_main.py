@@ -5502,11 +5502,6 @@ This action will:
     # ALLOCATE UNALLOCATED PAYMENTS
     # =========================
     elif section == "ALLOCATE_PAYMENTS":
-        # DEBUG - Remove after testing
-        st.error("🔴🔴🔴 ALLOCATE_PAYMENTS SECTION IS RUNNING 🔴🔴🔴")
-        st.write(f"DEBUG: section variable = '{section}'")
-        st.write(f"DEBUG: session_state.ops_section = '{st.session_state.ops_section}'")
-        
         st.subheader("🔗 Allocate Unallocated Payments")
     
         st.info("""
@@ -5520,15 +5515,12 @@ This action will:
             .order("ops_date", desc=True)\
             .execute().data
         
-        st.write(f"DEBUG: Found {len(all_payments)} total ADJUSTMENT payments")
-        
-        # Filter for unallocated (including NULL)
+        # Filter for unallocated (including NULL) AND with valid party info
         unallocated_payments = [
             p for p in all_payments 
             if p.get("allocation_status") in [None, "UNALLOCATED", "PARTIALLY_ALLOCATED"]
+            and p.get("from_entity_id") is not None
         ]
-        
-        st.write(f"DEBUG: Found {len(unallocated_payments)} unallocated payments")
     
         if not unallocated_payments:
             st.warning("⚠️ No unallocated payments found!")
@@ -5537,11 +5529,9 @@ This action will:
                 st.session_state.ops_section = None
                 st.rerun()
             st.stop()
-        
+    
         st.write(f"**Found {len(unallocated_payments)} unallocated/partially allocated payments**")
         st.divider()
-        
-        
     
         # Select payment to allocate
         payment_options = {}
@@ -5617,6 +5607,8 @@ This action will:
         # Fetch outstanding invoices for this party
         outstanding_invoices = admin_supabase.table("ops_documents")\
             .select("id, ops_no, ops_date, reference_no, invoice_total, outstanding_balance")\
+            .eq("ops_type", "STOCK_OUT")\
+            .eq("stock_as", "normal")\
             .eq("to_entity_type", from_entity_type)\
             .eq("to_entity_id", from_entity_id)\
             .gt("outstanding_balance", 0)\
