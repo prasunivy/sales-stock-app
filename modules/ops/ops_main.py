@@ -5605,6 +5605,26 @@ This action will:
             st.stop()
     
         # Fetch outstanding invoices for this party
+        st.write(f"DEBUG: Looking for invoices where:")
+        st.write(f"  - to_entity_type = {from_entity_type}")
+        st.write(f"  - to_entity_id = {from_entity_id}")
+        
+        # Try to fetch ALL documents first
+        all_docs = admin_supabase.table("ops_documents")\
+            .select("id, ops_no, ops_date, ops_type, stock_as, invoice_total, outstanding_balance, to_entity_type, to_entity_id")\
+            .eq("to_entity_type", from_entity_type)\
+            .eq("to_entity_id", from_entity_id)\
+            .order("ops_date")\
+            .execute().data
+        
+        st.write(f"DEBUG: Found {len(all_docs)} total documents for this party")
+        
+        if all_docs:
+            st.write("DEBUG: Document types found:")
+            for doc in all_docs[:5]:  # Show first 5
+                st.write(f"  - {doc['ops_no']}: ops_type={doc.get('ops_type')}, stock_as={doc.get('stock_as')}, invoice_total={doc.get('invoice_total')}, outstanding={doc.get('outstanding_balance')}")
+        
+        # Now filter for invoices
         outstanding_invoices = admin_supabase.table("ops_documents")\
             .select("id, ops_no, ops_date, reference_no, invoice_total, outstanding_balance")\
             .eq("ops_type", "STOCK_OUT")\
@@ -5612,11 +5632,15 @@ This action will:
             .eq("to_entity_type", from_entity_type)\
             .eq("to_entity_id", from_entity_id)\
             .gt("outstanding_balance", 0)\
+            .eq("is_deleted", False)\
             .order("ops_date")\
             .execute().data
+        
+        st.write(f"DEBUG: Found {len(outstanding_invoices)} outstanding invoices")
     
         if not outstanding_invoices:
             st.warning("No outstanding invoices found for this party")
+            st.info("This means either: 1) No invoices exist, 2) All invoices are paid, or 3) Invoice data issue")
             if st.button("⬅ Back"):
                 st.session_state.ops_section = None
                 st.rerun()
