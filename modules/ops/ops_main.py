@@ -5210,7 +5210,7 @@ This action will:
 
                 # Create OPS document for return
                 return_ops = admin_supabase.table("ops_documents").insert({
-                    "ops_no": f"RET-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                    "ops_no": f"RET-{datetime.datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                     "ops_date": return_date.isoformat(),
                     "ops_type": "ADJUSTMENT",
                     "stock_as": "adjustment",
