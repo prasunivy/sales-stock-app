@@ -1425,6 +1425,28 @@ This action will:
         date = st.date_input("Date")
 
         stock_as = st.selectbox("Stock As", stock_as_options)
+
+        # STOCK HANDLING FOR CREDIT NOTES
+        if stock_as == "Credit Note":
+            st.divider()
+            st.markdown("### 📦 Stock Handling for Credit Note")
+            
+            st.session_state.credit_note_stock_handling = st.radio(
+                "How should stock be handled?",
+                [
+                    "With Stock Movement (goods physically moving)",
+                    "Financial Adjustment Only (no stock movement)",
+                    "Stock is Damaged (transfer to Destroyed)"
+                ],
+                key="cn_stock_handling_radio"
+            )
+            
+            if st.session_state.credit_note_stock_handling == "With Stock Movement (goods physically moving)":
+                st.info("ℹ️ Stock ledger entries will be created")
+            elif st.session_state.credit_note_stock_handling == "Financial Adjustment Only (no stock movement)":
+                st.warning("⚠️ No stock movement - only financial adjustment")
+            elif st.session_state.credit_note_stock_handling == "Stock is Damaged (transfer to Destroyed)":
+                st.warning("⚠️ Stock will be transferred to 'Destroyed' category")
         reference_no = st.text_input("Reference Number")
 
         preview_clicked = st.button("Preview")
@@ -1874,41 +1896,53 @@ This action will:
 
                         
                         # ---------- STOCK LEDGER INSERT (DOUBLE-ENTRY SYSTEM) ----------
+                        # Check if stock entries should be created for credit notes
+                        create_stock_entries = True
+                
+                        if stock_as_val == "credit_note":
+                            if hasattr(st.session_state, 'credit_note_stock_handling'):
+                                if st.session_state.credit_note_stock_handling == "Financial Adjustment Only (no stock movement)":
+                                    create_stock_entries = False
+                                elif st.session_state.credit_note_stock_handling == "Stock is Damaged (transfer to Destroyed)":
+                                    # Will create entries but to Destroyed entity
+                                    pass
+                        
                         # Rule: Every transaction creates TWO entries (sender OUT + receiver IN)
                         # Exception: Sample/Lot - only sender OUT, receiver gets NOTHING
                         
-                        for p in st.session_state.ops_products:
-                            qty = p.get("total_qty", 0)
-                            
-                            # ✅ ALWAYS CREATE STOCK OUT FOR SENDER (FROM entity)
-                            admin_supabase.table("stock_ledger").insert({
-                                "ops_document_id": ops_document_id,
-                                "product_id": p["product_id"],
-                                "entity_type": st.session_state.ops_from_entity_type,
-                                "entity_id": st.session_state.ops_from_entity_id,
-                                "txn_date": date.isoformat(),
-                                "qty_in": 0,
-                                "qty_out": qty,
-                                "closing_qty": 0,
-                                "direction": "OUT",
-                                "narration": f"Stock OUT - {doc_stock_as} - To {st.session_state.ops_to_entity_type}"
-                            }).execute()
-                            
-                            # ✅ CREATE STOCK IN FOR RECEIVER (TO entity)
-                            # SKIP ONLY if doc_stock_as is Sample or Lot
-                            if doc_stock_as not in ["Sample", "Lot"]:
+                        if create_stock_entries:
+                            for p in st.session_state.ops_products:
+                                qty = p.get("total_qty", 0)
+                                
+                                # ✅ ALWAYS CREATE STOCK OUT FOR SENDER (FROM entity)
                                 admin_supabase.table("stock_ledger").insert({
                                     "ops_document_id": ops_document_id,
                                     "product_id": p["product_id"],
-                                    "entity_type": st.session_state.ops_to_entity_type,
-                                    "entity_id": st.session_state.ops_to_entity_id,
+                                    "entity_type": st.session_state.ops_from_entity_type,
+                                    "entity_id": st.session_state.ops_from_entity_id,
                                     "txn_date": date.isoformat(),
-                                    "qty_in": qty,
-                                    "qty_out": 0,
+                                    "qty_in": 0,
+                                    "qty_out": qty,
                                     "closing_qty": 0,
-                                    "direction": "IN",
-                                    "narration": f"Stock IN - {doc_stock_as} - From {st.session_state.ops_from_entity_type}"
+                                    "direction": "OUT",
+                                    "narration": f"Stock OUT - {doc_stock_as} - To {st.session_state.ops_to_entity_type}"
                                 }).execute()
+                                
+                                # ✅ CREATE STOCK IN FOR RECEIVER (TO entity)
+                                # SKIP ONLY if doc_stock_as is Sample or Lot
+                                if doc_stock_as not in ["Sample", "Lot"]:
+                                    admin_supabase.table("stock_ledger").insert({
+                                        "ops_document_id": ops_document_id,
+                                        "product_id": p["product_id"],
+                                        "entity_type": st.session_state.ops_to_entity_type,
+                                        "entity_id": st.session_state.ops_to_entity_id,
+                                        "txn_date": date.isoformat(),
+                                        "qty_in": qty,
+                                        "qty_out": 0,
+                                        "closing_qty": 0,
+                                        "direction": "IN",
+                                        "narration": f"Stock IN - {doc_stock_as} - From {st.session_state.ops_from_entity_type}"
+                                    }).execute()
 
 
 
