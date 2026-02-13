@@ -414,6 +414,11 @@ def run_ops():
         st.session_state.ops_section = "FREIGHT_REGISTER"
         st.rerun()
 
+    if st.sidebar.button("💰 Payment Register"):
+        st.session_state.ops_section = "PAYMENT_REGISTER"
+        st.rerun()
+
+
         
     if st.sidebar.button("🔄 Return / Replace"):
         st.session_state.ops_section = "RETURN_REPLACE"
@@ -5970,6 +5975,192 @@ This action will:
                 except Exception as e:
                     st.error("❌ Failed to allocate payment")
                     st.exception(e)
+
+    # =========================
+    # PAYMENT REGISTER
+    # =========================
+    elif section == "PAYMENT_REGISTER":
+        st.subheader("💰 Payment Register")
+        
+        # Filters
+        st.markdown("### 🔍 Filters")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            filter_from_type = st.selectbox(
+                "Payment FROM",
+                ["All", "Stockist", "User", "CNF", "Company"],
+                key="payment_reg_from"
+            )
+        
+        with col2:
+            filter_to_type = st.selectbox(
+                "Payment TO",
+                ["All", "Company", "CNF", "User", "Stockist"],
+                key="payment_reg_to"
+            )
+        
+        with col3:
+            filter_mode = st.selectbox(
+                "Payment Mode",
+                ["All", "Cash", "Cheque", "NEFT", "UPI", "RTGS", "Other"],
+                key="payment_reg_mode"
+            )
+        
+        with col4:
+            filter_date_range = st.selectbox(
+                "Date Range",
+                ["All Time", "Today", "Last 7 Days", "Last 30 Days", "Last 90 Days", "Custom"],
+                key="payment_reg_date"
+            )
+        
+        if filter_date_range == "Custom":
+            col1, col2 = st.columns(2)
+            with col1:
+                from_date = st.date_input("From Date", key="payment_from_date")
+            with col2:
+                to_date = st.date_input("To Date", key="payment_to_date")
+        
+        st.divider()
+        
+        # Build query
+        query = admin_supabase.table("ops_documents")\
+            .select("id, ops_no, ops_date, reference_no, from_entity_type, from_entity_id, to_entity_type, to_entity_id, payment_mode, allocation_status, narration")\
+            .eq("ops_type", "ADJUSTMENT")\
+            .eq("is_deleted", False)\
+            .order("ops_date", desc=True)
+        
+        if filter_from_type != "All":
+            query = query.eq("from_entity_type", filter_from_type)
+        
+        if filter_to_type != "All":
+            query = query.eq("to_entity_type", filter_to_type)
+        
+        if filter_mode != "All":
+            query = query.eq("payment_mode", filter_mode)
+        
+        if filter_date_range == "Today":
+            from datetime import datetime
+            today = datetime.now().date().isoformat()
+            query = query.eq("ops_date", today)
+        elif filter_date_range == "Last 7 Days":
+            from datetime import datetime, timedelta
+            cutoff = (datetime.now() - timedelta(days=7)).date().isoformat()
+            query = query.gte("ops_date", cutoff)
+        elif filter_date_range == "Last 30 Days":
+            from datetime import datetime, timedelta
+            cutoff = (datetime.now() - timedelta(days=30)).date().isoformat()
+            query = query.gte("ops_date", cutoff)
+        elif filter_date_range == "Last 90 Days":
+            from datetime import datetime, timedelta
+            cutoff = (datetime.now() - timedelta(days=90)).date().isoformat()
+            query = query.gte("ops_date", cutoff)
+        elif filter_date_range == "Custom":
+            query = query.gte("ops_date", from_date.isoformat()).lte("ops_date", to_date.isoformat())
+        
+        payments = query.execute().data
+        
+        if not payments:
+            st.info("No payments found matching the filters")
+            st.stop()
+        
+        payment_ids = [p["id"] for p in payments]
+        ledger_data = admin_supabase.table("financial_ledger")\
+            .select("ops_document_id, credit, gross_amount, discount_amount, net_amount")\
+            .in_("ops_document_id", payment_ids)\
+            .execute().data
+        
+        amount_lookup = {}
+        for entry in ledger_data:
+            doc_id = entry["ops_document_id"]
+            amount_lookup[doc_id] = {
+                "gross": entry.get("gross_amount") or entry.get("credit", 0),
+                "discount": entry.get("discount_amount", 0),
+                "net": entry.get("net_amount") or entry.get("credit", 0)
+            }
+        
+        st.write(f"**Found {len(payments)} payments**")
+        st.divider()
+        
+        for payment in payments:
+            if payment["from_entity_type"] == "Company":
+                from_name = "Company"
+            elif payment["from_entity_type"] == "Stockist" and payment.get("from_entity_id"):
+                stockist = next((s for s in st.session_state.stockists_master if s["id"] == payment["from_entity_id"]), None)
+                from_name = stockist["name"] if stockist else "Unknown"
+            elif payment["from_entity_type"] == "CNF" and payment.get("from_entity_id"):
+                cnf = next((c for c in st.session_state.cnfs_master if c["id"] == payment["from_entity_id"]), None)
+                from_name = cnf["name"] if cnf else "Unknown"
+            elif payment["from_entity_type"] == "User" and payment.get("from_entity_id"):
+                user = next((u for u in st.session_state.users_master if u["id"] == payment["from_entity_id"]), None)
+                from_name = user["username"] if user else "Unknown"
+            else:
+                from_name = "Unknown"
+            
+            if payment["to_entity_type"] == "Company":
+                to_name = "Company"
+            elif payment["to_entity_type"] == "Stockist" and payment.get("to_entity_id"):
+                stockist = next((s for s in st.session_state.stockists_master if s["id"] == payment["to_entity_id"]), None)
+                to_name = stockist["name"] if stockist else "Unknown"
+            elif payment["to_entity_type"] == "CNF" and payment.get("to_entity_id"):
+                cnf = next((c for c in st.session_state.cnfs_master if c["id"] == payment["to_entity_id"]), None)
+                to_name = cnf["name"] if cnf else "Unknown"
+            elif payment["to_entity_type"] == "User" and payment.get("to_entity_id"):
+                user = next((u for u in st.session_state.users_master if u["id"] == payment["to_entity_id"]), None)
+                to_name = user["username"] if user else "Unknown"
+            else:
+                to_name = "Unknown"
+            
+            amounts = amount_lookup.get(payment["id"], {"gross": 0, "discount": 0, "net": 0})
+            
+            status = payment.get("allocation_status") or "UNALLOCATED"
+            if status == "FULLY_ALLOCATED":
+                status_color = "🟢"
+            elif status == "PARTIALLY_ALLOCATED":
+                status_color = "🟡"
+            else:
+                status_color = "🔴"
+            
+            with st.container():
+                col1, col2, col3, col4 = st.columns([3, 2, 3, 2])
+                
+                with col1:
+                    st.write(f"**💰 {payment['ops_no']}**")
+                    st.caption(f"📅 {payment['ops_date']}")
+                    st.caption(f"📤 FROM: {from_name} → 📥 TO: {to_name}")
+                
+                with col2:
+                    st.write(f"**Mode:** {payment.get('payment_mode') or 'N/A'}")
+                    st.write(f"**Ref:** {payment.get('reference_no') or '-'}")
+                
+                with col3:
+                    if amounts["discount"] > 0:
+                        st.write(f"**Gross:** ₹{amounts['gross']:,.2f}")
+                        st.write(f"**Discount:** ₹{amounts['discount']:,.2f}")
+                        st.write(f"**Net:** ₹{amounts['net']:,.2f}")
+                    else:
+                        st.write(f"**Amount:** ₹{amounts['net']:,.2f}")
+                    st.write(f"{status_color} {status}")
+                
+                with col4:
+                    b1, b2 = st.columns(2)
+                    
+                    with b1:
+                        if st.button("👁 View", key=f"view_pay_{payment['id']}"):
+                            st.session_state.selected_ops_id = payment["id"]
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
+                            st.rerun()
+                    
+                    with b2:
+                        if st.button("✏️ Edit", key=f"edit_pay_{payment['id']}"):
+                            st.session_state.edit_source_ops_id = payment["id"]
+                            st.session_state.ops_section = "OPENING_STOCK"
+                            st.session_state.edit_mode = True
+                            st.rerun()
+                
+                st.divider()
+
 
 
 
