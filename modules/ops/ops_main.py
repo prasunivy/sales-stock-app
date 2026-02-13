@@ -1797,7 +1797,7 @@ This action will:
                         direction_val = "ADJUST"
                     try:
                         response = admin_supabase.table("ops_documents").insert({
-                            "ops_no": f"OPS-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+                            "ops_no": f"OPS-{__import__('datetime').datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                             "ops_date": date.isoformat(),
                             "ops_type": ops_type_val,
                             "stock_as": stock_as_val,
