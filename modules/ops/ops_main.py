@@ -1859,13 +1859,19 @@ This action will:
 
                         debit = net if net > 0 else 0
                         credit = abs(net) if net < 0 else 0
-                        # ---------- LEDGER PARTY SAFETY ----------
-                        party_id = (
-                            None
-                            if st.session_state.ops_to_entity_type == "Company"
-                            else st.session_state.ops_to_entity_id
-                        )
 
+                        # FOR STOCK_OUT (Invoice): party = TO entity
+                        # FOR STOCK_IN (Credit Note): party = FROM entity
+                        if ops_type_val == "STOCK_OUT":
+                            party_id = (
+                                None if st.session_state.ops_to_entity_type == "Company"
+                                else st.session_state.ops_to_entity_id
+                            )
+                        else:  # STOCK_IN
+                            party_id = (
+                                None if st.session_state.ops_from_entity_type == "Company"
+                                else st.session_state.ops_from_entity_id
+                            )
 
                         admin_supabase.table("financial_ledger").insert({
                             "ops_document_id": ops_document_id,
@@ -1874,7 +1880,7 @@ This action will:
                             "debit": debit,
                             "credit": credit,
                             "closing_balance": 0,
-                            "narration": "OPS stock posting"
+                            "narration": f"OPS stock posting - {stock_as_val}"
                         }).execute()
 
                         # ---------- UPDATE INVOICE TOTALS (FOR INVOICES ONLY) ----------
@@ -6221,14 +6227,25 @@ This action will:
                     
                     with b1:
                         if st.button("👁 View", key=f"view_pay_{payment['id']}"):
-                            st.session_state.selected_ops_id = payment["id"]
-                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
-                            st.rerun()
+                            st.info(f"""
+                            **Payment Details:**
+                            
+                            📝 **Number:** {payment['ops_no']}
+                            📅 **Date:** {payment['ops_date']}
+                            💳 **Mode:** {payment.get('payment_mode', 'N/A')}
+                            📤 **FROM:** {from_name}
+                            📥 **TO:** {to_name}
+                            💰 **Gross:** ₹{amounts['gross']:,.2f}
+                            💸 **Discount:** ₹{amounts['discount']:,.2f}
+                            💵 **Net:** ₹{amounts['net']:,.2f}
+                            🎯 **Status:** {status}
+                            📋 **Ref:** {payment.get('reference_no', '-')}
+                            """)
                     
                     with b2:
                         if st.button("✏️ Edit", key=f"edit_pay_{payment['id']}"):
                             st.session_state.edit_source_ops_id = payment["id"]
-                            st.session_state.ops_section = "OPENING_STOCK"
+                            st.session_state.ops_section = "PAYMENTS"
                             st.session_state.edit_mode = True
                             st.rerun()
                 
