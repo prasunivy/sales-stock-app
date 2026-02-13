@@ -5103,6 +5103,24 @@ This action will:
 
         st.divider()
 
+        st.markdown("### 📦 Stock Disposition")
+        
+        stock_disposition = st.radio(
+            "What should happen to returned goods?",
+            [
+                "Add to Saleable Stock (goods are OK)",
+                "Mark as Damaged (don't add to stock)",
+                "Transfer to Destroyed"
+            ],
+            key="stock_disposition"
+        )
+        
+        if stock_disposition == "Mark as Damaged (don't add to stock)":
+            st.warning("⚠️ Returned goods will NOT be added to receiver's saleable stock")
+        elif stock_disposition == "Transfer to Destroyed":
+            st.info("ℹ️ Returned goods will be transferred to 'Destroyed' category")
+
+
         # -------------------------
         # STEP 4: REPLACE PRODUCTS (IF REPLACE TYPE)
         # -------------------------
@@ -5221,19 +5239,40 @@ This action will:
                             "narration": f"Return to {to_entity_type}"
                         }).execute()
 
-                        # Stock IN to receiver
-                        admin_supabase.table("stock_ledger").insert({
-                            "ops_document_id": return_ops_id,
-                            "product_id": p["product_id"],
-                            "entity_type": to_entity_type,
-                            "entity_id": to_id,
-                            "txn_date": return_date.isoformat(),
-                            "qty_in": p["qty"],
-                            "qty_out": 0,
-                            "closing_qty": 0,
-                            "direction": "IN",
-                            "narration": f"Return from {from_entity_type}"
-                        }).execute()
+                        # Stock IN to receiver (based on disposition)
+                        if stock_disposition == "Add to Saleable Stock (goods are OK)":
+                            # Normal return - add to receiver's stock
+                            admin_supabase.table("stock_ledger").insert({
+                                "ops_document_id": return_ops_id,
+                                "product_id": p["product_id"],
+                                "entity_type": to_entity_type,
+                                "entity_id": to_id,
+                                "txn_date": return_date.isoformat(),
+                                "qty_in": p["qty"],
+                                "qty_out": 0,
+                                "closing_qty": 0,
+                                "direction": "IN",
+                                "narration": f"Return from {from_entity_type}"
+                            }).execute()
+                        
+                        elif stock_disposition == "Mark as Damaged (don't add to stock)":
+                            # Damaged goods - no stock entry for receiver
+                            pass
+                        
+                        elif stock_disposition == "Transfer to Destroyed":
+                            # Transfer to Destroyed entity
+                            admin_supabase.table("stock_ledger").insert({
+                                "ops_document_id": return_ops_id,
+                                "product_id": p["product_id"],
+                                "entity_type": "Destroyed",
+                                "entity_id": None,
+                                "txn_date": return_date.isoformat(),
+                                "qty_in": p["qty"],
+                                "qty_out": 0,
+                                "closing_qty": 0,
+                                "direction": "IN",
+                                "narration": f"Damaged return from {from_entity_type}"
+                            }).execute()
 
                 # ✅ STOCK LEDGER - REPLACE (if applicable)
                 if return_type == "Replace (Return + New Goods)":
