@@ -1857,21 +1857,27 @@ This action will:
                         a = st.session_state.ops_amounts
                         net = a["net"]
 
-                        debit = net if net > 0 else 0
-                        credit = abs(net) if net < 0 else 0
-
-                        # FOR STOCK_OUT (Invoice): party = TO entity
-                        # FOR STOCK_IN (Credit Note): party = FROM entity
+                        # Determine party and debit/credit based on transaction type
                         if ops_type_val == "STOCK_OUT":
+                            # Invoice: Stockist owes Company
+                            # Positive amount = DEBIT (increases balance)
                             party_id = (
                                 None if st.session_state.ops_to_entity_type == "Company"
                                 else st.session_state.ops_to_entity_id
                             )
-                        else:  # STOCK_IN
+                            debit = net if net > 0 else 0
+                            credit = abs(net) if net < 0 else 0
+                            
+                        else:  # STOCK_IN (Credit Note, Purchase, etc.)
+                            # Credit Note: Stockist gets credit from Company
+                            # Positive amount = CREDIT (decreases balance)
                             party_id = (
                                 None if st.session_state.ops_from_entity_type == "Company"
                                 else st.session_state.ops_from_entity_id
                             )
+                            # REVERSE the logic for STOCK_IN
+                            debit = abs(net) if net < 0 else 0
+                            credit = net if net > 0 else 0
 
                         admin_supabase.table("financial_ledger").insert({
                             "ops_document_id": ops_document_id,
@@ -1882,6 +1888,7 @@ This action will:
                             "closing_balance": 0,
                             "narration": f"OPS stock posting - {stock_as_val}"
                         }).execute()
+
 
                         # ---------- UPDATE INVOICE TOTALS (FOR INVOICES ONLY) ----------
                         if ops_type_val == "STOCK_OUT" and stock_as_val == "normal":
