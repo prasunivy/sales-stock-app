@@ -414,6 +414,10 @@ def run_ops():
         st.session_state.ops_section = "FREIGHT_REGISTER"
         st.rerun()
 
+    if st.sidebar.button("🔄 Return/Replace Register"):
+        st.session_state.ops_section = "RETURN_REPLACE_REGISTER"
+        st.rerun()
+
     if st.sidebar.button("💰 Payment Register"):
         st.session_state.ops_section = "PAYMENT_REGISTER"
         st.rerun()
@@ -5215,146 +5219,540 @@ This action will:
     # ========================
     # DOCUMENT BROWSER — FREIGHT
     # =========================
-    elif section == "DOCUMENT_BROWSER_FREIGHT":
+    elif section == "FREIGHT_REGISTER":
         st.subheader("🚚 Freight Register")
-
-        # Date filter
-        col1, col2 = st.columns(2)
+        
+        # Filters
+        col1, col2, col3 = st.columns(3)
+        
         with col1:
-            from_date = st.date_input("From Date", key="freight_from")
+            from_date = st.date_input("From Date", key="freight_from", value=datetime.now().date() - timedelta(days=30))
+        
         with col2:
-            to_date = st.date_input("To Date", key="freight_to")
-
-        docs = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, narration") \
-            .ilike("narration", "%freight%") \
-            .gte("ops_date", from_date.isoformat()) \
-            .lte("ops_date", to_date.isoformat()) \
-            .eq("is_deleted", False) \
-            .order("ops_date", desc=True) \
-            .execute().data
-
-        if not docs:
-            st.info("No freight entries found")
-            st.stop()
-
-        total_freight = 0
-
-        for doc in docs:
-            # Get freight amount from financial ledger
-            ledger = admin_supabase.table("financial_ledger") \
-                .select("credit, party_id") \
-                .eq("ops_document_id", doc["id"]) \
-                .single() \
-                .execute().data
-
-            if ledger:
-                freight_amt = ledger["credit"]
-                total_freight += float(freight_amt)
-
-                # Get stockist name
-                stockist_name = "Unknown"
-                if ledger["party_id"]:
-                    stockist = next(
-                        (s for s in st.session_state.stockists_master if s["id"] == ledger["party_id"]),
-                        None
-                    )
-                    if stockist:
-                        stockist_name = stockist["name"]
-
-                with st.container():
-                    c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
-
-                    with c1:
-                        st.write(f"🚚 **{doc['ops_no']}**")
-
-                    with c2:
-                        st.write(doc["ops_date"])
-
-                    with c3:
-                        st.write(f"**{stockist_name}**")
-
-                    with c4:
-                        st.write(f"₹{freight_amt:,.2f}")
-
-                    # Show reference and narration in expandable section
-                    with st.expander("View Details"):
-                        st.write(f"**Reference:** {doc.get('reference_no') or '-'}")
-                        st.write(f"**Narration:** {doc.get('narration', '-')}")
-                        
-                        # Delete button
-                        if st.button("🗑 Delete", key=f"del_freight_{doc['id']}"):
-                            try:
-                                user_id = resolve_user_id()
-                                
-                                # Audit log
-                                admin_supabase.table("audit_logs").insert({
-                                    "action": "DELETE_FREIGHT",
-                                    "target_type": "ops_documents",
-                                    "target_id": doc["id"],
-                                    "performed_by": user_id,
-                                    "message": "Freight entry deleted from register"
-                                }).execute()
-                                
-                                # Delete records
-                                admin_supabase.table("financial_ledger").delete().eq("ops_document_id", doc["id"]).execute()
-                                admin_supabase.table("ops_documents").delete().eq("id", doc["id"]).execute()
-                                
-                                st.success("✅ Freight entry deleted")
-                                st.rerun()
-                            except Exception as e:
-                                st.error("❌ Failed to delete")
-                                st.exception(e)
-
-                    st.divider()
-
-        # Total summary
-        st.markdown(f"### 💰 Total Freight: ₹{total_freight:,.2f}")
-
-        # Export to Excel
+            to_date = st.date_input("To Date", key="freight_to", value=datetime.now().date())
+        
+        with col3:
+            # Stockist filter
+            stockist_filter = st.selectbox(
+                "Filter by Stockist",
+                ["All Stockists"] + [s["name"] for s in st.session_state.stockists_master],
+                key="freight_stockist_filter"
+            )
+        
         st.divider()
-        if docs:
+        
+        # Fetch freight documents
+        docs = admin_supabase.table("ops_documents").select("id, ops_no, ops_date, reference_no, narration").ilike("narration", "%freight%").gte("ops_date", from_date.isoformat()).lte("ops_date", to_date.isoformat()).eq("is_deleted", False).order("ops_date", desc=True).execute().data
+        
+        if not docs:
+            st.info("No freight entries found for the selected period")
+            st.stop()
+        
+        # Get all freight document IDs
+        freight_ids = [doc["id"] for doc in docs]
+        
+        # Fetch all ledger entries at once
+        ledgers = admin_supabase.table("financial_ledger").select("ops_document_id, credit, party_id").in_("ops_document_id", freight_ids).execute().data
+        
+        # Create lookup
+        ledger_lookup = {l["ops_document_id"]: l for l in ledgers}
+        
+        # Filter and prepare display data
+        display_data = []
+        total_freight = 0
+        
+        for doc in docs:
+            ledger = ledger_lookup.get(doc["id"])
+            
+            if not ledger:
+                continue
+            
+            freight_amt = float(ledger["credit"])
+            
+            # Get stockist name
+            stockist_name = "Unknown"
+            stockist_id = ledger.get("party_id")
+            
+            if stockist_id:
+                stockist = next((s for s in st.session_state.stockists_master if s["id"] == stockist_id), None)
+                if stockist:
+                    stockist_name = stockist["name"]
+            
+            # Apply stockist filter
+            if stockist_filter != "All Stockists" and stockist_name != stockist_filter:
+                continue
+            
+            total_freight += freight_amt
+            
+            display_data.append({
+                "id": doc["id"],
+                "ops_no": doc["ops_no"],
+                "ops_date": doc["ops_date"],
+                "stockist_name": stockist_name,
+                "stockist_id": stockist_id,
+                "freight_amt": freight_amt,
+                "reference_no": doc.get("reference_no") or "-",
+                "narration": doc.get("narration", "-")
+            })
+        
+        if not display_data:
+            st.info("No freight entries match the selected filters")
+            st.stop()
+        
+        # Display summary
+        st.success(f"**Found {len(display_data)} freight entries | Total: ₹{total_freight:,.2f}**")
+        st.divider()
+        
+        # Display each freight entry
+        for freight in display_data:
+            with st.container():
+                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 3])
+                
+                with col1:
+                    st.write(f"**🚚 {freight['ops_no']}**")
+                    st.caption(f"📅 {freight['ops_date']}")
+                
+                with col2:
+                    st.write(f"**{freight['stockist_name']}**")
+                    st.caption(f"Ref: {freight['reference_no']}")
+                
+                with col3:
+                    st.write(f"**₹{freight['freight_amt']:,.2f}**")
+                
+                with col4:
+                    if st.button("👁 View", key=f"view_freight_{freight['id']}"):
+                        st.info(f"""
+                        **Freight Details:**
+                        
+                        📝 **Number:** {freight['ops_no']}
+                        📅 **Date:** {freight['ops_date']}
+                        👤 **Stockist:** {freight['stockist_name']}
+                        💰 **Amount:** ₹{freight['freight_amt']:,.2f}
+                        🔢 **Reference:** {freight['reference_no']}
+                        📋 **Narration:** {freight['narration']}
+                        """)
+                
+                with col5:
+                    b1, b2 = st.columns(2)
+                    
+                    with b1:
+                        if st.button("✏️ Edit", key=f"edit_freight_{freight['id']}"):
+                            st.warning("⚠️ Edit functionality: To edit a freight entry, delete it and create a new one with correct details.")
+                    
+                    with b2:
+                        if st.button("🗑 Delete", key=f"del_freight_{freight['id']}"):
+                            st.warning(f"⚠️ Delete Freight {freight['ops_no']}?")
+                            
+                            col_a, col_b = st.columns(2)
+                            
+                            with col_a:
+                                if st.button("✅ Confirm Delete", key=f"confirm_del_{freight['id']}"):
+                                    try:
+                                        user_id = resolve_user_id()
+                                        
+                                        # REVERSE financial ledger (create opposite entry)
+                                        admin_supabase.table("financial_ledger").insert({
+                                            "ops_document_id": freight["id"],
+                                            "party_id": freight["stockist_id"],
+                                            "txn_date": datetime.now().date().isoformat(),
+                                            "debit": freight["freight_amt"],  # Reverse: debit instead of credit
+                                            "credit": 0,
+                                            "closing_balance": 0,
+                                            "narration": f"Reversal of {freight['ops_no']} (Deleted)"
+                                        }).execute()
+                                        
+                                        # Mark document as deleted
+                                        admin_supabase.table("ops_documents").update({
+                                            "is_deleted": True,
+                                            "updated_at": datetime.now().isoformat(),
+                                            "updated_by": user_id
+                                        }).eq("id", freight["id"]).execute()
+                                        
+                                        # Audit log
+                                        admin_supabase.table("audit_logs").insert({
+                                            "action": "DELETE_FREIGHT",
+                                            "target_type": "ops_documents",
+                                            "target_id": freight["id"],
+                                            "performed_by": user_id,
+                                            "message": f"Freight {freight['ops_no']} deleted - ledger reversed"
+                                        }).execute()
+                                        
+                                        st.success("✅ Freight entry deleted and ledger reversed!")
+                                        st.rerun()
+                                        
+                                    except Exception as e:
+                                        st.error(f"❌ Delete failed: {str(e)}")
+                            
+                            with col_b:
+                                if st.button("❌ Cancel", key=f"cancel_del_{freight['id']}"):
+                                    st.rerun()
+                
+                st.divider()
+        
+        # Export options
+        st.divider()
+        st.markdown("### 📤 Export Options")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📥 Export to Excel"):
+                import pandas as pd
+                from io import BytesIO
+                
+                export_data = [{
+                    "Date": f["ops_date"],
+                    "Freight No": f["ops_no"],
+                    "Stockist": f["stockist_name"],
+                    "Amount": f["freight_amt"],
+                    "Reference": f["reference_no"],
+                    "Narration": f["narration"]
+                } for f in display_data]
+                
+                df = pd.DataFrame(export_data)
+                
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name="Freight Register")
+                
+                st.download_button(
+                    label="Download Excel File",
+                    data=output.getvalue(),
+                    file_name=f"freight_register_{from_date}_to_{to_date}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        
+        with col2:
+            if st.button("📱 WhatsApp Format"):
+                whatsapp_msg = f"*🚚 FREIGHT REGISTER*\n"
+                whatsapp_msg += f"*Period:* {from_date.strftime('%d-%b-%Y')} to {to_date.strftime('%d-%b-%Y')}\n"
+                whatsapp_msg += f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                
+                for f in display_data:
+                    whatsapp_msg += f"🚚 *{f['ops_no']}*\n"
+                    whatsapp_msg += f"📅 {f['ops_date']}\n"
+                    whatsapp_msg += f"👤 {f['stockist_name']}\n"
+                    whatsapp_msg += f"💰 *₹{f['freight_amt']:,.2f}*\n"
+                    whatsapp_msg += f"━━━━━━━━━━━━━━━━━━━━\n"
+                
+                whatsapp_msg += f"\n*💵 TOTAL FREIGHT: ₹{total_freight:,.2f}*\n"
+                whatsapp_msg += f"📊 Total Entries: {len(display_data)}"
+                
+                st.text_area(
+                    "📱 WhatsApp Message (Copy & Send)",
+                    whatsapp_msg,
+                    height=400
+                )
+    # =========================
+    # RETURN/REPLACE REGISTER (NEW - WITH VIEW/EDIT/DELETE)
+    # =========================
+    elif section == "RETURN_REPLACE_REGISTER":
+        st.subheader("🔄 Return / Replace Register")
+        
+        from datetime import datetime, timedelta
+        
+        # Filters
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            from_date = st.date_input("From Date", key="rr_from", value=datetime.now().date() - timedelta(days=30))
+        
+        with col2:
+            to_date = st.date_input("To Date", key="rr_to", value=datetime.now().date())
+        
+        with col3:
+            # Type filter
+            type_filter = st.selectbox(
+                "Transaction Type",
+                ["All", "Return Only", "Replace (Return + New Goods)"],
+                key="rr_type_filter"
+            )
+        
+        st.divider()
+        
+        # Fetch return/replace documents
+        docs = admin_supabase.table("ops_documents").select("id, ops_no, ops_date, ops_type, stock_as, direction, narration, reference_no").eq("ops_type", "ADJUSTMENT").eq("stock_as", "adjustment").gte("ops_date", from_date.isoformat()).lte("ops_date", to_date.isoformat()).eq("is_deleted", False).order("ops_date", desc=True).execute().data
+        
+        # Filter for return/replace only
+        return_replace_docs = [d for d in docs if "return" in d.get("narration", "").lower() or "replace" in d.get("narration", "").lower()]
+        
+        if not return_replace_docs:
+            st.info("No return/replace entries found for the selected period")
+            st.stop()
+        
+        # Get stock and financial data
+        doc_ids = [d["id"] for d in return_replace_docs]
+        
+        # Fetch stock ledger entries
+        stock_entries = admin_supabase.table("stock_ledger").select("ops_document_id, product_id, entity_type, entity_id, qty_in, qty_out, direction, narration").in_("ops_document_id", doc_ids).execute().data
+        
+        # Fetch financial ledger entries
+        financial_entries = admin_supabase.table("financial_ledger").select("ops_document_id, party_id, debit, credit").in_("ops_document_id", doc_ids).execute().data
+        
+        # Group by document
+        from collections import defaultdict
+        
+        stock_by_doc = defaultdict(list)
+        for s in stock_entries:
+            stock_by_doc[s["ops_document_id"]].append(s)
+        
+        financial_by_doc = {}
+        for f in financial_entries:
+            financial_by_doc[f["ops_document_id"]] = f
+        
+        # Prepare display data
+        display_data = []
+        
+        for doc in return_replace_docs:
+            # Determine transaction type from narration
+            narration = doc.get("narration", "").lower()
+            if "replace" in narration:
+                txn_type = "Replace (Return + New Goods)"
+            else:
+                txn_type = "Return Only"
+            
+            # Apply type filter
+            if type_filter != "All" and txn_type != type_filter:
+                continue
+            
+            # Get stock movements
+            stock_moves = stock_by_doc.get(doc["id"], [])
+            
+            # Determine FROM and TO entities
+            from_entity = "Unknown"
+            to_entity = "Unknown"
+            
+            # OUT movements tell us FROM
+            out_moves = [s for s in stock_moves if s["direction"] == "OUT"]
+            if out_moves:
+                out_move = out_moves[0]
+                entity_type = out_move["entity_type"]
+                entity_id = out_move["entity_id"]
+                
+                if entity_type == "Stockist" and entity_id:
+                    stockist = next((s for s in st.session_state.stockists_master if s["id"] == entity_id), None)
+                    from_entity = f"Stockist: {stockist['name']}" if stockist else "Stockist: Unknown"
+                elif entity_type == "User" and entity_id:
+                    user = next((u for u in st.session_state.users_master if u["id"] == entity_id), None)
+                    from_entity = f"User: {user['username']}" if user else "User: Unknown"
+                elif entity_type == "CNF" and entity_id:
+                    cnf = next((c for c in st.session_state.cnfs_master if c["id"] == entity_id), None)
+                    from_entity = f"CNF: {cnf['name']}" if cnf else "CNF: Unknown"
+                else:
+                    from_entity = entity_type
+            
+            # IN movements tell us TO
+            in_moves = [s for s in stock_moves if s["direction"] == "IN" and "return" in s["narration"].lower()]
+            if in_moves:
+                in_move = in_moves[0]
+                entity_type = in_move["entity_type"]
+                entity_id = in_move["entity_id"]
+                
+                if entity_type == "Company":
+                    to_entity = "Company"
+                elif entity_type == "CNF" and entity_id:
+                    cnf = next((c for c in st.session_state.cnfs_master if c["id"] == entity_id), None)
+                    to_entity = f"CNF: {cnf['name']}" if cnf else "CNF: Unknown"
+                elif entity_type == "User" and entity_id:
+                    user = next((u for u in st.session_state.users_master if u["id"] == entity_id), None)
+                    to_entity = f"User: {user['username']}" if user else "User: Unknown"
+                else:
+                    to_entity = entity_type
+            
+            # Count products
+            return_products = len([s for s in stock_moves if s["direction"] == "OUT"])
+            replace_products = 0
+            if txn_type == "Replace (Return + New Goods)":
+                replace_products = len([s for s in stock_moves if s["direction"] == "IN" and "replacement" in s["narration"].lower()])
+            
+            # Get financial impact
+            financial = financial_by_doc.get(doc["id"])
+            net_amount = 0
+            if financial:
+                net_amount = float(financial.get("credit", 0)) - float(financial.get("debit", 0))
+            
+            display_data.append({
+                "id": doc["id"],
+                "ops_no": doc["ops_no"],
+                "ops_date": doc["ops_date"],
+                "txn_type": txn_type,
+                "from_entity": from_entity,
+                "to_entity": to_entity,
+                "return_products": return_products,
+                "replace_products": replace_products,
+                "net_amount": net_amount,
+                "reference_no": doc.get("reference_no") or "-",
+                "narration": doc.get("narration", "-"),
+                "stock_moves": stock_moves,
+                "financial": financial
+            })
+        
+        if not display_data:
+            st.info("No entries match the selected filters")
+            st.stop()
+        
+        # Display summary
+        st.success(f"**Found {len(display_data)} return/replace entries**")
+        st.divider()
+        
+        # Display each entry
+        for entry in display_data:
+            with st.container():
+                col1, col2, col3, col4 = st.columns([3, 2, 2, 3])
+                
+                with col1:
+                    st.write(f"**🔄 {entry['ops_no']}**")
+                    st.caption(f"📅 {entry['ops_date']}")
+                    st.caption(f"Type: {entry['txn_type']}")
+                
+                with col2:
+                    st.write(f"📤 **FROM:** {entry['from_entity']}")
+                    st.write(f"📥 **TO:** {entry['to_entity']}")
+                
+                with col3:
+                    st.write(f"📦 Return: {entry['return_products']} items")
+                    if entry['replace_products'] > 0:
+                        st.write(f"🔄 Replace: {entry['replace_products']} items")
+                    if entry['net_amount'] != 0:
+                        st.write(f"💰 ₹{abs(entry['net_amount']):,.2f}")
+                
+                with col4:
+                    b1, b2, b3 = st.columns(3)
+                    
+                    with b1:
+                        if st.button("👁", key=f"view_rr_{entry['id']}"):
+                            st.info(f"""
+                            **Return/Replace Details:**
+                            
+                            📝 **Number:** {entry['ops_no']}
+                            📅 **Date:** {entry['ops_date']}
+                            🔄 **Type:** {entry['txn_type']}
+                            📤 **FROM:** {entry['from_entity']}
+                            📥 **TO:** {entry['to_entity']}
+                            📦 **Return Items:** {entry['return_products']}
+                            🔄 **Replace Items:** {entry['replace_products']}
+                            💰 **Financial Impact:** ₹{abs(entry['net_amount']):,.2f}
+                            🔢 **Reference:** {entry['reference_no']}
+                            📋 **Narration:** {entry['narration']}
+                            """)
+                            
+                            # Show stock movements
+                            if entry['stock_moves']:
+                                st.write("**Stock Movements:**")
+                                for sm in entry['stock_moves']:
+                                    product = next((p for p in st.session_state.products_master if p["id"] == sm["product_id"]), None)
+                                    product_name = product["name"] if product else "Unknown"
+                                    
+                                    if sm["direction"] == "OUT":
+                                        st.write(f"  ➖ {product_name}: {sm['qty_out']} (OUT from {sm['entity_type']})")
+                                    else:
+                                        st.write(f"  ➕ {product_name}: {sm['qty_in']} (IN to {sm['entity_type']})")
+                    
+                    with b2:
+                        if st.button("✏️", key=f"edit_rr_{entry['id']}"):
+                            st.warning("⚠️ Edit functionality: To edit a return/replace, delete it and create a new one with correct details.")
+                    
+                    with b3:
+                        if st.button("🗑", key=f"del_rr_{entry['id']}"):
+                            st.error(f"⚠️ **DELETE {entry['ops_no']}?**")
+                            st.warning("This will reverse all stock and financial entries!")
+                            
+                            col_a, col_b = st.columns(2)
+                            
+                            with col_a:
+                                if st.button("✅ Confirm", key=f"confirm_del_rr_{entry['id']}"):
+                                    try:
+                                        user_id = resolve_user_id()
+                                        
+                                        # REVERSE STOCK LEDGER ENTRIES
+                                        for sm in entry['stock_moves']:
+                                            admin_supabase.table("stock_ledger").insert({
+                                                "ops_document_id": entry["id"],
+                                                "product_id": sm["product_id"],
+                                                "entity_type": sm["entity_type"],
+                                                "entity_id": sm["entity_id"],
+                                                "txn_date": datetime.now().date().isoformat(),
+                                                "qty_in": sm["qty_out"],  # Reverse
+                                                "qty_out": sm["qty_in"],  # Reverse
+                                                "closing_qty": 0,
+                                                "direction": "ADJUST",
+                                                "narration": f"Reversal of {entry['ops_no']} (Deleted)"
+                                            }).execute()
+                                        
+                                        # REVERSE FINANCIAL LEDGER ENTRY
+                                        if entry['financial']:
+                                            admin_supabase.table("financial_ledger").insert({
+                                                "ops_document_id": entry["id"],
+                                                "party_id": entry['financial'].get("party_id"),
+                                                "txn_date": datetime.now().date().isoformat(),
+                                                "debit": entry['financial'].get("credit", 0),  # Reverse
+                                                "credit": entry['financial'].get("debit", 0),  # Reverse
+                                                "closing_balance": 0,
+                                                "narration": f"Reversal of {entry['ops_no']} (Deleted)"
+                                            }).execute()
+                                        
+                                        # Mark document as deleted
+                                        admin_supabase.table("ops_documents").update({
+                                            "is_deleted": True,
+                                            "updated_at": datetime.now().isoformat(),
+                                            "updated_by": user_id
+                                        }).eq("id", entry["id"]).execute()
+                                        
+                                        # Audit log
+                                        admin_supabase.table("audit_logs").insert({
+                                            "action": "DELETE_RETURN_REPLACE",
+                                            "target_type": "ops_documents",
+                                            "target_id": entry["id"],
+                                            "performed_by": user_id,
+                                            "message": f"Return/Replace {entry['ops_no']} deleted - all entries reversed"
+                                        }).execute()
+                                        
+                                        st.success("✅ Return/Replace deleted and all entries reversed!")
+                                        st.rerun()
+                                        
+                                    except Exception as e:
+                                        st.error(f"❌ Delete failed: {str(e)}")
+                            
+                            with col_b:
+                                if st.button("❌ Cancel", key=f"cancel_del_rr_{entry['id']}"):
+                                    st.rerun()
+                
+                st.divider()
+        
+        # Export options
+        st.divider()
+        st.markdown("### 📤 Export Options")
+        
+        if st.button("📥 Export to Excel"):
             import pandas as pd
             from io import BytesIO
-
-            export_data = []
-            for doc in docs:
-                ledger = admin_supabase.table("financial_ledger") \
-                    .select("credit, party_id") \
-                    .eq("ops_document_id", doc["id"]) \
-                    .single() \
-                    .execute().data
-
-                stockist_name = "Unknown"
-                if ledger and ledger["party_id"]:
-                    stockist = next(
-                        (s for s in st.session_state.stockists_master if s["id"] == ledger["party_id"]),
-                        None
-                    )
-                    if stockist:
-                        stockist_name = stockist["name"]
-
-                export_data.append({
-                    "Date": doc["ops_date"],
-                    "Freight No": doc["ops_no"],
-                    "Stockist": stockist_name,
-                    "Amount": float(ledger["credit"]) if ledger else 0,
-                    "Reference": doc.get("reference_no") or "-",
-                    "Narration": doc.get("narration", "-")
-                })
-
+            
+            export_data = [{
+                "Date": e["ops_date"],
+                "Document No": e["ops_no"],
+                "Type": e["txn_type"],
+                "From": e["from_entity"],
+                "To": e["to_entity"],
+                "Return Items": e["return_products"],
+                "Replace Items": e["replace_products"],
+                "Financial Impact": e["net_amount"],
+                "Reference": e["reference_no"],
+                "Narration": e["narration"]
+            } for e in display_data]
+            
             df = pd.DataFrame(export_data)
             
             output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name="Freight Register")
-
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name="Return Replace Register")
+            
             st.download_button(
-                label="📥 Export to Excel",
+                label="Download Excel File",
                 data=output.getvalue(),
-                file_name=f"freight_register_{from_date}_to_{to_date}.xlsx",
+                file_name=f"return_replace_register_{from_date}_to_{to_date}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
     # =========================
     # RETURN / REPLACE
     # =========================
