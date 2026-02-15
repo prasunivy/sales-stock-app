@@ -5621,37 +5621,144 @@ This action will:
                     
                     with b1:
                         if st.button("👁", key=f"view_rr_{entry['id']}"):
-                            st.info(f"""
-                            **Return/Replace Details:**
-                            
-                            📝 **Number:** {entry['ops_no']}
-                            📅 **Date:** {entry['ops_date']}
-                            🔄 **Type:** {entry['txn_type']}
-                            📤 **FROM:** {entry['from_entity']}
-                            📥 **TO:** {entry['to_entity']}
-                            📦 **Return Items:** {entry['return_products']}
-                            🔄 **Replace Items:** {entry['replace_products']}
-                            💰 **Financial Impact:** ₹{abs(entry['net_amount']):,.2f}
-                            🔢 **Reference:** {entry['reference_no']}
-                            📋 **Narration:** {entry['narration']}
-                            """)
-                            
-                            # Show stock movements
-                            if entry['stock_moves']:
-                                st.write("**Stock Movements:**")
-                                for sm in entry['stock_moves']:
-                                    product = next((p for p in st.session_state.products_master if p["id"] == sm["product_id"]), None)
-                                    product_name = product["name"] if product else "Unknown"
+                            # Enhanced view in expander
+                            with st.expander("📋 **Complete Transaction Details**", expanded=True):
+                                # Basic Info
+                                st.markdown(f"### 🔄 {entry['ops_no']}")
+                                
+                                col_v1, col_v2, col_v3 = st.columns(3)
+                                
+                                with col_v1:
+                                    st.metric("📅 Date", entry['ops_date'])
+                                    st.metric("🔄 Type", entry['txn_type'].replace(" (Return + New Goods)", ""))
+                                
+                                with col_v2:
+                                    st.metric("📤 FROM", entry['from_entity'].replace("Stockist: ", "").replace("User: ", "").replace("CNF: ", ""))
+                                    st.metric("📥 TO", entry['to_entity'].replace("Stockist: ", "").replace("User: ", "").replace("CNF: ", "").replace("Company", "Company"))
+                                
+                                with col_v3:
+                                    st.metric("📦 Return Items", entry['return_products'])
+                                    if entry['replace_products'] > 0:
+                                        st.metric("🔄 Replace Items", entry['replace_products'])
+                                
+                                st.divider()
+                                
+                                # Stock Movements
+                                if entry['stock_moves']:
+                                    st.markdown("### 📦 **Stock Movements**")
                                     
-                                    if sm["direction"] == "OUT":
-                                        st.write(f"  ➖ {product_name}: {sm['qty_out']} (OUT from {sm['entity_type']})")
+                                    # Separate return and replacement products
+                                    return_items = []
+                                    replace_items = []
+                                    
+                                    for sm in entry['stock_moves']:
+                                        product = next((p for p in st.session_state.products_master if p["id"] == sm["product_id"]), None)
+                                        product_name = product["name"] if product else "Unknown"
+                                        
+                                        if "return" in sm["narration"].lower() and sm["direction"] == "OUT":
+                                            return_items.append({
+                                                "product": product_name,
+                                                "qty": sm["qty_out"],
+                                                "from": sm["entity_type"]
+                                            })
+                                        elif "return" in sm["narration"].lower() and sm["direction"] == "IN":
+                                            return_items.append({
+                                                "product": product_name,
+                                                "qty": sm["qty_in"],
+                                                "to": sm["entity_type"]
+                                            })
+                                        elif "replacement" in sm["narration"].lower() and sm["direction"] == "OUT":
+                                            replace_items.append({
+                                                "product": product_name,
+                                                "qty": sm["qty_out"],
+                                                "from": sm["entity_type"]
+                                            })
+                                        elif "replacement" in sm["narration"].lower() and sm["direction"] == "IN":
+                                            replace_items.append({
+                                                "product": product_name,
+                                                "qty": sm["qty_in"],
+                                                "to": sm["entity_type"]
+                                            })
+                                    
+                                    # Display return items
+                                    if return_items:
+                                        st.markdown("#### ↩️ **Returned Products:**")
+                                        for item in return_items:
+                                            if "from" in item:
+                                                st.write(f"  ➖ **{item['product']}** - Qty: {item['qty']} (from {item['from']})")
+                                            else:
+                                                st.write(f"  ➕ **{item['product']}** - Qty: {item['qty']} (to {item['to']})")
+                                    
+                                    # Display replacement items
+                                    if replace_items:
+                                        st.markdown("#### 🔄 **Replacement Products:**")
+                                        for item in replace_items:
+                                            if "from" in item:
+                                                st.write(f"  ➖ **{item['product']}** - Qty: {item['qty']} (from {item['from']})")
+                                            else:
+                                                st.write(f"  ➕ **{item['product']}** - Qty: {item['qty']} (to {item['to']})")
+                                
+                                st.divider()
+                                
+                                # Financial Impact
+                                st.markdown("### 💰 **Financial Impact**")
+                                
+                                if entry['net_amount'] != 0:
+                                    if entry['net_amount'] > 0:
+                                        st.success(f"**Party Debited:** ₹{abs(entry['net_amount']):,.2f} (owes more)")
                                     else:
-                                        st.write(f"  ➕ {product_name}: {sm['qty_in']} (IN to {sm['entity_type']})")
+                                        st.info(f"**Party Credited:** ₹{abs(entry['net_amount']):,.2f} (owes less)")
+                                else:
+                                    st.info("**No financial impact** (free exchange)")
+                                
+                                st.divider()
+                                
+                                # Additional Details
+                                st.markdown("### 📋 **Other Details**")
+                                st.write(f"**Reference:** {entry['reference_no']}")
+                                st.write(f"**Narration:** {entry['narration']}")
                     
                     with b2:
                         if st.button("✏️", key=f"edit_rr_{entry['id']}"):
-                            st.warning("⚠️ Edit functionality: To edit a return/replace, delete it and create a new one with correct details.")
-                    
+                            with st.expander("⚠️ **Edit Instructions**", expanded=True):
+                                st.warning("""
+                                **To edit this return/replace transaction:**
+                                
+                                1. **Note down** all the details (use View button)
+                                2. **Delete** this transaction (it will reverse all entries)
+                                3. **Create new** transaction with correct details
+                                
+                                **Why this approach?**
+                                - Maintains complete audit trail
+                                - Ensures data integrity
+                                - Prevents partial updates
+                                - Keeps stock and ledger in sync
+                                
+                                **Safe to delete:**
+                                ✅ All stock movements will be reversed
+                                ✅ All financial entries will be reversed
+                                ✅ Party balances will return to pre-transaction state
+                                """)
+                                
+                                st.info("""
+                                **Quick Copy - Transaction Details:**
+                                
+                                📝 **Number:** {0}
+                                📅 **Date:** {1}
+                                🔄 **Type:** {2}
+                                📤 **FROM:** {3}
+                                📥 **TO:** {4}
+                                🔢 **Reference:** {5}
+                                
+                                (Copy these details before deleting)
+                                """.format(
+                                    entry['ops_no'],
+                                    entry['ops_date'],
+                                    entry['txn_type'],
+                                    entry['from_entity'],
+                                    entry['to_entity'],
+                                    entry['reference_no']
+                                ))                    
                     with b3:
                         if st.button("🗑", key=f"del_rr_{entry['id']}"):
                             st.error(f"⚠️ **DELETE {entry['ops_no']}?**")
