@@ -3570,9 +3570,209 @@ This action will:
             
             with col3:
                 if st.button("📄 Aging PDF", key="cb_pdf"):
-                    st.info("📄 PDF generation requires reportlab library. Installing...")
-                    st.code("pip install reportlab")
-                    st.warning("Please install reportlab and refresh the app to generate PDF reports.")
+                    try:
+                        from reportlab.lib import colors
+                        from reportlab.lib.pagesizes import A4, landscape
+                        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+                        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                        from reportlab.lib.units import inch
+                        from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+                        import io
+                        
+                        # Create PDF in memory
+                        buffer = io.BytesIO()
+                        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), topMargin=0.5*inch, bottomMargin=0.5*inch)
+                        
+                        # Container for elements
+                        elements = []
+                        styles = getSampleStyleSheet()
+                        
+                        # Title
+                        title_style = ParagraphStyle(
+                            'CustomTitle',
+                            parent=styles['Heading1'],
+                            fontSize=16,
+                            textColor=colors.HexColor('#1f4788'),
+                            spaceAfter=12,
+                            alignment=TA_CENTER
+                        )
+                        
+                        title = Paragraph("OUTSTANDING AGING REPORT", title_style)
+                        elements.append(title)
+                        
+                        # Report details
+                        detail_style = ParagraphStyle(
+                            'Details',
+                            parent=styles['Normal'],
+                            fontSize=10,
+                            alignment=TA_CENTER
+                        )
+                        
+                        if selected_stockist_id:
+                            details = Paragraph(f"<b>Stockist:</b> {selected_stockist_name} | <b>Date:</b> {to_date.strftime('%d-%b-%Y')}", detail_style)
+                        else:
+                            details = Paragraph(f"<b>User:</b> {selected_user_name} | <b>Date:</b> {to_date.strftime('%d-%b-%Y')}", detail_style)
+                        
+                        elements.append(details)
+                        elements.append(Spacer(1, 0.3*inch))
+                        
+                        # Prepare table data
+                        if selected_stockist_id:
+                            # Single stockist - no stockist column
+                            table_data = [[
+                                "Invoice No",
+                                "Ref No",
+                                "Invoice\nAmount",
+                                "Balance\nDue",
+                                "Days",
+                                "0-30\nDays",
+                                "31-60\nDays",
+                                "61-90\nDays",
+                                "91-120\nDays",
+                                "120+\nDays"
+                            ]]
+                            
+                            for inv in invoice_data:
+                                table_data.append([
+                                    inv["ops_no"],
+                                    inv["reference_no"],
+                                    f"₹{inv['invoice_total']:,.2f}",
+                                    f"₹{inv['outstanding']:,.2f}",
+                                    str(inv["days_pending"]),
+                                    f"₹{inv['aging_0_30']:,.2f}" if inv['aging_0_30'] > 0 else "-",
+                                    f"₹{inv['aging_31_60']:,.2f}" if inv['aging_31_60'] > 0 else "-",
+                                    f"₹{inv['aging_61_90']:,.2f}" if inv['aging_61_90'] > 0 else "-",
+                                    f"₹{inv['aging_91_120']:,.2f}" if inv['aging_91_120'] > 0 else "-",
+                                    f"₹{inv['aging_120_plus']:,.2f}" if inv['aging_120_plus'] > 0 else "-"
+                                ])
+                            
+                            # Add totals row
+                            table_data.append([
+                                "TOTAL",
+                                "",
+                                "",
+                                f"₹{total_due:,.2f}",
+                                "",
+                                f"₹{aging_summary['0-30']:,.2f}",
+                                f"₹{aging_summary['31-60']:,.2f}",
+                                f"₹{aging_summary['61-90']:,.2f}",
+                                f"₹{aging_summary['91-120']:,.2f}",
+                                f"₹{aging_summary['120+']:,.2f}"
+                            ])
+                            
+                            col_widths = [1.2*inch, 1*inch, 1*inch, 1*inch, 0.6*inch, 1*inch, 1*inch, 1*inch, 1*inch, 1*inch]
+                        
+                        else:
+                            # Multiple stockists - include stockist column
+                            table_data = [[
+                                "Stockist",
+                                "Invoice No",
+                                "Ref No",
+                                "Invoice\nAmount",
+                                "Balance\nDue",
+                                "Days",
+                                "0-30\nDays",
+                                "31-60\nDays",
+                                "61-90\nDays",
+                                "91-120\nDays",
+                                "120+\nDays"
+                            ]]
+                            
+                            for inv in invoice_data:
+                                table_data.append([
+                                    inv["stockist_name"],
+                                    inv["ops_no"],
+                                    inv["reference_no"],
+                                    f"₹{inv['invoice_total']:,.2f}",
+                                    f"₹{inv['outstanding']:,.2f}",
+                                    str(inv["days_pending"]),
+                                    f"₹{inv['aging_0_30']:,.2f}" if inv['aging_0_30'] > 0 else "-",
+                                    f"₹{inv['aging_31_60']:,.2f}" if inv['aging_31_60'] > 0 else "-",
+                                    f"₹{inv['aging_61_90']:,.2f}" if inv['aging_61_90'] > 0 else "-",
+                                    f"₹{inv['aging_91_120']:,.2f}" if inv['aging_91_120'] > 0 else "-",
+                                    f"₹{inv['aging_120_plus']:,.2f}" if inv['aging_120_plus'] > 0 else "-"
+                                ])
+                            
+                            # Add totals row
+                            table_data.append([
+                                "TOTAL",
+                                "",
+                                "",
+                                "",
+                                f"₹{total_due:,.2f}",
+                                "",
+                                f"₹{aging_summary['0-30']:,.2f}",
+                                f"₹{aging_summary['31-60']:,.2f}",
+                                f"₹{aging_summary['61-90']:,.2f}",
+                                f"₹{aging_summary['91-120']:,.2f}",
+                                f"₹{aging_summary['120+']:,.2f}"
+                            ])
+                            
+                            col_widths = [1.2*inch, 1*inch, 0.8*inch, 0.9*inch, 0.9*inch, 0.5*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.9*inch]
+                        
+                        # Create table
+                        table = Table(table_data, colWidths=col_widths)
+                        
+                        # Style the table
+                        table.setStyle(TableStyle([
+                            # Header row
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4788')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 9),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            
+                            # Data rows
+                            ('ALIGN', (0, 1), (0, -2), 'LEFT'),
+                            ('ALIGN', (1, 1), (-1, -2), 'RIGHT'),
+                            ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+                            ('FONTSIZE', (0, 1), (-1, -2), 8),
+                            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f0f0f0')]),
+                            
+                            # Total row
+                            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e8f4f8')),
+                            ('TEXTCOLOR', (0, -1), (-1, -1), colors.HexColor('#1f4788')),
+                            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, -1), (-1, -1), 9),
+                            ('TOPPADDING', (0, -1), (-1, -1), 12),
+                            
+                            # Grid
+                            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ]))
+                        
+                        elements.append(table)
+                        
+                        # Build PDF
+                        doc.build(elements)
+                        
+                        # Get PDF data
+                        pdf_data = buffer.getvalue()
+                        buffer.close()
+                        
+                        # Download button
+                        st.download_button(
+                            label="📥 Download Aging PDF",
+                            data=pdf_data,
+                            file_name=f"aging_report_{to_date}.pdf",
+                            mime="application/pdf",
+                            key="cb_pdf_download"
+                        )
+                        
+                    except ImportError:
+                        st.error("📦 ReportLab library not installed!")
+                        st.info("""
+                        **To enable PDF generation:**
+                        
+                        1. Open your terminal/command prompt
+                        2. Run: `pip install reportlab`
+                        3. Restart your Streamlit app
+                        
+                        Then this button will generate professional PDF reports!
+                        """)
+                    except Exception as e:
+                        st.error(f"❌ PDF generation failed: {str(e)}")
 
         
         # =========================
