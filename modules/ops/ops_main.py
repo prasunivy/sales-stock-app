@@ -5598,231 +5598,242 @@ This action will:
         # Display each entry
         for entry in display_data:
             with st.container():
-                col1, col2, col3, col4 = st.columns([3, 2, 2, 3])
+                # Main info row - wider layout
+                col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
                 
                 with col1:
                     st.write(f"**🔄 {entry['ops_no']}**")
                     st.caption(f"📅 {entry['ops_date']}")
-                    st.caption(f"Type: {entry['txn_type']}")
                 
                 with col2:
-                    st.write(f"📤 **FROM:** {entry['from_entity']}")
-                    st.write(f"📥 **TO:** {entry['to_entity']}")
+                    st.write(f"**Type:** {entry['txn_type'].replace(' (Return + New Goods)', '')}")
+                    st.caption(f"📤 FROM: {entry['from_entity'].split(': ')[-1]}")
                 
                 with col3:
-                    st.write(f"📦 Return: {entry['return_products']} items")
-                    if entry['replace_products'] > 0:
-                        st.write(f"🔄 Replace: {entry['replace_products']} items")
+                    st.caption(f"📥 TO: {entry['to_entity'].split(': ')[-1]}")
                     if entry['net_amount'] != 0:
                         st.write(f"💰 ₹{abs(entry['net_amount']):,.2f}")
                 
                 with col4:
+                    # Buttons row - simplified
                     b1, b2, b3 = st.columns(3)
                     
                     with b1:
-                        if st.button("👁", key=f"view_rr_{entry['id']}"):
-                            # Enhanced view in expander
-                            with st.expander("📋 **Complete Transaction Details**", expanded=True):
-                                # Basic Info
-                                st.markdown(f"### 🔄 {entry['ops_no']}")
-                                
-                                col_v1, col_v2, col_v3 = st.columns(3)
-                                
-                                with col_v1:
-                                    st.metric("📅 Date", entry['ops_date'])
-                                    st.metric("🔄 Type", entry['txn_type'].replace(" (Return + New Goods)", ""))
-                                
-                                with col_v2:
-                                    st.metric("📤 FROM", entry['from_entity'].replace("Stockist: ", "").replace("User: ", "").replace("CNF: ", ""))
-                                    st.metric("📥 TO", entry['to_entity'].replace("Stockist: ", "").replace("User: ", "").replace("CNF: ", "").replace("Company", "Company"))
-                                
-                                with col_v3:
-                                    st.metric("📦 Return Items", entry['return_products'])
-                                    if entry['replace_products'] > 0:
-                                        st.metric("🔄 Replace Items", entry['replace_products'])
-                                
-                                st.divider()
-                                
-                                # Stock Movements
-                                if entry['stock_moves']:
-                                    st.markdown("### 📦 **Stock Movements**")
-                                    
-                                    # Separate return and replacement products
-                                    return_items = []
-                                    replace_items = []
-                                    
-                                    for sm in entry['stock_moves']:
-                                        product = next((p for p in st.session_state.products_master if p["id"] == sm["product_id"]), None)
-                                        product_name = product["name"] if product else "Unknown"
-                                        
-                                        if "return" in sm["narration"].lower() and sm["direction"] == "OUT":
-                                            return_items.append({
-                                                "product": product_name,
-                                                "qty": sm["qty_out"],
-                                                "from": sm["entity_type"]
-                                            })
-                                        elif "return" in sm["narration"].lower() and sm["direction"] == "IN":
-                                            return_items.append({
-                                                "product": product_name,
-                                                "qty": sm["qty_in"],
-                                                "to": sm["entity_type"]
-                                            })
-                                        elif "replacement" in sm["narration"].lower() and sm["direction"] == "OUT":
-                                            replace_items.append({
-                                                "product": product_name,
-                                                "qty": sm["qty_out"],
-                                                "from": sm["entity_type"]
-                                            })
-                                        elif "replacement" in sm["narration"].lower() and sm["direction"] == "IN":
-                                            replace_items.append({
-                                                "product": product_name,
-                                                "qty": sm["qty_in"],
-                                                "to": sm["entity_type"]
-                                            })
-                                    
-                                    # Display return items
-                                    if return_items:
-                                        st.markdown("#### ↩️ **Returned Products:**")
-                                        for item in return_items:
-                                            if "from" in item:
-                                                st.write(f"  ➖ **{item['product']}** - Qty: {item['qty']} (from {item['from']})")
-                                            else:
-                                                st.write(f"  ➕ **{item['product']}** - Qty: {item['qty']} (to {item['to']})")
-                                    
-                                    # Display replacement items
-                                    if replace_items:
-                                        st.markdown("#### 🔄 **Replacement Products:**")
-                                        for item in replace_items:
-                                            if "from" in item:
-                                                st.write(f"  ➖ **{item['product']}** - Qty: {item['qty']} (from {item['from']})")
-                                            else:
-                                                st.write(f"  ➕ **{item['product']}** - Qty: {item['qty']} (to {item['to']})")
-                                
-                                st.divider()
-                                
-                                # Financial Impact
-                                st.markdown("### 💰 **Financial Impact**")
-                                
-                                if entry['net_amount'] != 0:
-                                    if entry['net_amount'] > 0:
-                                        st.success(f"**Party Debited:** ₹{abs(entry['net_amount']):,.2f} (owes more)")
-                                    else:
-                                        st.info(f"**Party Credited:** ₹{abs(entry['net_amount']):,.2f} (owes less)")
-                                else:
-                                    st.info("**No financial impact** (free exchange)")
-                                
-                                st.divider()
-                                
-                                # Additional Details
-                                st.markdown("### 📋 **Other Details**")
-                                st.write(f"**Reference:** {entry['reference_no']}")
-                                st.write(f"**Narration:** {entry['narration']}")
+                        view_clicked = st.button("👁 View", key=f"view_rr_{entry['id']}")
                     
                     with b2:
-                        if st.button("✏️", key=f"edit_rr_{entry['id']}"):
-                            with st.expander("⚠️ **Edit Instructions**", expanded=True):
-                                st.warning("""
-                                **To edit this return/replace transaction:**
-                                
-                                1. **Note down** all the details (use View button)
-                                2. **Delete** this transaction (it will reverse all entries)
-                                3. **Create new** transaction with correct details
-                                
-                                **Why this approach?**
-                                - Maintains complete audit trail
-                                - Ensures data integrity
-                                - Prevents partial updates
-                                - Keeps stock and ledger in sync
-                                
-                                **Safe to delete:**
-                                ✅ All stock movements will be reversed
-                                ✅ All financial entries will be reversed
-                                ✅ Party balances will return to pre-transaction state
-                                """)
-                                
-                                st.info("""
-                                **Quick Copy - Transaction Details:**
-                                
-                                📝 **Number:** {0}
-                                📅 **Date:** {1}
-                                🔄 **Type:** {2}
-                                📤 **FROM:** {3}
-                                📥 **TO:** {4}
-                                🔢 **Reference:** {5}
-                                
-                                (Copy these details before deleting)
-                                """.format(
-                                    entry['ops_no'],
-                                    entry['ops_date'],
-                                    entry['txn_type'],
-                                    entry['from_entity'],
-                                    entry['to_entity'],
-                                    entry['reference_no']
-                                ))                    
+                        edit_clicked = st.button("✏️ Edit", key=f"edit_rr_{entry['id']}")
+                    
                     with b3:
-                        if st.button("🗑", key=f"del_rr_{entry['id']}"):
-                            st.error(f"⚠️ **DELETE {entry['ops_no']}?**")
-                            st.warning("This will reverse all stock and financial entries!")
+                        delete_clicked = st.button("🗑 Delete", key=f"del_rr_{entry['id']}")
+                
+                # VIEW SECTION - FULL WIDTH BELOW
+                if view_clicked or f"show_view_{entry['id']}" in st.session_state:
+                    st.session_state[f"show_view_{entry['id']}"] = True
+                    
+                    with st.expander("📋 **Transaction Details**", expanded=True):
+                        # Basic Info - 3 columns
+                        info_col1, info_col2, info_col3 = st.columns(3)
+                        
+                        with info_col1:
+                            st.metric("📝 Document", entry['ops_no'])
+                            st.metric("📅 Date", entry['ops_date'])
+                        
+                        with info_col2:
+                            st.metric("🔄 Type", entry['txn_type'].replace(' (Return + New Goods)', ''))
+                            st.metric("📤 FROM", entry['from_entity'].replace('Stockist: ', '').replace('User: ', '').replace('CNF: ', ''))
+                        
+                        with info_col3:
+                            st.metric("📥 TO", entry['to_entity'].replace('Company', 'Company'))
+                            st.metric("📦 Items", f"Return: {entry['return_products']}" + (f" | Replace: {entry['replace_products']}" if entry['replace_products'] > 0 else ""))
+                        
+                        st.divider()
+                        
+                        # Stock Movements
+                        if entry['stock_moves']:
+                            st.markdown("### 📦 **Stock Movements**")
                             
-                            col_a, col_b = st.columns(2)
+                            # Create two columns for return and replace
+                            stock_col1, stock_col2 = st.columns(2)
                             
-                            with col_a:
-                                if st.button("✅ Confirm", key=f"confirm_del_rr_{entry['id']}"):
-                                    try:
-                                        user_id = resolve_user_id()
-                                        
-                                        # REVERSE STOCK LEDGER ENTRIES
-                                        for sm in entry['stock_moves']:
-                                            admin_supabase.table("stock_ledger").insert({
-                                                "ops_document_id": entry["id"],
-                                                "product_id": sm["product_id"],
-                                                "entity_type": sm["entity_type"],
-                                                "entity_id": sm["entity_id"],
-                                                "txn_date": datetime.now().date().isoformat(),
-                                                "qty_in": sm["qty_out"],  # Reverse
-                                                "qty_out": sm["qty_in"],  # Reverse
-                                                "closing_qty": 0,
-                                                "direction": "ADJUST",
-                                                "narration": f"Reversal of {entry['ops_no']} (Deleted)"
-                                            }).execute()
-                                        
-                                        # REVERSE FINANCIAL LEDGER ENTRY
-                                        if entry['financial']:
-                                            admin_supabase.table("financial_ledger").insert({
-                                                "ops_document_id": entry["id"],
-                                                "party_id": entry['financial'].get("party_id"),
-                                                "txn_date": datetime.now().date().isoformat(),
-                                                "debit": entry['financial'].get("credit", 0),  # Reverse
-                                                "credit": entry['financial'].get("debit", 0),  # Reverse
-                                                "closing_balance": 0,
-                                                "narration": f"Reversal of {entry['ops_no']} (Deleted)"
-                                            }).execute()
-                                        
-                                        # Mark document as deleted
-                                        admin_supabase.table("ops_documents").update({
-                                            "is_deleted": True,
-                                            "updated_at": datetime.now().isoformat(),
-                                            "updated_by": user_id
-                                        }).eq("id", entry["id"]).execute()
-                                        
-                                        # Audit log
-                                        admin_supabase.table("audit_logs").insert({
-                                            "action": "DELETE_RETURN_REPLACE",
-                                            "target_type": "ops_documents",
-                                            "target_id": entry["id"],
-                                            "performed_by": user_id,
-                                            "message": f"Return/Replace {entry['ops_no']} deleted - all entries reversed"
-                                        }).execute()
-                                        
-                                        st.success("✅ Return/Replace deleted and all entries reversed!")
-                                        st.rerun()
-                                        
-                                    except Exception as e:
-                                        st.error(f"❌ Delete failed: {str(e)}")
+                            # Separate return and replacement items
+                            return_out = []
+                            return_in = []
+                            replace_out = []
+                            replace_in = []
                             
-                            with col_b:
-                                if st.button("❌ Cancel", key=f"cancel_del_rr_{entry['id']}"):
-                                    st.rerun()
+                            for sm in entry['stock_moves']:
+                                product = next((p for p in st.session_state.products_master if p["id"] == sm["product_id"]), None)
+                                product_name = product["name"] if product else "Unknown"
+                                
+                                if "return" in sm["narration"].lower():
+                                    if sm["direction"] == "OUT":
+                                        return_out.append(f"➖ {product_name}: {sm['qty_out']} (from {sm['entity_type']})")
+                                    else:
+                                        return_in.append(f"➕ {product_name}: {sm['qty_in']} (to {sm['entity_type']})")
+                                elif "replacement" in sm["narration"].lower():
+                                    if sm["direction"] == "OUT":
+                                        replace_out.append(f"➖ {product_name}: {sm['qty_out']} (from {sm['entity_type']})")
+                                    else:
+                                        replace_in.append(f"➕ {product_name}: {sm['qty_in']} (to {sm['entity_type']})")
+                            
+                            with stock_col1:
+                                if return_out or return_in:
+                                    st.markdown("#### ↩️ **Return Movement**")
+                                    for item in return_out:
+                                        st.write(item)
+                                    for item in return_in:
+                                        st.write(item)
+                            
+                            with stock_col2:
+                                if replace_out or replace_in:
+                                    st.markdown("#### 🔄 **Replacement Movement**")
+                                    for item in replace_out:
+                                        st.write(item)
+                                    for item in replace_in:
+                                        st.write(item)
+                        
+                        st.divider()
+                        
+                        # Financial Impact
+                        st.markdown("### 💰 **Financial Impact**")
+                        
+                        if entry['net_amount'] > 0:
+                            st.success(f"Party **debited** ₹{abs(entry['net_amount']):,.2f} (owes more)")
+                        elif entry['net_amount'] < 0:
+                            st.info(f"Party **credited** ₹{abs(entry['net_amount']):,.2f} (owes less)")
+                        else:
+                            st.info("**No financial impact** (free exchange)")
+                        
+                        st.divider()
+                        
+                        # Other details
+                        detail_col1, detail_col2 = st.columns(2)
+                        with detail_col1:
+                            st.write(f"**Reference:** {entry['reference_no']}")
+                        with detail_col2:
+                            st.write(f"**Narration:** {entry['narration']}")
+                        
+                        # Close button
+                        if st.button("✖️ Close Details", key=f"close_view_{entry['id']}"):
+                            del st.session_state[f"show_view_{entry['id']}"]
+                            st.rerun()
+                
+                # EDIT SECTION - FULL WIDTH BELOW
+                if edit_clicked or f"show_edit_{entry['id']}" in st.session_state:
+                    st.session_state[f"show_edit_{entry['id']}"] = True
+                    
+                    with st.expander("⚠️ **How to Edit This Transaction**", expanded=True):
+                        st.info("""
+                        **Steps to Edit:**
+                        
+                        1. **Copy** the details below
+                        2. **Delete** this transaction (reverses all entries)
+                        3. **Create new** transaction with correct details
+                        """)
+                        
+                        st.markdown("### 📋 **Copy These Details:**")
+                        
+                        copy_col1, copy_col2 = st.columns(2)
+                        
+                        with copy_col1:
+                            st.code(f"""
+Document: {entry['ops_no']}
+Date: {entry['ops_date']}
+Type: {entry['txn_type']}
+FROM: {entry['from_entity']}
+TO: {entry['to_entity']}
+                            """)
+                        
+                        with copy_col2:
+                            st.code(f"""
+Return Items: {entry['return_products']}
+Replace Items: {entry['replace_products']}
+Reference: {entry['reference_no']}
+Amount: ₹{abs(entry['net_amount']):,.2f}
+                            """)
+                        
+                        st.success("""
+                        **Why delete & recreate?**
+                        ✅ Maintains audit trail  
+                        ✅ Ensures data integrity  
+                        ✅ All entries properly reversed  
+                        ✅ No partial updates  
+                        """)
+                        
+                        if st.button("✖️ Close", key=f"close_edit_{entry['id']}"):
+                            del st.session_state[f"show_edit_{entry['id']}"]
+                            st.rerun()
+                
+                # DELETE SECTION - FULL WIDTH BELOW
+                if delete_clicked or f"show_delete_{entry['id']}" in st.session_state:
+                    st.session_state[f"show_delete_{entry['id']}"] = True
+                    
+                    st.error(f"⚠️ **DELETE {entry['ops_no']}?**")
+                    st.warning("This will reverse all stock and financial entries!")
+                    
+                    confirm_col1, confirm_col2 = st.columns(2)
+                    
+                    with confirm_col1:
+                        if st.button("✅ Confirm Delete", key=f"confirm_del_rr_{entry['id']}", type="primary"):
+                            try:
+                                from datetime import datetime
+                                user_id = resolve_user_id()
+                                
+                                # REVERSE STOCK LEDGER
+                                for sm in entry['stock_moves']:
+                                    admin_supabase.table("stock_ledger").insert({
+                                        "ops_document_id": entry["id"],
+                                        "product_id": sm["product_id"],
+                                        "entity_type": sm["entity_type"],
+                                        "entity_id": sm["entity_id"],
+                                        "txn_date": datetime.now().date().isoformat(),
+                                        "qty_in": sm["qty_out"],
+                                        "qty_out": sm["qty_in"],
+                                        "closing_qty": 0,
+                                        "direction": "ADJUST",
+                                        "narration": f"Reversal of {entry['ops_no']} (Deleted)"
+                                    }).execute()
+                                
+                                # REVERSE FINANCIAL LEDGER
+                                if entry['financial']:
+                                    admin_supabase.table("financial_ledger").insert({
+                                        "ops_document_id": entry["id"],
+                                        "party_id": entry['financial'].get("party_id"),
+                                        "txn_date": datetime.now().date().isoformat(),
+                                        "debit": entry['financial'].get("credit", 0),
+                                        "credit": entry['financial'].get("debit", 0),
+                                        "closing_balance": 0,
+                                        "narration": f"Reversal of {entry['ops_no']} (Deleted)"
+                                    }).execute()
+                                
+                                # Mark as deleted
+                                admin_supabase.table("ops_documents").update({
+                                    "is_deleted": True,
+                                    "updated_at": datetime.now().isoformat(),
+                                    "updated_by": user_id
+                                }).eq("id", entry["id"]).execute()
+                                
+                                # Audit log
+                                admin_supabase.table("audit_logs").insert({
+                                    "action": "DELETE_RETURN_REPLACE",
+                                    "target_type": "ops_documents",
+                                    "target_id": entry["id"],
+                                    "performed_by": user_id,
+                                    "message": f"Return/Replace {entry['ops_no']} deleted - entries reversed"
+                                }).execute()
+                                
+                                st.success("✅ Deleted and reversed!")
+                                del st.session_state[f"show_delete_{entry['id']}"]
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"❌ Delete failed: {str(e)}")
+                    
+                    with confirm_col2:
+                        if st.button("❌ Cancel", key=f"cancel_del_rr_{entry['id']}"):
+                            del st.session_state[f"show_delete_{entry['id']}"]
+                            st.rerun()
                 
                 st.divider()
         
