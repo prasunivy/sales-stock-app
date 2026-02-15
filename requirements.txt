@@ -1,7 +1,8 @@
 streamlit
 supabase
 pandas
+openpyxl
 reportlab
+pillow
 matplotlib
-fpdf
 python-dotenv
