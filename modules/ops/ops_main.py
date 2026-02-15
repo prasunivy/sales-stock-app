@@ -3267,6 +3267,7 @@ This action will:
         # CLOSING BALANCE REPORT
         # =========================
         if report_type == "Closing Balance":
+            from datetime import datetime
             st.markdown("### 📋 Outstanding Invoice Report")
             
             # Filters
