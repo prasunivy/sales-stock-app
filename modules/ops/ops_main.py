@@ -5220,7 +5220,9 @@ This action will:
     # DOCUMENT BROWSER — FREIGHT
     # =========================
     elif section == "FREIGHT_REGISTER":
-        from datetime import datetime, timedelta 
+        # Import datetime at the very beginning
+        from datetime import datetime, timedelta
+        
         st.subheader("🚚 Freight Register")
         
         # Filters
@@ -5233,7 +5235,6 @@ This action will:
             to_date = st.date_input("To Date", key="freight_to", value=datetime.now().date())
         
         with col3:
-            # Stockist filter
             stockist_filter = st.selectbox(
                 "Filter by Stockist",
                 ["All Stockists"] + [s["name"] for s in st.session_state.stockists_master],
@@ -5307,7 +5308,7 @@ This action will:
         # Display each freight entry
         for freight in display_data:
             with st.container():
-                col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 3])
+                col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
                 
                 with col1:
                     st.write(f"**🚚 {freight['ops_no']}**")
@@ -5321,74 +5322,93 @@ This action will:
                     st.write(f"**₹{freight['freight_amt']:,.2f}**")
                 
                 with col4:
-                    if st.button("👁 View", key=f"view_freight_{freight['id']}"):
-                        st.info(f"""
-                        **Freight Details:**
-                        
-                        📝 **Number:** {freight['ops_no']}
-                        📅 **Date:** {freight['ops_date']}
-                        👤 **Stockist:** {freight['stockist_name']}
-                        💰 **Amount:** ₹{freight['freight_amt']:,.2f}
-                        🔢 **Reference:** {freight['reference_no']}
-                        📋 **Narration:** {freight['narration']}
-                        """)
-                
-                with col5:
                     b1, b2 = st.columns(2)
                     
                     with b1:
-                        if st.button("✏️ Edit", key=f"edit_freight_{freight['id']}"):
-                            st.warning("⚠️ Edit functionality: To edit a freight entry, delete it and create a new one with correct details.")
+                        if st.button("👁", key=f"view_freight_{freight['id']}"):
+                            st.session_state[f"show_freight_view_{freight['id']}"] = True
+                            st.rerun()
                     
                     with b2:
-                        if st.button("🗑 Delete", key=f"del_freight_{freight['id']}"):
-                            st.warning(f"⚠️ Delete Freight {freight['ops_no']}?")
-                            
-                            col_a, col_b = st.columns(2)
-                            
-                            with col_a:
-                                if st.button("✅ Confirm Delete", key=f"confirm_del_{freight['id']}"):
-                                    try:
-                                        user_id = resolve_user_id()
-                                        
-                                        # REVERSE financial ledger (create opposite entry)
-                                        admin_supabase.table("financial_ledger").insert({
-                                            "ops_document_id": freight["id"],
-                                            "party_id": freight["stockist_id"],
-                                            "txn_date": datetime.now().date().isoformat(),
-                                            "debit": freight["freight_amt"],  # Reverse: debit instead of credit
-                                            "credit": 0,
-                                            "closing_balance": 0,
-                                            "narration": f"Reversal of {freight['ops_no']} (Deleted)"
-                                        }).execute()
-                                        
-                                        # Mark document as deleted
-                                        admin_supabase.table("ops_documents").update({
-                                            "is_deleted": True,
-                                            "updated_at": datetime.now().isoformat(),
-                                            "updated_by": user_id
-                                        }).eq("id", freight["id"]).execute()
-                                        
-                                        # Audit log
-                                        admin_supabase.table("audit_logs").insert({
-                                            "action": "DELETE_FREIGHT",
-                                            "target_type": "ops_documents",
-                                            "target_id": freight["id"],
-                                            "performed_by": user_id,
-                                            "message": f"Freight {freight['ops_no']} deleted - ledger reversed"
-                                        }).execute()
-                                        
-                                        st.success("✅ Freight entry deleted and ledger reversed!")
-                                        st.rerun()
-                                        
-                                    except Exception as e:
-                                        st.error(f"❌ Delete failed: {str(e)}")
-                            
-                            with col_b:
-                                if st.button("❌ Cancel", key=f"cancel_del_{freight['id']}"):
-                                    st.rerun()
+                        if st.button("🗑", key=f"del_freight_{freight['id']}"):
+                            st.session_state[f"show_freight_delete_{freight['id']}"] = True
+                            st.rerun()
+            
+            # VIEW - FULL WIDTH
+            if st.session_state.get(f"show_freight_view_{freight['id']}", False):
+                with st.expander("📋 Freight Details", expanded=True):
+                    view_col1, view_col2, view_col3 = st.columns(3)
+                    
+                    with view_col1:
+                        st.metric("Freight No", freight['ops_no'])
+                        st.metric("Date", freight['ops_date'])
+                    
+                    with view_col2:
+                        st.metric("Stockist", freight['stockist_name'])
+                        st.metric("Reference", freight['reference_no'])
+                    
+                    with view_col3:
+                        st.metric("Amount", f"₹{freight['freight_amt']:,.2f}")
+                    
+                    st.divider()
+                    st.write(f"**Narration:** {freight['narration']}")
+                    
+                    if st.button("✖️ Close", key=f"close_freight_view_{freight['id']}"):
+                        st.session_state[f"show_freight_view_{freight['id']}"] = False
+                        st.rerun()
+            
+            # DELETE - FULL WIDTH
+            if st.session_state.get(f"show_freight_delete_{freight['id']}", False):
+                st.error(f"⚠️ DELETE Freight {freight['ops_no']}?")
+                st.warning("This will reverse the ledger entry!")
                 
-                st.divider()
+                del_col1, del_col2 = st.columns(2)
+                
+                with del_col1:
+                    if st.button("✅ Confirm Delete", key=f"confirm_freight_{freight['id']}", type="primary"):
+                        try:
+                            user_id = resolve_user_id()
+                            
+                            # REVERSE financial ledger
+                            admin_supabase.table("financial_ledger").insert({
+                                "ops_document_id": freight["id"],
+                                "party_id": freight["stockist_id"],
+                                "txn_date": datetime.now().date().isoformat(),
+                                "debit": freight["freight_amt"],
+                                "credit": 0,
+                                "closing_balance": 0,
+                                "narration": f"Reversal of {freight['ops_no']} (Deleted)"
+                            }).execute()
+                            
+                            # Mark document as deleted
+                            admin_supabase.table("ops_documents").update({
+                                "is_deleted": True,
+                                "updated_at": datetime.now().isoformat(),
+                                "updated_by": user_id
+                            }).eq("id", freight["id"]).execute()
+                            
+                            # Audit log
+                            admin_supabase.table("audit_logs").insert({
+                                "action": "DELETE_FREIGHT",
+                                "target_type": "ops_documents",
+                                "target_id": freight["id"],
+                                "performed_by": user_id,
+                                "message": f"Freight {freight['ops_no']} deleted - ledger reversed"
+                            }).execute()
+                            
+                            st.session_state[f"show_freight_delete_{freight['id']}"] = False
+                            st.success("✅ Freight deleted and ledger reversed!")
+                            st.rerun()
+                            
+                        except Exception as e:
+                            st.error(f"❌ Delete failed: {str(e)}")
+                
+                with del_col2:
+                    if st.button("❌ Cancel", key=f"cancel_freight_{freight['id']}"):
+                        st.session_state[f"show_freight_delete_{freight['id']}"] = False
+                        st.rerun()
+            
+            st.divider()
         
         # Export options
         st.divider()
@@ -5444,6 +5464,7 @@ This action will:
                     whatsapp_msg,
                     height=400
                 )
+
     # =========================
     # RETURN/REPLACE REGISTER (NEW - WITH VIEW/EDIT/DELETE)
     # =========================
