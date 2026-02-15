@@ -5220,6 +5220,7 @@ This action will:
     # DOCUMENT BROWSER — FREIGHT
     # =========================
     elif section == "FREIGHT_REGISTER":
+        from datetime import datetime, timedelta 
         st.subheader("🚚 Freight Register")
         
         # Filters
