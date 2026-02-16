@@ -81,6 +81,11 @@ def show_home_screen():
     col1, col2 = st.columns(2)
     
     with col1:
+        st.write("**DEBUG:**")
+        st.write(f"dcr_current_step: {st.session_state.get('dcr_current_step')}")
+        st.write(f"dcr_masters_mode: {st.session_state.get('dcr_masters_mode')}")
+        st.write(f"dcr_report_id: {st.session_state.get('dcr_report_id')}")
+        st.write("---")
         if st.button("➕ New Daily Report", type="primary", use_container_width=True, key="btn_new_dcr"):
             # Clear any existing DCR state
             st.session_state.dcr_current_step = 1
