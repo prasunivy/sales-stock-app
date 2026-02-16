@@ -51,8 +51,9 @@ def show_doctors_list():
     # Back button
     if st.button("⬅️ Back to DCR Home"):
         st.session_state.doctors_master_action = None
+        st.session_state.selected_doctor_id = None
+        st.session_state.dcr_masters_mode = None  
         st.session_state.dcr_current_step = 0
-        st.session_state.engine_stage = "dcr"
         st.rerun()
     
     st.write("---")
