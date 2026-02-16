@@ -4,6 +4,7 @@ Allows users to update doctor details and view 360 degree profiles
 """
 
 import streamlit as st
+from datetime import datetime, date, timedelta
 from modules.dcr.dcr_database import safe_exec, get_user_territories
 from modules.dcr.dcr_helpers import get_current_user_id
 from anchors.supabase_client import admin_supabase
@@ -45,8 +46,13 @@ def show_doctor_fetch_home():
             st.session_state.doctor_fetch_mode = "FETCH"
             st.rerun()
     
-    if st.button("🏠 Home"):
-        st.session_state.active_module = None
+    if st.button("🏠 Back to DCR Home"):
+        st.session_state.engine_stage = "dcr"
+        st.session_state.doctor_fetch_mode = None
+        # Clear any doctor fetch session keys
+        for key in ["doctor_fetch_territory", "doctor_fetch_doctor_id"]:
+            if key in st.session_state:
+                del st.session_state[key]
         st.rerun()
 
 
@@ -292,9 +298,335 @@ def show_fetch_doctor_flow():
     """
     Fetch doctor: Territory -> Doctor -> 360 degree Profile
     """
-    st.write("### 📊 Fetch Doctor Details")
-    st.info("🚧 360 degree Doctor Profile view coming soon")
+    st.write("### 📊 360° Doctor Profile")
     
-    if st.button("⬅️ Back"):
-        st.session_state.doctor_fetch_mode = None
-        st.rerun()
+    # Step 1: Territory selection
+    if "doctor_fetch_territory" not in st.session_state:
+        user_id = get_current_user_id()
+        territories = get_user_territories(user_id)
+        
+        if not territories:
+            st.warning("No territories assigned to you")
+            if st.button("⬅️ Back"):
+                st.session_state.doctor_fetch_mode = None
+                st.rerun()
+            return
+        
+        selected_territory = st.selectbox(
+            "Select Territory",
+            options=[t["id"] for t in territories],
+            format_func=lambda x: next(t["name"] for t in territories if t["id"] == x),
+            key="fetch_territory_select"
+        )
+        
+        if st.button("Next", key="fetch_territory_next"):
+            st.session_state.doctor_fetch_territory = selected_territory
+            st.rerun()
+        
+        if st.button("⬅️ Back", key="fetch_territory_back"):
+            st.session_state.doctor_fetch_mode = None
+            st.rerun()
+        return
+    
+    # Step 2: Doctor selection
+    if "doctor_fetch_doctor_id" not in st.session_state:
+        territory_id = st.session_state.doctor_fetch_territory
+        
+        doctors = safe_exec(
+            admin_supabase.table("doctor_territories")
+            .select("doctors(id, name, specialization)")
+            .eq("territory_id", territory_id),
+            "Error loading doctors"
+        )
+        
+        doctor_list = [d["doctors"] for d in doctors if d.get("doctors")]
+        
+        if not doctor_list:
+            st.warning("No doctors found in this territory")
+            if st.button("⬅️ Back", key="fetch_doctor_back"):
+                del st.session_state.doctor_fetch_territory
+                st.rerun()
+            return
+        
+        selected_doctor = st.selectbox(
+            "Select Doctor",
+            options=[d["id"] for d in doctor_list],
+            format_func=lambda x: next(f"{d['name']} ({d.get('specialization', 'N/A')})" for d in doctor_list if d["id"] == x),
+            key="fetch_doctor_select"
+        )
+        
+        if st.button("View Profile", type="primary", key="fetch_doctor_view"):
+            st.session_state.doctor_fetch_doctor_id = selected_doctor
+            st.rerun()
+        
+        if st.button("⬅️ Back", key="fetch_doctor_back2"):
+            del st.session_state.doctor_fetch_territory
+            st.rerun()
+        return
+    
+    # Step 3: Show 360° Profile
+    show_doctor_360_profile()
+
+
+def show_doctor_360_profile():
+    """
+    Complete 360° doctor profile with all information
+    """
+    doctor_id = st.session_state.doctor_fetch_doctor_id
+    
+    # Load doctor data
+    doctor = safe_exec(
+        admin_supabase.table("doctors")
+        .select("*")
+        .eq("id", doctor_id)
+        .limit(1),
+        "Error loading doctor"
+    )
+    
+    if not doctor:
+        st.error("Doctor not found")
+        return
+    
+    doc = doctor[0]
+    
+    # Header
+    st.write(f"# 👨‍⚕️ Dr. {doc['name']}")
+    st.write(f"### {doc.get('specialization', 'Specialist')}")
+    
+    # Action buttons at top
+    col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
+    with col_btn1:
+        if st.button("✏️ Update Details", use_container_width=True):
+            st.session_state.doctor_fetch_mode = "UPDATE"
+            st.rerun()
+    with col_btn2:
+        if st.button("📄 Export PDF", use_container_width=True):
+            st.info("🚧 PDF export coming soon")
+    with col_btn3:
+        if st.button("⬅️ Back", use_container_width=True):
+            del st.session_state.doctor_fetch_territory
+            del st.session_state.doctor_fetch_doctor_id
+            st.rerun()
+    
+    st.write("---")
+    
+    # ========================================
+    # SECTION 1: BASIC INFORMATION
+    # ========================================
+    with st.expander("📋 BASIC INFORMATION", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write(f"**📞 Phone:** {doc.get('phone', 'N/A')}")
+            st.write(f"**🏥 Clinic:** {doc.get('clinic_address', 'N/A')}")
+        
+        with col2:
+            # Birthday with countdown
+            if doc.get('date_of_birth'):
+                dob = datetime.strptime(str(doc['date_of_birth']), '%Y-%m-%d').date()
+                days_to_birthday = calculate_days_to_next_occurrence(dob)
+                birthday_emoji = "🎂" if days_to_birthday <= 30 else "📅"
+                st.write(f"**{birthday_emoji} Birthday:** {dob.strftime('%b %d')} (in {days_to_birthday} days)")
+            else:
+                st.write("**📅 Birthday:** Not set")
+            
+            # Anniversary with countdown
+            if doc.get('date_of_anniversary'):
+                doa = datetime.strptime(str(doc['date_of_anniversary']), '%Y-%m-%d').date()
+                days_to_anniversary = calculate_days_to_next_occurrence(doa)
+                anniversary_emoji = "💐" if days_to_anniversary <= 30 else "📅"
+                st.write(f"**{anniversary_emoji} Anniversary:** {doa.strftime('%b %d')} (in {days_to_anniversary} days)")
+            else:
+                st.write("**📅 Anniversary:** Not set")
+    
+    # ========================================
+    # SECTION 2: LOCATIONS
+    # ========================================
+    with st.expander("📍 LOCATIONS", expanded=False):
+        locations = safe_exec(
+            admin_supabase.table("doctor_locations")
+            .select("*")
+            .eq("doctor_id", doctor_id)
+            .eq("is_active", True)
+            .order("added_at"),
+            "Error loading locations"
+        )
+        
+        if locations:
+            for idx, loc in enumerate(locations):
+                st.write(f"**{idx+1}. {loc['location_name']}**")
+                st.write(f"   📍 Coordinates: {loc['latitude']}, {loc['longitude']}")
+                st.write(f"   🕒 Added: {loc['added_at'][:10]}")
+                st.write("")
+        else:
+            st.info("No locations saved yet")
+    
+    # ========================================
+    # SECTION 3: TERRITORIES & COVERAGE
+    # ========================================
+    with st.expander("🗺️ TERRITORIES & COVERAGE", expanded=False):
+        territories = safe_exec(
+            admin_supabase.table("doctor_territories")
+            .select("territories(name)")
+            .eq("doctor_id", doctor_id),
+            "Error loading territories"
+        )
+        
+        if territories:
+            territory_names = [t['territories']['name'] for t in territories if t.get('territories')]
+            for name in territory_names:
+                st.write(f"• {name}")
+        else:
+            st.info("No territories assigned")
+    
+    # ========================================
+    # SECTION 4: LINKED STOCKISTS
+    # ========================================
+    with st.expander("🏢 LINKED STOCKISTS", expanded=False):
+        stockists = safe_exec(
+            admin_supabase.table("doctor_stockists")
+            .select("stockists(name)")
+            .eq("doctor_id", doctor_id),
+            "Error loading stockists"
+        )
+        
+        if stockists:
+            stockist_names = [s['stockists']['name'] for s in stockists if s.get('stockists')]
+            for name in stockist_names:
+                st.write(f"• {name}")
+        else:
+            st.info("No stockists linked")
+    
+    # ========================================
+    # SECTION 5: LINKED CHEMISTS
+    # ========================================
+    with st.expander("💊 LINKED CHEMISTS", expanded=False):
+        # Get chemists from same territories
+        territory_ids = [t['territories']['id'] for t in territories if t.get('territories')]
+        
+        if territory_ids:
+            chemists = safe_exec(
+                admin_supabase.table("chemists")
+                .select("name, shop_name")
+                .in_("territory_id", territory_ids)
+                .eq("is_active", True)
+                .order("name"),
+                "Error loading chemists"
+            )
+            
+            if chemists:
+                for chem in chemists:
+                    st.write(f"• {chem['name']} ({chem.get('shop_name', 'N/A')})")
+            else:
+                st.info("No chemists in these territories")
+        else:
+            st.info("No territories to check for chemists")
+    
+    # ========================================
+    # SECTION 6: DCR VISIT HISTORY
+    # ========================================
+    with st.expander("📊 DCR VISIT HISTORY (Last 30 Days)", expanded=True):
+        # Get visits from last 30 days
+        thirty_days_ago = (datetime.now() - timedelta(days=30)).date()
+        
+        visits = safe_exec(
+            admin_supabase.table("dcr_doctor_visits")
+            .select("""
+                *,
+                dcr_reports(report_date, user_id, users(username))
+            """)
+            .eq("doctor_id", doctor_id)
+            .gte("dcr_reports.report_date", str(thirty_days_ago))
+            .order("dcr_reports.report_date", desc=True),
+            "Error loading visit history"
+        )
+        
+        if visits:
+            # Statistics
+            total_visits = len(visits)
+            total_gifts = sum(1 for v in visits if v.get('gift_amount', 0) > 0)
+            total_gift_value = sum(v.get('gift_amount', 0) for v in visits)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Visits", total_visits)
+            with col2:
+                st.metric("Gifts Given", total_gifts)
+            with col3:
+                st.metric("Gift Value", f"₹{total_gift_value:,.0f}")
+            
+            st.write("---")
+            st.write("**Recent Visits:**")
+            
+            # Show visit details
+            for visit in visits[:10]:  # Show last 10
+                dcr = visit.get('dcr_reports', {})
+                visit_date = dcr.get('report_date', 'N/A')
+                username = dcr.get('users', {}).get('username', 'Unknown')
+                
+                # Get product names from product_ids JSON
+                product_ids = visit.get('product_ids', [])
+                if isinstance(product_ids, str):
+                    import json
+                    product_ids = json.loads(product_ids)
+                
+                # Fetch product names
+                if product_ids:
+                    products = safe_exec(
+                        admin_supabase.table("products")
+                        .select("name")
+                        .in_("id", product_ids),
+                        "Error loading products"
+                    )
+                    product_names = [p['name'] for p in products]
+                else:
+                    product_names = []
+                
+                st.write(f"**📅 {visit_date}** by {username}")
+                if product_names:
+                    st.write(f"   💊 Products: {', '.join(product_names)}")
+                st.write(f"   👥 Visited with: {visit.get('visited_with', 'Single')}")
+                st.write("")
+        else:
+            st.info("No visits in the last 30 days")
+    
+    # ========================================
+    # SECTION 7: REMARKS HISTORY
+    # ========================================
+    with st.expander("📝 REMARKS HISTORY", expanded=False):
+        remarks = safe_exec(
+            admin_supabase.table("doctor_remarks")
+            .select("*, users(username)")
+            .eq("doctor_id", doctor_id)
+            .eq("is_deleted", False)
+            .order("added_at", desc=True)
+            .limit(10),
+            "Error loading remarks"
+        )
+        
+        if remarks:
+            for remark in remarks:
+                username = remark.get('users', {}).get('username', 'Unknown')
+                added_date = remark['added_at'][:10]
+                st.write(f"**{added_date}** by {username}:")
+                st.write(f"   {remark['remark_text']}")
+                st.write("")
+        else:
+            st.info("No remarks recorded yet")
+
+
+def calculate_days_to_next_occurrence(event_date):
+    """
+    Calculate days until next occurrence of an annual event (birthday/anniversary)
+    """
+    today = date.today()
+    this_year_event = event_date.replace(year=today.year)
+    
+    if this_year_event < today:
+        # Event already passed this year, calculate for next year
+        next_event = event_date.replace(year=today.year + 1)
+    else:
+        next_event = this_year_event
+    
+    days_until = (next_event - today).days
+    return days_until
