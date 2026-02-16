@@ -81,13 +81,18 @@ def show_home_screen():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("➕ New Daily Report", type="primary", use_container_width=True):
+        if st.button("➕ New Daily Report", type="primary", use_container_width=True, key="btn_new_dcr"):
+            # Clear any existing DCR state
             st.session_state.dcr_current_step = 1
+            st.session_state.dcr_report_id = None
+            st.session_state.dcr_submit_done = False
+            st.session_state.dcr_home_action = None
             st.rerun()
     
     with col2:
-        if st.button("📅 View My Reports", use_container_width=True):
-            show_monthly_history()
+        if st.button("📅 View My Reports", use_container_width=True, key="btn_view_reports"):
+            st.session_state.dcr_home_action = "HISTORY"
+            st.rerun()
     
     # Masters Section
     st.write("---")
@@ -96,15 +101,19 @@ def show_home_screen():
     col3, col4 = st.columns(2)
     
     with col3:
-        if st.button("👨‍⚕️ Doctors Master", use_container_width=True):
+        if st.button("👨‍⚕️ Doctors Master", use_container_width=True, key="btn_doctors_master"):
             st.session_state.dcr_masters_mode = "DOCTORS"
             st.rerun()
     
     with col4:
-        if st.button("🏪 Chemists Master", use_container_width=True):
+        if st.button("🏪 Chemists Master", use_container_width=True, key="btn_chemists_master"):
             st.session_state.dcr_masters_mode = "CHEMISTS"
             st.rerun()
-
+    
+    # Handle history view if requested
+    if st.session_state.get("dcr_home_action") == "HISTORY":
+        st.write("---")
+        show_monthly_history()
 
 
 def show_monthly_history():
