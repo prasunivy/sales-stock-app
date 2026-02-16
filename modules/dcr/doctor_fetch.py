@@ -432,19 +432,19 @@ def show_doctor_360_profile():
             "Error loading chemists"
         )
     
-    # Load visit history (last 30 days)
+    # Load visit history (last 30 days) - FIXED WITH EXPLICIT RELATIONSHIP
     thirty_days_ago = (datetime.now() - timedelta(days=30)).date()
     
-    # First, get recent DCR IDs
+    # First, get recent DCR IDs with username
     recent_dcrs = safe_exec(
         admin_supabase.table("dcr_reports")
-        .select("id, report_date, user_id, users(username)")
+        .select("id, report_date, user_id, users!dcr_reports_user_fkey(username)")
         .gte("report_date", str(thirty_days_ago))
         .order("report_date", desc=True),
         "Error loading recent DCRs"
     )
     
-    recent_dcr_ids = [dcr['id'] for dcr in recent_dcrs]
+    recent_dcr_ids = [dcr['id'] for dcr in recent_dcrs] if recent_dcrs else []
     
     # Then get visits for this doctor in those DCRs
     visits = []
@@ -458,19 +458,20 @@ def show_doctor_360_profile():
         )
         
         # Enrich visits with DCR data
-        for visit in visits_raw:
-            dcr = next((d for d in recent_dcrs if d['id'] == visit['dcr_report_id']), None)
-            if dcr:
-                visit['dcr_reports'] = dcr
-                visits.append(visit)
-        
-        # Sort by date (newest first)
-        visits.sort(key=lambda x: x.get('dcr_reports', {}).get('report_date', ''), reverse=True)
+        if visits_raw:
+            for visit in visits_raw:
+                dcr = next((d for d in recent_dcrs if d['id'] == visit['dcr_report_id']), None)
+                if dcr:
+                    visit['dcr_reports'] = dcr
+                    visits.append(visit)
+            
+            # Sort by date (newest first)
+            visits.sort(key=lambda x: x.get('dcr_reports', {}).get('report_date', ''), reverse=True)
     
-    # Load remarks
+    # Load remarks - FIXED WITH EXPLICIT RELATIONSHIP
     remarks = safe_exec(
         admin_supabase.table("doctor_remarks")
-        .select("*, users(username)")
+        .select("*, users!doctor_remarks_added_by_fkey(username)")
         .eq("doctor_id", doctor_id)
         .eq("is_deleted", False)
         .order("added_at", desc=True)
