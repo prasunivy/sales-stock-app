@@ -50,8 +50,9 @@ def show_chemists_list():
     # Back button
     if st.button("⬅️ Back to DCR Home"):
         st.session_state.chemists_master_action = None
+        st.session_state.selected_chemist_id = None
+        st.session_state.dcr_masters_mode = None  # ← KEY FIX
         st.session_state.dcr_current_step = 0
-        st.session_state.engine_stage = "dcr"
         st.rerun()
     
     st.write("---")
