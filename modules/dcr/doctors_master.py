@@ -153,6 +153,7 @@ def show_add_doctor_form():
     # Back button
     if st.button("⬅️ Back to List"):
         st.session_state.doctors_master_action = None
+        st.session_state.selected_doctor_id = None
         st.rerun()
     
     st.write("---")
