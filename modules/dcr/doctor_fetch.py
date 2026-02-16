@@ -434,17 +434,38 @@ def show_doctor_360_profile():
     
     # Load visit history (last 30 days)
     thirty_days_ago = (datetime.now() - timedelta(days=30)).date()
-    visits = safe_exec(
-        admin_supabase.table("dcr_doctor_visits")
-        .select("""
-            *,
-            dcr_reports(report_date, user_id, users(username))
-        """)
-        .eq("doctor_id", doctor_id)
-        .gte("dcr_reports.report_date", str(thirty_days_ago))
-        .order("dcr_reports.report_date", desc=True),
-        "Error loading visit history"
+    
+    # First, get recent DCR IDs
+    recent_dcrs = safe_exec(
+        admin_supabase.table("dcr_reports")
+        .select("id, report_date, user_id, users(username)")
+        .gte("report_date", str(thirty_days_ago))
+        .order("report_date", desc=True),
+        "Error loading recent DCRs"
     )
+    
+    recent_dcr_ids = [dcr['id'] for dcr in recent_dcrs]
+    
+    # Then get visits for this doctor in those DCRs
+    visits = []
+    if recent_dcr_ids:
+        visits_raw = safe_exec(
+            admin_supabase.table("dcr_doctor_visits")
+            .select("*")
+            .eq("doctor_id", doctor_id)
+            .in_("dcr_report_id", recent_dcr_ids),
+            "Error loading visit history"
+        )
+        
+        # Enrich visits with DCR data
+        for visit in visits_raw:
+            dcr = next((d for d in recent_dcrs if d['id'] == visit['dcr_report_id']), None)
+            if dcr:
+                visit['dcr_reports'] = dcr
+                visits.append(visit)
+        
+        # Sort by date (newest first)
+        visits.sort(key=lambda x: x.get('dcr_reports', {}).get('report_date', ''), reverse=True)
     
     # Load remarks
     remarks = safe_exec(
