@@ -389,6 +389,78 @@ def show_doctor_360_profile():
     
     doc = doctor[0]
     
+    # ========================================
+    # LOAD ALL DATA UPFRONT (before expanders)
+    # ========================================
+    
+    # Load territories
+    territories = safe_exec(
+        admin_supabase.table("doctor_territories")
+        .select("territories(id, name)")
+        .eq("doctor_id", doctor_id),
+        "Error loading territories"
+    )
+    territory_ids = [t['territories']['id'] for t in territories if t.get('territories')]
+    
+    # Load locations
+    locations = safe_exec(
+        admin_supabase.table("doctor_locations")
+        .select("*")
+        .eq("doctor_id", doctor_id)
+        .eq("is_active", True)
+        .order("added_at"),
+        "Error loading locations"
+    )
+    
+    # Load stockists
+    stockists = safe_exec(
+        admin_supabase.table("doctor_stockists")
+        .select("stockists(name)")
+        .eq("doctor_id", doctor_id),
+        "Error loading stockists"
+    )
+    
+    # Load chemists (from territories)
+    chemists = []
+    if territory_ids:
+        chemists = safe_exec(
+            admin_supabase.table("chemists")
+            .select("name, shop_name")
+            .in_("territory_id", territory_ids)
+            .eq("is_active", True)
+            .order("name"),
+            "Error loading chemists"
+        )
+    
+    # Load visit history (last 30 days)
+    thirty_days_ago = (datetime.now() - timedelta(days=30)).date()
+    visits = safe_exec(
+        admin_supabase.table("dcr_doctor_visits")
+        .select("""
+            *,
+            dcr_reports(report_date, user_id, users(username))
+        """)
+        .eq("doctor_id", doctor_id)
+        .gte("dcr_reports.report_date", str(thirty_days_ago))
+        .order("dcr_reports.report_date", desc=True),
+        "Error loading visit history"
+    )
+    
+    # Load remarks
+    remarks = safe_exec(
+        admin_supabase.table("doctor_remarks")
+        .select("*, users(username)")
+        .eq("doctor_id", doctor_id)
+        .eq("is_deleted", False)
+        .order("added_at", desc=True)
+        .limit(10),
+        "Error loading remarks"
+    )
+    
+    # ========================================
+    # DISPLAY PROFILE
+    # ========================================
+    
     # Header
     st.write(f"# 👨‍⚕️ Dr. {doc['name']}")
     st.write(f"### {doc.get('specialization', 'Specialist')}")
@@ -443,15 +515,6 @@ def show_doctor_360_profile():
     # SECTION 2: LOCATIONS
     # ========================================
     with st.expander("📍 LOCATIONS", expanded=False):
-        locations = safe_exec(
-            admin_supabase.table("doctor_locations")
-            .select("*")
-            .eq("doctor_id", doctor_id)
-            .eq("is_active", True)
-            .order("added_at"),
-            "Error loading locations"
-        )
-        
         if locations:
             for idx, loc in enumerate(locations):
                 st.write(f"**{idx+1}. {loc['location_name']}**")
@@ -465,13 +528,6 @@ def show_doctor_360_profile():
     # SECTION 3: TERRITORIES & COVERAGE
     # ========================================
     with st.expander("🗺️ TERRITORIES & COVERAGE", expanded=False):
-        territories = safe_exec(
-            admin_supabase.table("doctor_territories")
-            .select("territories(name)")
-            .eq("doctor_id", doctor_id),
-            "Error loading territories"
-        )
-        
         if territories:
             territory_names = [t['territories']['name'] for t in territories if t.get('territories')]
             for name in territory_names:
@@ -483,13 +539,6 @@ def show_doctor_360_profile():
     # SECTION 4: LINKED STOCKISTS
     # ========================================
     with st.expander("🏢 LINKED STOCKISTS", expanded=False):
-        stockists = safe_exec(
-            admin_supabase.table("doctor_stockists")
-            .select("stockists(name)")
-            .eq("doctor_id", doctor_id),
-            "Error loading stockists"
-        )
-        
         if stockists:
             stockist_names = [s['stockists']['name'] for s in stockists if s.get('stockists')]
             for name in stockist_names:
@@ -501,46 +550,16 @@ def show_doctor_360_profile():
     # SECTION 5: LINKED CHEMISTS
     # ========================================
     with st.expander("💊 LINKED CHEMISTS", expanded=False):
-        # Get chemists from same territories
-        territory_ids = [t['territories']['id'] for t in territories if t.get('territories')]
-        
-        if territory_ids:
-            chemists = safe_exec(
-                admin_supabase.table("chemists")
-                .select("name, shop_name")
-                .in_("territory_id", territory_ids)
-                .eq("is_active", True)
-                .order("name"),
-                "Error loading chemists"
-            )
-            
-            if chemists:
-                for chem in chemists:
-                    st.write(f"• {chem['name']} ({chem.get('shop_name', 'N/A')})")
-            else:
-                st.info("No chemists in these territories")
+        if chemists:
+            for chem in chemists:
+                st.write(f"• {chem['name']} ({chem.get('shop_name', 'N/A')})")
         else:
-            st.info("No territories to check for chemists")
+            st.info("No chemists in these territories")
     
     # ========================================
     # SECTION 6: DCR VISIT HISTORY
     # ========================================
     with st.expander("📊 DCR VISIT HISTORY (Last 30 Days)", expanded=True):
-        # Get visits from last 30 days
-        thirty_days_ago = (datetime.now() - timedelta(days=30)).date()
-        
-        visits = safe_exec(
-            admin_supabase.table("dcr_doctor_visits")
-            .select("""
-                *,
-                dcr_reports(report_date, user_id, users(username))
-            """)
-            .eq("doctor_id", doctor_id)
-            .gte("dcr_reports.report_date", str(thirty_days_ago))
-            .order("dcr_reports.report_date", desc=True),
-            "Error loading visit history"
-        )
-        
         if visits:
             # Statistics
             total_visits = len(visits)
@@ -568,9 +587,13 @@ def show_doctor_360_profile():
                 product_ids = visit.get('product_ids', [])
                 if isinstance(product_ids, str):
                     import json
-                    product_ids = json.loads(product_ids)
+                    try:
+                        product_ids = json.loads(product_ids)
+                    except:
+                        product_ids = []
                 
                 # Fetch product names
+                product_names = []
                 if product_ids:
                     products = safe_exec(
                         admin_supabase.table("products")
@@ -579,8 +602,6 @@ def show_doctor_360_profile():
                         "Error loading products"
                     )
                     product_names = [p['name'] for p in products]
-                else:
-                    product_names = []
                 
                 st.write(f"**📅 {visit_date}** by {username}")
                 if product_names:
@@ -594,16 +615,6 @@ def show_doctor_360_profile():
     # SECTION 7: REMARKS HISTORY
     # ========================================
     with st.expander("📝 REMARKS HISTORY", expanded=False):
-        remarks = safe_exec(
-            admin_supabase.table("doctor_remarks")
-            .select("*, users(username)")
-            .eq("doctor_id", doctor_id)
-            .eq("is_deleted", False)
-            .order("added_at", desc=True)
-            .limit(10),
-            "Error loading remarks"
-        )
-        
         if remarks:
             for remark in remarks:
                 username = remark.get('users', {}).get('username', 'Unknown')
@@ -613,7 +624,6 @@ def show_doctor_360_profile():
                 st.write("")
         else:
             st.info("No remarks recorded yet")
-
 
 def calculate_days_to_next_occurrence(event_date):
     """
