@@ -157,10 +157,17 @@ def show_create_tour_form():
     
     current_user_id = get_current_user_id()
     
+    # Initialize form counter for unique keys
+    if "tour_form_counter" not in st.session_state:
+        st.session_state.tour_form_counter = 0
+    
+    form_suffix = st.session_state.tour_form_counter
+    
     # Back button
     if st.button("⬅️ Back to List"):
         st.session_state.tour_action = None
         st.session_state.create_another = False
+        st.session_state.tour_form_counter = 0
         st.rerun()
     
     st.write("---")
@@ -198,7 +205,7 @@ def show_create_tour_form():
             if st.checkbox(
                 territory['name'],
                 value=False,
-                key=f"terr_create_{territory['id']}"
+                key=f"terr_create_{territory['id']}_{form_suffix}"
             ):
                 selected_territories.append(territory['id'])
         
@@ -244,7 +251,7 @@ def show_create_tour_form():
                     if st.checkbox(
                         f"{doctor['name']} ({doctor.get('specialization', 'N/A')})",
                         value=False,
-                        key=f"doc_create_{doctor['id']}"
+                        key=f"doc_create_{doctor['id']}_{form_suffix}"
                     ):
                         selected_doctor_ids.append(doctor['id'])
             else:
@@ -278,7 +285,7 @@ def show_create_tour_form():
                     if st.checkbox(
                         f"{chemist['name']} ({chemist.get('shop_name', 'N/A')})",
                         value=False,
-                        key=f"chem_create_{chemist['id']}"
+                        key=f"chem_create_{chemist['id']}_{form_suffix}"
                     ):
                         selected_chemist_ids.append(chemist['id'])
             else:
@@ -330,6 +337,7 @@ def show_create_tour_form():
                     if submit_next:
                         st.success(f"✅ Tour for {tour_date} created! Create next tour below.")
                         st.session_state.create_another = True
+                        st.session_state.tour_form_counter += 1
                         st.rerun()
                     else:
                         st.success(f"✅ Tour programme {'saved as draft' if submit_draft else 'submitted for approval'}!")
@@ -343,6 +351,7 @@ def show_create_tour_form():
         if cancel:
             st.session_state.tour_action = None
             st.session_state.create_another = False
+            st.session_state.tour_form_counter = 0
             st.rerun()
 
 
