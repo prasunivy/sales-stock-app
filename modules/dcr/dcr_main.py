@@ -40,6 +40,17 @@ def run_dcr():
     """Main entry point for DCR module"""
     init_dcr_session_state()
     
+    # Safety check: If no active workflow, reset to home
+    has_active_dcr = (
+        st.session_state.get("dcr_report_id") or 
+        st.session_state.get("dcr_masters_mode") or
+        st.session_state.get("dcr_submit_done")
+    )
+    
+    if not has_active_dcr:
+        # No active DCR workflow - show home screen
+        st.session_state.dcr_current_step = 0
+    
     st.title("📞 Daily Call Report")
     
     try:
