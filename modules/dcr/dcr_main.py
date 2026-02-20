@@ -33,6 +33,7 @@ from modules.dcr.dcr_helpers import (
 )
 from modules.dcr.doctors_master import run_doctors_master
 from modules.dcr.chemists_master import run_chemists_master
+from modules.dcr.tour_programme import run_tour_programme 
 
 
 def run_dcr():
@@ -56,6 +57,11 @@ def run_dcr():
     if st.session_state.get("dcr_masters_mode") == "CHEMISTS":
         run_chemists_master()
         return
+
+    if st.session_state.get("dcr_masters_mode") == "TOUR":
+        run_tour_programme()
+        return
+    
     
     # Route based on state
     if st.session_state.get("dcr_submit_done"):
@@ -73,7 +79,6 @@ def show_home_screen():
     col1, col2 = st.columns(2)
     
     with col1:
-        
         if st.button("➕ New Daily Report", type="primary", use_container_width=True, key="btn_new_dcr"):
             # Clear any existing DCR state
             st.session_state.dcr_current_step = 1
@@ -86,6 +91,14 @@ def show_home_screen():
         if st.button("📅 View My Reports", use_container_width=True, key="btn_view_reports"):
             st.session_state.dcr_home_action = "HISTORY"
             st.rerun()
+    
+    # Tour Programme
+    st.write("---")
+    st.write("### 📅 Tour Planning")
+    
+    if st.button("📅 Tour Programme", use_container_width=True, key="btn_tour_programme"):
+        st.session_state.dcr_masters_mode = "TOUR"
+        st.rerun()
     
     # Masters Section
     st.write("---")
