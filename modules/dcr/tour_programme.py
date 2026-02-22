@@ -75,6 +75,10 @@ def show_tour_list():
     
     with col3:
         if st.button("➕ Create Tour", type="primary"):
+            # Clear any existing tour creation state
+            st.session_state.pop("tour_create_selected_user", None)
+            st.session_state.pop("tour_create_territories", None)
+            st.session_state.tour_form_counter = 0
             st.session_state.tour_action = "CREATE"
             st.session_state.create_another = False
             st.rerun()
@@ -239,7 +243,7 @@ def show_create_tour_form():
         if st.checkbox(
             territory['name'],
             value=territory['id'] in st.session_state.tour_create_territories,
-            key=f"territory_checkbox_{territory['id']}"
+            key=f"terr_chk_{territory['id']}_{st.session_state.tour_form_counter}"
         ):
             selected_territories.append(territory['id'])
     
