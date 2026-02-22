@@ -179,16 +179,21 @@ def show_create_tour_form():
     if "tour_form_counter" not in st.session_state:
         st.session_state.tour_form_counter = 0
     
-    # Initialize selected user in session state (OUTSIDE FORM)
+    # Initialize selected user in session state
     if "tour_create_selected_user" not in st.session_state:
         st.session_state.tour_create_selected_user = current_user_id
     
-    # Back button (OUTSIDE FORM)
+    # Initialize selected territories in session state
+    if "tour_create_territories" not in st.session_state:
+        st.session_state.tour_create_territories = []
+    
+    # Back button
     if st.button("⬅️ Back to List"):
         st.session_state.tour_action = None
         st.session_state.create_another = False
         st.session_state.tour_form_counter = 0
         st.session_state.pop("tour_create_selected_user", None)
+        st.session_state.pop("tour_create_territories", None)
         st.rerun()
     
     st.write("---")
@@ -219,15 +224,42 @@ def show_create_tour_form():
         selected_user_id = current_user_id
         st.session_state.tour_create_selected_user = selected_user_id
     
-    # Get user territories (OUTSIDE FORM)
+    # Get user territories
     user_territories = get_user_territories(selected_user_id)
     
     if not user_territories:
         st.error(f"No territories assigned to {'this user' if role == 'admin' else 'you'}!")
         return
     
+    # Territory selection OUTSIDE FORM for dynamic updates
+    st.write("### 🗺️ Select Territories *")
+    
+    selected_territories = []
+    for territory in user_territories:
+        if st.checkbox(
+            territory['name'],
+            value=territory['id'] in st.session_state.tour_create_territories,
+            key=f"territory_checkbox_{territory['id']}"
+        ):
+            selected_territories.append(territory['id'])
+    
+    # Update session state
+    st.session_state.tour_create_territories = selected_territories
+    
+    st.info(f"✓ Selected: {len(selected_territories)} territories")
+    
+    if not selected_territories:
+        st.warning("⚠️ Please select at least one territory to continue")
+        return
+    
+    st.write("---")
+    
     # Form counter for unique keys
     form_suffix = st.session_state.tour_form_counter
+    
+    # Get doctors and chemists based on selected territories
+    doctors = get_doctors_by_territories(selected_territories)
+    chemists = get_chemists_by_territories(selected_territories)
     
     # THE FORM STARTS HERE
     with st.form(f"tour_create_{form_suffix}", clear_on_submit=False):
@@ -237,20 +269,6 @@ def show_create_tour_form():
             value=date.today() + timedelta(days=1),
             min_value=date.today()
         )
-        
-        st.write("---")
-        st.write("#### 🗺️ Territories *")
-        
-        selected_territories = []
-        for idx, territory in enumerate(user_territories):
-            if st.checkbox(
-                territory['name'],
-                value=False,
-                key=f"t_{idx}_{form_suffix}"
-            ):
-                selected_territories.append(territory['id'])
-        
-        st.info(f"✓ Selected: {len(selected_territories)} territories")
         
         st.write("---")
         st.write("#### 👥 Worked With *")
@@ -271,20 +289,16 @@ def show_create_tour_form():
         st.write("#### 👨‍⚕️ Doctors to Visit (Optional)")
         
         selected_doctor_ids = []
-        if selected_territories:
-            doctors = get_doctors_by_territories(selected_territories)
-            if doctors:
-                for idx, doctor in enumerate(doctors):
-                    if st.checkbox(
-                        f"{doctor['name']} ({doctor.get('specialization', 'N/A')})",
-                        value=False,
-                        key=f"d_{idx}_{form_suffix}"
-                    ):
-                        selected_doctor_ids.append(doctor['id'])
-            else:
-                st.info("No doctors in selected territories")
+        if doctors:
+            for idx, doctor in enumerate(doctors):
+                if st.checkbox(
+                    f"{doctor['name']} ({doctor.get('specialization', 'N/A')})",
+                    value=False,
+                    key=f"d_{idx}_{form_suffix}"
+                ):
+                    selected_doctor_ids.append(doctor['id'])
         else:
-            st.info("Select territories first")
+            st.info("No doctors available in selected territories")
         
         st.info(f"✓ Selected: {len(selected_doctor_ids)} doctors")
         
@@ -292,20 +306,16 @@ def show_create_tour_form():
         st.write("#### 🏪 Chemists to Visit (Optional)")
         
         selected_chemist_ids = []
-        if selected_territories:
-            chemists = get_chemists_by_territories(selected_territories)
-            if chemists:
-                for idx, chemist in enumerate(chemists):
-                    if st.checkbox(
-                        f"{chemist['name']} ({chemist.get('shop_name', 'N/A')})",
-                        value=False,
-                        key=f"c_{idx}_{form_suffix}"
-                    ):
-                        selected_chemist_ids.append(chemist['id'])
-            else:
-                st.info("No chemists in selected territories")
+        if chemists:
+            for idx, chemist in enumerate(chemists):
+                if st.checkbox(
+                    f"{chemist['name']} ({chemist.get('shop_name', 'N/A')})",
+                    value=False,
+                    key=f"c_{idx}_{form_suffix}"
+                ):
+                    selected_chemist_ids.append(chemist['id'])
         else:
-            st.info("Select territories first")
+            st.info("No chemists available in selected territories")
         
         st.info(f"✓ Selected: {len(selected_chemist_ids)} chemists")
         
@@ -349,12 +359,14 @@ def show_create_tour_form():
                 if submit_next:
                     st.success(f"✅ Tour for {tour_date} created! Create next tour below.")
                     st.session_state.tour_form_counter += 1
+                    st.session_state.tour_create_territories = []  # Reset territories
                     st.rerun()
                 else:
                     st.success(f"✅ Tour programme {'saved as draft' if submit_draft else 'submitted'}!")
                     st.session_state.tour_action = None
                     st.session_state.tour_form_counter = 0
                     st.session_state.pop("tour_create_selected_user", None)
+                    st.session_state.pop("tour_create_territories", None)
                     st.rerun()
             
             except Exception as e:
@@ -364,8 +376,8 @@ def show_create_tour_form():
         st.session_state.tour_action = None
         st.session_state.tour_form_counter = 0
         st.session_state.pop("tour_create_selected_user", None)
+        st.session_state.pop("tour_create_territories", None)
         st.rerun()
-
 def show_edit_tour_form():
     """
     Form to edit existing tour (only if draft/pending)
