@@ -4,16 +4,26 @@ Handles all CRUD operations for tour programmes
 """
 
 import streamlit as st
-from anchors.supabase_client import admin_supabase, safe_exec
+from anchors.supabase_client import admin_supabase
 from datetime import datetime
 import json
+
+
+def safe_exec_query(query, error_msg):
+    """Helper to execute queries safely"""
+    try:
+        result = query.execute()
+        return result.data if result and hasattr(result, 'data') else result
+    except Exception as e:
+        st.error(f"{error_msg}: {str(e)}")
+        return None
 
 
 def get_tour_programmes_list(user_id, status_filter=None, search=None):
     """
     Get list of tour programmes for a user
     """
-    query = admin_supabase.table("tour_programmes").select("""
+    query = admin_supabase.from_("tour_programmes").select("""
         id,
         tour_date,
         territory_ids,
@@ -24,6 +34,7 @@ def get_tour_programmes_list(user_id, status_filter=None, search=None):
         approved_at,
         approval_comment,
         created_at,
+        user_id,
         users!tour_programmes_approved_by_fkey(username)
     """).eq("user_id", user_id).is_("deleted_at", None)
     
@@ -33,7 +44,10 @@ def get_tour_programmes_list(user_id, status_filter=None, search=None):
     if search:
         query = query.ilike("notes", f"%{search}%")
     
-    tours = safe_exec(query.order("tour_date", desc=True), "Error loading tours")
+    tours = safe_exec_query(query.order("tour_date", desc=True), "Error loading tours")
+    
+    if not tours:
+        return []
     
     # Enrich with territory names and counts
     for tour in tours:
@@ -43,30 +57,24 @@ def get_tour_programmes_list(user_id, status_filter=None, search=None):
             territory_ids = json.loads(territory_ids)
         
         if territory_ids:
-            territories = safe_exec(
-                admin_supabase.table("territories")
-                .select("name")
-                .in_("id", territory_ids),
+            territories = safe_exec_query(
+                admin_supabase.from_("territories").select("name").in_("id", territory_ids),
                 "Error loading territory names"
             )
-            tour['territory_names'] = [t['name'] for t in territories]
+            tour['territory_names'] = [t['name'] for t in (territories or [])]
         else:
             tour['territory_names'] = []
         
         # Get doctor count
-        doctor_count = safe_exec(
-            admin_supabase.table("tour_programme_doctors")
-            .select("id", count="exact")
-            .eq("tour_programme_id", tour['id']),
+        doctor_count = safe_exec_query(
+            admin_supabase.from_("tour_programme_doctors").select("id").eq("tour_programme_id", tour['id']),
             "Error counting doctors"
         )
         tour['doctor_count'] = len(doctor_count) if doctor_count else 0
         
         # Get chemist count
-        chemist_count = safe_exec(
-            admin_supabase.table("tour_programme_chemists")
-            .select("id", count="exact")
-            .eq("tour_programme_id", tour['id']),
+        chemist_count = safe_exec_query(
+            admin_supabase.from_("tour_programme_chemists").select("id").eq("tour_programme_id", tour['id']),
             "Error counting chemists"
         )
         tour['chemist_count'] = len(chemist_count) if chemist_count else 0
@@ -84,11 +92,8 @@ def get_tour_by_id(tour_id):
     """
     Get complete tour programme details
     """
-    tour = safe_exec(
-        admin_supabase.table("tour_programmes")
-        .select("*")
-        .eq("id", tour_id)
-        .limit(1),
+    tour = safe_exec_query(
+        admin_supabase.from_("tour_programmes").select("*").eq("id", tour_id).limit(1),
         "Error loading tour"
     )
     
@@ -105,43 +110,34 @@ def get_tour_by_id(tour_id):
     
     # Get territory names
     if territory_ids:
-        territories = safe_exec(
-            admin_supabase.table("territories")
-            .select("id, name")
-            .in_("id", territory_ids),
+        territories = safe_exec_query(
+            admin_supabase.from_("territories").select("id, name").in_("id", territory_ids),
             "Error loading territories"
         )
-        tour_data['territories'] = territories
+        tour_data['territories'] = territories or []
     else:
         tour_data['territories'] = []
     
     # Get doctors
-    tour_doctors = safe_exec(
-        admin_supabase.table("tour_programme_doctors")
-        .select("doctor_id, doctors(id, name, specialization)")
-        .eq("tour_programme_id", tour_id),
+    tour_doctors = safe_exec_query(
+        admin_supabase.from_("tour_programme_doctors").select("doctor_id, doctors(id, name, specialization)").eq("tour_programme_id", tour_id),
         "Error loading tour doctors"
     )
-    tour_data['doctors'] = [td['doctors'] for td in tour_doctors if td.get('doctors')]
-    tour_data['doctor_ids'] = [td['doctor_id'] for td in tour_doctors]
+    tour_data['doctors'] = [td['doctors'] for td in (tour_doctors or []) if td.get('doctors')]
+    tour_data['doctor_ids'] = [td['doctor_id'] for td in (tour_doctors or [])]
     
     # Get chemists
-    tour_chemists = safe_exec(
-        admin_supabase.table("tour_programme_chemists")
-        .select("chemist_id, chemists(id, name, shop_name)")
-        .eq("tour_programme_id", tour_id),
+    tour_chemists = safe_exec_query(
+        admin_supabase.from_("tour_programme_chemists").select("chemist_id, chemists(id, name, shop_name)").eq("tour_programme_id", tour_id),
         "Error loading tour chemists"
     )
-    tour_data['chemists'] = [tc['chemists'] for tc in tour_chemists if tc.get('chemists')]
-    tour_data['chemist_ids'] = [tc['chemist_id'] for tc in tour_chemists]
+    tour_data['chemists'] = [tc['chemists'] for tc in (tour_chemists or []) if tc.get('chemists')]
+    tour_data['chemist_ids'] = [tc['chemist_id'] for tc in (tour_chemists or [])]
     
     # Get approver name if approved
     if tour_data.get('approved_by'):
-        approver = safe_exec(
-            admin_supabase.table("users")
-            .select("username")
-            .eq("id", tour_data['approved_by'])
-            .limit(1),
+        approver = safe_exec_query(
+            admin_supabase.from_("users").select("username").eq("id", tour_data['approved_by']).limit(1),
             "Error loading approver"
         )
         tour_data['approver_name'] = approver[0]['username'] if approver else 'Unknown'
@@ -156,8 +152,8 @@ def create_tour_programme(user_id, tour_date, territory_ids, worked_with_type, d
     Create new tour programme
     """
     # Insert main tour record
-    tour = safe_exec(
-        admin_supabase.table("tour_programmes").insert({
+    tour = safe_exec_query(
+        admin_supabase.from_("tour_programmes").insert({
             "user_id": user_id,
             "tour_date": str(tour_date),
             "territory_ids": json.dumps(territory_ids),
@@ -169,13 +165,16 @@ def create_tour_programme(user_id, tour_date, territory_ids, worked_with_type, d
         "Error creating tour programme"
     )
     
+    if not tour:
+        raise Exception("Failed to create tour programme")
+    
     tour_id = tour[0]['id']
     
     # Insert doctors
     if doctor_ids:
         for doctor_id in doctor_ids:
-            safe_exec(
-                admin_supabase.table("tour_programme_doctors").insert({
+            safe_exec_query(
+                admin_supabase.from_("tour_programme_doctors").insert({
                     "tour_programme_id": tour_id,
                     "doctor_id": doctor_id
                 }),
@@ -185,8 +184,8 @@ def create_tour_programme(user_id, tour_date, territory_ids, worked_with_type, d
     # Insert chemists
     if chemist_ids:
         for chemist_id in chemist_ids:
-            safe_exec(
-                admin_supabase.table("tour_programme_chemists").insert({
+            safe_exec_query(
+                admin_supabase.from_("tour_programme_chemists").insert({
                     "tour_programme_id": tour_id,
                     "chemist_id": chemist_id
                 }),
@@ -201,8 +200,8 @@ def update_tour_programme(tour_id, tour_date, territory_ids, worked_with_type, d
     Update existing tour programme
     """
     # Update main record
-    safe_exec(
-        admin_supabase.table("tour_programmes").update({
+    safe_exec_query(
+        admin_supabase.from_("tour_programmes").update({
             "tour_date": str(tour_date),
             "territory_ids": json.dumps(territory_ids),
             "worked_with_type": worked_with_type,
@@ -214,25 +213,21 @@ def update_tour_programme(tour_id, tour_date, territory_ids, worked_with_type, d
     )
     
     # Delete existing doctors and chemists
-    safe_exec(
-        admin_supabase.table("tour_programme_doctors")
-        .delete()
-        .eq("tour_programme_id", tour_id),
+    safe_exec_query(
+        admin_supabase.from_("tour_programme_doctors").delete().eq("tour_programme_id", tour_id),
         "Error removing old doctors"
     )
     
-    safe_exec(
-        admin_supabase.table("tour_programme_chemists")
-        .delete()
-        .eq("tour_programme_id", tour_id),
+    safe_exec_query(
+        admin_supabase.from_("tour_programme_chemists").delete().eq("tour_programme_id", tour_id),
         "Error removing old chemists"
     )
     
     # Re-insert doctors
     if doctor_ids:
         for doctor_id in doctor_ids:
-            safe_exec(
-                admin_supabase.table("tour_programme_doctors").insert({
+            safe_exec_query(
+                admin_supabase.from_("tour_programme_doctors").insert({
                     "tour_programme_id": tour_id,
                     "doctor_id": doctor_id
                 }),
@@ -242,8 +237,8 @@ def update_tour_programme(tour_id, tour_date, territory_ids, worked_with_type, d
     # Re-insert chemists
     if chemist_ids:
         for chemist_id in chemist_ids:
-            safe_exec(
-                admin_supabase.table("tour_programme_chemists").insert({
+            safe_exec_query(
+                admin_supabase.from_("tour_programme_chemists").insert({
                     "tour_programme_id": tour_id,
                     "chemist_id": chemist_id
                 }),
@@ -255,8 +250,8 @@ def delete_tour_programme(tour_id):
     """
     Soft delete tour programme
     """
-    safe_exec(
-        admin_supabase.table("tour_programmes").update({
+    safe_exec_query(
+        admin_supabase.from_("tour_programmes").update({
             "deleted_at": datetime.now().isoformat()
         }).eq("id", tour_id),
         "Error deleting tour"
@@ -267,8 +262,8 @@ def approve_tour_programme(tour_id, admin_user_id, comment):
     """
     Approve a tour programme (admin only)
     """
-    safe_exec(
-        admin_supabase.table("tour_programmes").update({
+    safe_exec_query(
+        admin_supabase.from_("tour_programmes").update({
             "status": "approved",
             "approved_by": admin_user_id,
             "approved_at": datetime.now().isoformat(),
@@ -282,8 +277,8 @@ def reject_tour_programme(tour_id, admin_user_id, comment):
     """
     Reject a tour programme (admin only)
     """
-    safe_exec(
-        admin_supabase.table("tour_programmes").update({
+    safe_exec_query(
+        admin_supabase.from_("tour_programmes").update({
             "status": "rejected",
             "approved_by": admin_user_id,
             "approved_at": datetime.now().isoformat(),
@@ -301,15 +296,7 @@ def get_doctors_by_territories(territory_ids):
         return []
     
     try:
-        # Query doctor_territories with join
-        response = admin_supabase.rpc('get_doctors_by_territories', {
-            'territory_ids': territory_ids
-        }).execute()
-        
-        if response.data:
-            return response.data
-        
-        # Fallback: direct query
+        # Direct query
         result = admin_supabase.from_('doctor_territories').select('doctor_id, doctors!inner(id, name, specialization)').in_('territory_id', territory_ids).execute()
         
         # Remove duplicates
@@ -323,23 +310,8 @@ def get_doctors_by_territories(territory_ids):
         return list(doctors_dict.values())
         
     except Exception as e:
-        # Simplest fallback - just get all doctors and filter
-        try:
-            all_docs = admin_supabase.from_('doctors').select('id, name, specialization').eq('is_active', True).execute()
-            
-            # Get which doctors are in these territories
-            doc_terrs = admin_supabase.from_('doctor_territories').select('doctor_id').in_('territory_id', territory_ids).execute()
-            
-            valid_doc_ids = [dt['doctor_id'] for dt in doc_terrs.data] if doc_terrs.data else []
-            
-            # Filter doctors
-            filtered = [d for d in (all_docs.data or []) if d['id'] in valid_doc_ids]
-            return filtered
-            
-        except Exception as e2:
-            import streamlit as st
-            st.error(f"Error loading doctors: {str(e2)}")
-            return []
+        st.error(f"Error loading doctors: {str(e)}")
+        return []
 
 
 def get_chemists_by_territories(territory_ids):
@@ -355,6 +327,5 @@ def get_chemists_by_territories(territory_ids):
         return result.data if result.data else []
         
     except Exception as e:
-        import streamlit as st
         st.error(f"Error loading chemists: {str(e)}")
         return []
