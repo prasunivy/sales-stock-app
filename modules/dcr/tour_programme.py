@@ -106,6 +106,23 @@ def show_tour_list():
             
             with col1:
                 st.write(f"**📅 Date:** {tour['tour_date']}")
+                
+                # Show user if admin
+                role = st.session_state.get("role", "user")
+                if role == "admin":
+                    # Get username
+                    from modules.dcr.tour_database import safe_exec
+                    from anchors.supabase_client import admin_supabase
+                    user_result = safe_exec(
+                        admin_supabase.table("users")
+                        .select("username")
+                        .eq("id", tour.get('user_id'))
+                        .limit(1),
+                        "Error loading username"
+                    )
+                    tour_username = user_result[0]['username'] if user_result else 'Unknown'
+                    st.write(f"**👤 User:** {tour_username}")
+                
                 st.write(f"**🗺️ Territories:** {', '.join(tour['territory_names'])}")
                 st.write(f"**👥 Worked With:** {tour['worked_with_type'].replace('_', ' ').title()}")
                 st.write(f"**👨‍⚕️ Doctors:** {tour['doctor_count']}")
@@ -156,6 +173,7 @@ def show_create_tour_form():
     st.write("### ➕ Create Tour Programme")
     
     current_user_id = get_current_user_id()
+    role = st.session_state.get("role", "user")
     
     # Initialize form counter for unique keys
     if "tour_form_counter" not in st.session_state:
@@ -172,6 +190,27 @@ def show_create_tour_form():
     
     st.write("---")
     
+    # Admin: Select user first
+    selected_user_id = current_user_id  # Default to self
+    
+    if role == "admin":
+        st.write("### 👤 Admin: Select User")
+        
+        # Get all active users
+        from modules.dcr.masters_database import get_all_users
+        users = get_all_users()
+        
+        user_options = {u['id']: u['username'] for u in users}
+        selected_user_id = st.selectbox(
+            "Create tour programme for:",
+            options=list(user_options.keys()),
+            format_func=lambda x: user_options[x],
+            key="tour_create_user_select"
+        )
+        
+        st.info(f"Creating tour for: **{user_options[selected_user_id]}**")
+        st.write("---")
+    
     # Form
     with st.form("create_tour_form", clear_on_submit=st.session_state.get("create_another", False)):
         # Tour date
@@ -185,7 +224,7 @@ def show_create_tour_form():
         
         # Territories (multiple)
         st.write("#### 🗺️ Territories * (Multiple Selection)")
-        user_territories = get_user_territories(current_user_id)
+        user_territories = get_user_territories(selected_user_id)
         
         if not user_territories:
             st.error("No territories assigned to you!")
@@ -324,7 +363,7 @@ def show_create_tour_form():
                     status = "draft" if submit_draft else "pending"
                     
                     tour_id = create_tour_programme(
-                        user_id=current_user_id,
+                        user_id=selected_user_id,
                         tour_date=tour_date,
                         territory_ids=selected_territories,
                         worked_with_type=worked_with_type,
