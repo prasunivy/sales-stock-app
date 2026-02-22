@@ -301,28 +301,45 @@ def get_doctors_by_territories(territory_ids):
         return []
     
     try:
-        doctor_territories = admin_supabase.table("doctor_territories").select("doctor_id, doctors(id, name, specialization)").in_("territory_id", territory_ids).execute()
+        # Query doctor_territories with join
+        response = admin_supabase.rpc('get_doctors_by_territories', {
+            'territory_ids': territory_ids
+        }).execute()
+        
+        if response.data:
+            return response.data
+        
+        # Fallback: direct query
+        result = admin_supabase.from_('doctor_territories').select('doctor_id, doctors!inner(id, name, specialization)').in_('territory_id', territory_ids).execute()
         
         # Remove duplicates
         doctors_dict = {}
-        for dt in doctor_territories.data:
-            if dt.get('doctors'):
-                doc = dt['doctors']
-                doctors_dict[doc['id']] = doc
+        if result.data:
+            for dt in result.data:
+                if dt.get('doctors'):
+                    doc = dt['doctors']
+                    doctors_dict[doc['id']] = doc
         
         return list(doctors_dict.values())
+        
     except Exception as e:
-        st.error(f"Error loading doctors: {str(e)}")
-        return []
-    
-    # Remove duplicates
-    doctors_dict = {}
-    for dt in doctor_territories:
-        if dt.get('doctors'):
-            doc = dt['doctors']
-            doctors_dict[doc['id']] = doc
-    
-    return list(doctors_dict.values())
+        # Simplest fallback - just get all doctors and filter
+        try:
+            all_docs = admin_supabase.from_('doctors').select('id, name, specialization').eq('is_active', True).execute()
+            
+            # Get which doctors are in these territories
+            doc_terrs = admin_supabase.from_('doctor_territories').select('doctor_id').in_('territory_id', territory_ids).execute()
+            
+            valid_doc_ids = [dt['doctor_id'] for dt in doc_terrs.data] if doc_terrs.data else []
+            
+            # Filter doctors
+            filtered = [d for d in (all_docs.data or []) if d['id'] in valid_doc_ids]
+            return filtered
+            
+        except Exception as e2:
+            import streamlit as st
+            st.error(f"Error loading doctors: {str(e2)}")
+            return []
 
 
 def get_chemists_by_territories(territory_ids):
@@ -333,8 +350,11 @@ def get_chemists_by_territories(territory_ids):
         return []
     
     try:
-        result = admin_supabase.table("chemists").select("id, name, shop_name").in_("territory_id", territory_ids).eq("is_active", True).order("name").execute()
+        result = admin_supabase.from_('chemists').select('id, name, shop_name').in_('territory_id', territory_ids).eq('is_active', True).order('name').execute()
+        
         return result.data if result.data else []
+        
     except Exception as e:
+        import streamlit as st
         st.error(f"Error loading chemists: {str(e)}")
         return []
