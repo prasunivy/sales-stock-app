@@ -300,12 +300,20 @@ def get_doctors_by_territories(territory_ids):
     if not territory_ids:
         return []
     
-    doctor_territories = safe_exec(
-        admin_supabase.table("doctor_territories")
-        .select("doctor_id, doctors(id, name, specialization)")
-        .in_("territory_id", territory_ids),
-        "Error loading doctors"
-    )
+    try:
+        doctor_territories = admin_supabase.table("doctor_territories").select("doctor_id, doctors(id, name, specialization)").in_("territory_id", territory_ids).execute()
+        
+        # Remove duplicates
+        doctors_dict = {}
+        for dt in doctor_territories.data:
+            if dt.get('doctors'):
+                doc = dt['doctors']
+                doctors_dict[doc['id']] = doc
+        
+        return list(doctors_dict.values())
+    except Exception as e:
+        st.error(f"Error loading doctors: {str(e)}")
+        return []
     
     # Remove duplicates
     doctors_dict = {}
@@ -324,13 +332,9 @@ def get_chemists_by_territories(territory_ids):
     if not territory_ids:
         return []
     
-    chemists = safe_exec(
-        admin_supabase.table("chemists")
-        .select("id, name, shop_name")
-        .in_("territory_id", territory_ids)
-        .eq("is_active", True)
-        .order("name"),
-        "Error loading chemists"
-    )
-    
-    return chemists
+    try:
+        result = admin_supabase.table("chemists").select("id, name, shop_name").in_("territory_id", territory_ids).eq("is_active", True).order("name").execute()
+        return result.data if result.data else []
+    except Exception as e:
+        st.error(f"Error loading chemists: {str(e)}")
+        return []
