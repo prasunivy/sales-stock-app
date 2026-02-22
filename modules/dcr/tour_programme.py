@@ -211,8 +211,15 @@ def show_create_tour_form():
         st.info(f"Creating tour for: **{user_options[selected_user_id]}**")
         st.write("---")
     
+    # Get user territories BEFORE form
+    user_territories = get_user_territories(selected_user_id)
+    
+    if not user_territories:
+        st.error(f"No territories assigned to {'this user' if role == 'admin' else 'you'}!")
+        return
+    
     # Form
-    with st.form("create_tour_form", clear_on_submit=st.session_state.get("create_another", False)):
+    with st.form(f"create_tour_form_{form_suffix}", clear_on_submit=False):
         # Tour date
         tour_date = st.date_input(
             "Tour Date *",
@@ -222,29 +229,15 @@ def show_create_tour_form():
         
         st.write("---")
         
-        # Territories (multiple)
+        # Territories (multiple) - INSIDE FORM
         st.write("#### 🗺️ Territories * (Multiple Selection)")
-        user_territories = get_user_territories(selected_user_id)
-        
-        if not user_territories:
-            st.error("No territories assigned to you!")
-            return
         
         selected_territories = []
-        
-        col_select = st.columns([1, 1])
-        with col_select[0]:
-            if st.form_submit_button("☑️ Select All Territories"):
-                selected_territories = [t['id'] for t in user_territories]
-        with col_select[1]:
-            if st.form_submit_button("☐ Clear All Territories"):
-                selected_territories = []
-        
         for territory in user_territories:
             if st.checkbox(
                 territory['name'],
                 value=False,
-                key=f"terr_create_{territory['id']}_{form_suffix}"
+                key=f"terr_{territory['id']}_{form_suffix}"
             ):
                 selected_territories.append(territory['id'])
         
@@ -263,34 +256,25 @@ def show_create_tour_form():
                 "with_senior": "With Manager + Senior Manager",
                 "with_admin": "With Admin"
             }[x],
-            horizontal=True
+            horizontal=True,
+            key=f"worked_with_{form_suffix}"
         )
         
         st.write("---")
         
-        # Doctors (optional)
+        # Doctors (optional) - INSIDE FORM
         st.write("#### 👨‍⚕️ Doctors to Visit (Optional)")
         
-        doctors = []
         selected_doctor_ids = []
-        
         if selected_territories:
             doctors = get_doctors_by_territories(selected_territories)
             
             if doctors:
-                col_doc = st.columns([1, 1])
-                with col_doc[0]:
-                    if st.form_submit_button("☑️ Select All Doctors"):
-                        selected_doctor_ids = [d['id'] for d in doctors]
-                with col_doc[1]:
-                    if st.form_submit_button("☐ Clear All Doctors"):
-                        selected_doctor_ids = []
-                
                 for doctor in doctors:
                     if st.checkbox(
                         f"{doctor['name']} ({doctor.get('specialization', 'N/A')})",
                         value=False,
-                        key=f"doc_create_{doctor['id']}_{form_suffix}"
+                        key=f"doc_{doctor['id']}_{form_suffix}"
                     ):
                         selected_doctor_ids.append(doctor['id'])
             else:
@@ -302,29 +286,19 @@ def show_create_tour_form():
         
         st.write("---")
         
-        # Chemists (optional)
+        # Chemists (optional) - INSIDE FORM
         st.write("#### 🏪 Chemists to Visit (Optional)")
         
-        chemists = []
         selected_chemist_ids = []
-        
         if selected_territories:
             chemists = get_chemists_by_territories(selected_territories)
             
             if chemists:
-                col_chem = st.columns([1, 1])
-                with col_chem[0]:
-                    if st.form_submit_button("☑️ Select All Chemists"):
-                        selected_chemist_ids = [c['id'] for c in chemists]
-                with col_chem[1]:
-                    if st.form_submit_button("☐ Clear All Chemists"):
-                        selected_chemist_ids = []
-                
                 for chemist in chemists:
                     if st.checkbox(
                         f"{chemist['name']} ({chemist.get('shop_name', 'N/A')})",
                         value=False,
-                        key=f"chem_create_{chemist['id']}_{form_suffix}"
+                        key=f"chem_{chemist['id']}_{form_suffix}"
                     ):
                         selected_chemist_ids.append(chemist['id'])
             else:
@@ -337,7 +311,11 @@ def show_create_tour_form():
         st.write("---")
         
         # Notes
-        notes = st.text_area("📝 Notes (Optional)", placeholder="Any special instructions or focus areas...")
+        notes = st.text_area(
+            "📝 Notes (Optional)",
+            placeholder="Any special instructions or focus areas...",
+            key=f"notes_{form_suffix}"
+        )
         
         st.write("---")
         
@@ -382,6 +360,7 @@ def show_create_tour_form():
                         st.success(f"✅ Tour programme {'saved as draft' if submit_draft else 'submitted for approval'}!")
                         st.session_state.tour_action = None
                         st.session_state.create_another = False
+                        st.session_state.tour_form_counter = 0
                         st.rerun()
                 
                 except Exception as e:
@@ -392,7 +371,6 @@ def show_create_tour_form():
             st.session_state.create_another = False
             st.session_state.tour_form_counter = 0
             st.rerun()
-
 
 def show_edit_tour_form():
     """
