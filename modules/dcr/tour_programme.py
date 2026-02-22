@@ -235,17 +235,18 @@ def show_create_tour_form():
         st.error(f"No territories assigned to {'this user' if role == 'admin' else 'you'}!")
         return
     
-    # Territory selection OUTSIDE FORM for dynamic updates
+    # Territory selection using MULTISELECT (no duplicate key issues)
     st.write("### 🗺️ Select Territories *")
     
-    selected_territories = []
-    for territory in user_territories:
-        if st.checkbox(
-            territory['name'],
-            value=territory['id'] in st.session_state.tour_create_territories,
-            key=f"terr_chk_{territory['id']}_{st.session_state.tour_form_counter}"
-        ):
-            selected_territories.append(territory['id'])
+    territory_options = {t['id']: t['name'] for t in user_territories}
+    
+    selected_territories = st.multiselect(
+        "Choose one or more territories:",
+        options=list(territory_options.keys()),
+        default=st.session_state.tour_create_territories,
+        format_func=lambda x: territory_options[x],
+        key=f"territory_multi_{st.session_state.tour_form_counter}"
+    )
     
     # Update session state
     st.session_state.tour_create_territories = selected_territories
@@ -255,6 +256,7 @@ def show_create_tour_form():
     if not selected_territories:
         st.warning("⚠️ Please select at least one territory to continue")
         return
+
     
     st.write("---")
     
