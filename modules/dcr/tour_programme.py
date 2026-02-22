@@ -260,6 +260,16 @@ def show_create_tour_form():
     # Get doctors and chemists based on selected territories
     doctors = get_doctors_by_territories(selected_territories)
     chemists = get_chemists_by_territories(selected_territories)
+    # DEBUG OUTPUT
+    st.write("🔍 **DEBUG INFO:**")
+    st.write(f"Selected territory IDs: {selected_territories}")
+    st.write(f"Doctors found: {len(doctors) if doctors else 0}")
+    st.write(f"Chemists found: {len(chemists) if chemists else 0}")
+    if doctors:
+        st.write("Doctor names:", [d['name'] for d in doctors])
+    if chemists:
+        st.write("Chemist names:", [c['name'] for c in chemists])
+    st.write("---")
     
     # THE FORM STARTS HERE
     with st.form(f"tour_create_{form_suffix}", clear_on_submit=False):
