@@ -205,7 +205,7 @@ def show_create_tour_form():
             "Create tour programme for:",
             options=list(user_options.keys()),
             format_func=lambda x: user_options[x],
-            key="tour_create_user_select"
+            key=f"tour_create_user_select_{form_suffix}"
         )
         
         st.info(f"Creating tour for: **{user_options[selected_user_id]}**")
