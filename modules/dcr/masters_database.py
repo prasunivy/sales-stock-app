@@ -258,12 +258,14 @@ def create_doctor(name, specialization, phone, clinic_address, territory_ids, st
             "clinic_address": clinic_address,
             "is_active": True,
             "created_by": created_by
-        }).select(),
+        }),
         "Error creating doctor"
     )
     
-    doctor_id = doctor[0]['id']
+    if not doctor:
+        raise Exception("Failed to create doctor")
     
+    doctor_id = doctor[0]['id']    
     # Link territories
     for territory_id in territory_ids:
         safe_exec(
@@ -430,12 +432,14 @@ def create_chemist(name, shop_name, phone, address, territory_id, stockist_id, c
             "stockist_id": stockist_id,
             "is_active": True,
             "created_by": created_by
-        }).select(),
+        }),
         "Error creating chemist"
     )
     
+    if not chemist:
+        raise Exception("Failed to create chemist")
+    
     return chemist[0]['id']
-
 
 def update_chemist(chemist_id, name, shop_name, phone, address, updated_by):
     """
