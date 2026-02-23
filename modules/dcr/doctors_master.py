@@ -256,23 +256,42 @@ def show_add_doctor_form():
         elif not selected_territories:
             st.error("Please select at least one territory")
         else:
+            st.write("🧪 **TESTING MODE** - Checking database connection...")
+            
             try:
-                create_doctor(
-                    name=doctor_name,
-                    specialization=specialization,
-                    phone=phone,
-                    clinic_address=clinic_address,
-                    territory_ids=selected_territories,
-                    stockist_ids=selected_stockists,
-                    chemist_ids=selected_chemists,
-                    created_by=current_user_id
-                )
-                st.success("✅ Doctor created successfully!")
-                st.session_state.doctors_form_counter += 1
-                st.session_state.doctors_master_action = None
-                st.rerun()
+                # Import what we need
+                from anchors.supabase_client import admin_supabase
+                
+                # Try to create the insert query
+                st.write("Step 1: Creating insert query...")
+                test_query = admin_supabase.table("doctors").insert({
+                    "name": doctor_name,
+                    "specialization": specialization,
+                    "phone": phone,
+                    "clinic_address": clinic_address,
+                    "is_active": True,
+                    "created_by": current_user_id
+                })
+                
+                st.write(f"✅ Query created! Type: {type(test_query)}")
+                st.write(f"Has 'select' method? {hasattr(test_query, 'select')}")
+                st.write(f"Has 'execute' method? {hasattr(test_query, 'execute')}")
+                
+                # Try to execute it
+                st.write("Step 2: Executing query...")
+                result = test_query.execute()
+                
+                st.write(f"✅ Execute worked! Result type: {type(result)}")
+                
+                if hasattr(result, 'data'):
+                    st.write(f"Result has data: {result.data}")
+                    if result.data:
+                        st.success(f"✅ Doctor created! ID: {result.data[0]['id']}")
+                else:
+                    st.write(f"Result: {result}")
+                
             except Exception as e:
-                st.error(f"Error creating doctor: {str(e)}")
+                st.error(f"❌ Error: {str(e)}")
                 import traceback
                 st.code(traceback.format_exc())
 def show_edit_doctor_form():
