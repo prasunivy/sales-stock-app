@@ -273,6 +273,8 @@ def show_add_doctor_form():
                 st.rerun()
             except Exception as e:
                 st.error(f"Error creating doctor: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
 def show_edit_doctor_form():
     """
     Form to edit existing doctor
