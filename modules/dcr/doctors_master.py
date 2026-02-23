@@ -193,53 +193,58 @@ def show_add_doctor_form():
                 st.write(f"✓ {t['name']}")
             selected_territories = [t['id'] for t in user_territories]
         else:
-            # Use multiselect instead of checkboxes
             territory_options = {t['id']: t['name'] for t in user_territories}
             selected_territories = st.multiselect(
                 "Select territories:",
                 options=list(territory_options.keys()),
-                default=list(territory_options.keys()),  # All selected by default
-                format_func=lambda x: territory_options[x]
+                default=list(territory_options.keys()),
+                format_func=lambda x: territory_options[x],
+                key=f"terr_multi_{form_id}"
             )
-        
-        if not selected_territories:
-            st.warning("Please select at least one territory")
+            if not selected_territories:
+                selected_territories = []
         
         st.write("---")
         
-        # Stockists (optional, multiple, filtered by territories)
-        st.write("#### Stockists (Optional, Multiple)")
-        stockists = get_stockists_by_territories(selected_territories) if selected_territories else []
-        selected_stockists = []
+        # Stockists
+        st.write("#### Stockists (Optional)")
+        if selected_territories:
+            stockists = get_stockists_by_territories(selected_territories)
+        else:
+            stockists = []
         
         if stockists:
             stockist_options = {s['id']: s['name'] for s in stockists}
             selected_stockists = st.multiselect(
-                "Choose stockists (optional):",
+                "Choose stockists:",
                 options=list(stockist_options.keys()),
-                format_func=lambda x: stockist_options[x]
+                format_func=lambda x: stockist_options[x],
+                key=f"stock_multi_{form_id}"
             )
         else:
             selected_stockists = []
-            st.info("No stockists available for selected territories")
+            st.info("No stockists available")
         
         st.write("---")
         
-        # Chemists (multiple, filtered by territories)
-        st.write("#### Linked Chemists (Multiple)")
-        chemists = get_chemists_by_territories(selected_territories) if selected_territories else []
-        selected_chemists = []
+        # Chemists
+        st.write("#### Linked Chemists (Optional)")
+        if selected_territories:
+            chemists = get_chemists_by_territories(selected_territories)
+        else:
+            chemists = []
         
         if chemists:
             chemist_options = {c['id']: f"{c['name']} ({c['shop_name']})" for c in chemists}
             selected_chemists = st.multiselect(
-                "Choose chemists (optional):",
+                "Choose chemists:",
                 options=list(chemist_options.keys()),
-                format_func=lambda x: chemist_options[x]
+                format_func=lambda x: chemist_options[x],
+                key=f"chem_multi_{form_id}"
             )
         else:
             selected_chemists = []
-            st.info("No chemists available for selected territories")
+            st.info("No chemists available")
         
         # Submit
         submitted = st.form_submit_button("💾 Save Doctor", type="primary")
