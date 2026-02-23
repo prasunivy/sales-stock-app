@@ -10,6 +10,8 @@ import json
 
 def get_tour_programmes_list(user_id, status_filter=None, search=None):
     """Get list of tour programmes for a user"""
+    # Build query step by step
+    
     query = admin_supabase.table("tour_programmes").select("id, tour_date, territory_ids, worked_with_type, notes, status, approved_by, approved_at, approval_comment, created_at, user_id").eq("user_id", user_id).is_("deleted_at", None)
     
     if status_filter:
@@ -19,6 +21,9 @@ def get_tour_programmes_list(user_id, status_filter=None, search=None):
         query = query.ilike("notes", f"%{search}%")
     
     tours = safe_exec(query.order("tour_date", desc=True), "Error loading tours")
+    
+    if not tours:
+        return []
     
     # Enrich with territory names and counts
     for tour in tours:
@@ -49,7 +54,6 @@ def get_tour_programmes_list(user_id, status_filter=None, search=None):
         tour['approver_name'] = None
     
     return tours
-
 
 def get_tour_by_id(tour_id):
     """Get complete tour programme details"""
