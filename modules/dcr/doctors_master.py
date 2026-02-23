@@ -170,7 +170,7 @@ def show_add_doctor_form():
         st.info(f"Creating doctor for: **{user_options.get(selected_user_id, 'Unknown')}**")
     
     # Form
-    with st.form("add_doctor_form"):
+    with st.form(f"add_doctor_form_{form_id}"):
         # Basic info
         doctor_name = st.text_input("Doctor Name *", placeholder="Dr. John Doe")
         specialization = st.text_input("Specialization", placeholder="Cardiologist")
@@ -193,7 +193,7 @@ def show_add_doctor_form():
                 st.write(f"✓ {t['name']}")
             selected_territories = [t['id'] for t in user_territories]
         else:
-            st.write(f"Select territories for {user_options.get(selected_user_id)}:")
+            st.write(f"Select territories:")
             selected_territories = []
             for t in user_territories:
                 if st.checkbox(t['name'], value=True, key=f"terr_{t['id']}_{form_id}"):
@@ -211,7 +211,7 @@ def show_add_doctor_form():
         
         if stockists:
             for s in stockists:
-                if st.checkbox(s['name'], key=f"stock_{s['id']}"):
+                if st.checkbox(s['name'], key=f"stock_{s['id']}_{form_id}"):
                     selected_stockists.append(s['id'])
         else:
             st.info("No stockists available for selected territories")
@@ -225,42 +225,38 @@ def show_add_doctor_form():
         
         if chemists:
             for c in chemists:
-                if st.checkbox(f"{c['name']} ({c['shop_name']})", key=f"chem_{c['id']}"):
+                if st.checkbox(f"{c['name']} ({c['shop_name']})", key=f"chem_{c['id']}_{form_id}"):
                     selected_chemists.append(c['id'])
         else:
             st.info("No chemists available for selected territories")
         
         # Submit
         submitted = st.form_submit_button("💾 Save Doctor", type="primary")
-        
-        if submitted:
-            if not doctor_name:
-                st.error("Doctor name is required")
-            elif not selected_territories:
-                st.error("Please select at least one territory")
-            else:
-                try:
-                    create_doctor(
-                        name=doctor_name,
-                        specialization=specialization,
-                        phone=phone,
-                        clinic_address=clinic_address,
-                        territory_ids=selected_territories,
-                        stockist_ids=selected_stockists,
-                        chemist_ids=selected_chemists,
-                        created_by=current_user_id
-                    )
-                    try:
-                        # ... create doctor code ...
     
-                        st.success("✅ Doctor created successfully!")
-                        st.session_state.doctors_form_counter += 1  # Reset counter
-                        st.session_state.doctors_master_action = None  # Go back to list
-                        st.rerun()
-    
-                    except Exception as e:
-                        st.error(f"Error creating doctor: {str(e)}")
-
+    # Handle submission OUTSIDE form
+    if submitted:
+        if not doctor_name:
+            st.error("Doctor name is required")
+        elif not selected_territories:
+            st.error("Please select at least one territory")
+        else:
+            try:
+                create_doctor(
+                    name=doctor_name,
+                    specialization=specialization,
+                    phone=phone,
+                    clinic_address=clinic_address,
+                    territory_ids=selected_territories,
+                    stockist_ids=selected_stockists,
+                    chemist_ids=selected_chemists,
+                    created_by=current_user_id
+                )
+                st.success("✅ Doctor created successfully!")
+                st.session_state.doctors_form_counter += 1
+                st.session_state.doctors_master_action = None
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error creating doctor: {str(e)}")
 def show_edit_doctor_form():
     """
     Form to edit existing doctor
