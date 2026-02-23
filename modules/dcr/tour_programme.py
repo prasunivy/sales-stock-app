@@ -263,9 +263,46 @@ def show_create_tour_form():
     # Form counter for unique keys
     form_suffix = st.session_state.tour_form_counter
     
+    # TEMPORARY TEST: Use DCR functions directly
+    st.write("🧪 TESTING DCR FUNCTIONS DIRECTLY:")
+    try:
+        from modules.dcr.dcr_database import get_doctors_by_territories as dcr_get_docs
+        from modules.dcr.dcr_database import get_chemists_by_territories as dcr_get_chems
+        
+        test_docs = dcr_get_docs(selected_territories)
+        test_chems = dcr_get_chems(selected_territories)
+        
+        st.success(f"✅ DCR functions work! Docs: {len(test_docs)}, Chems: {len(test_chems)}")
+        
+        if test_docs:
+            st.write("Sample doctor:", test_docs[0])
+        if test_chems:
+            st.write("Sample chemist:", test_chems[0])
+            
+    except Exception as e:
+        st.error(f"❌ DCR functions also fail: {str(e)}")
     # Get doctors and chemists based on selected territories
-    doctors = get_doctors_by_territories(selected_territories)
-    chemists = get_chemists_by_territories(selected_territories)
+    st.write("🔍 DEBUG: About to load doctors...")
+    st.write(f"Selected territories: {selected_territories}")
+    st.write(f"Territory IDs type: {type(selected_territories)}")
+    
+    try:
+        doctors = get_doctors_by_territories(selected_territories)
+        st.write(f"✅ Doctors loaded: {len(doctors)}")
+    except Exception as e:
+        st.error(f"❌ Error loading doctors: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        doctors = []
+    
+    try:
+        chemists = get_chemists_by_territories(selected_territories)
+        st.write(f"✅ Chemists loaded: {len(chemists)}")
+    except Exception as e:
+        st.error(f"❌ Error loading chemists: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        chemists = []
     # DEBUG OUTPUT
     st.write("🔍 **DEBUG INFO:**")
     st.write(f"Selected territory IDs: {selected_territories}")
