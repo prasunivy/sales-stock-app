@@ -193,11 +193,14 @@ def show_add_doctor_form():
                 st.write(f"✓ {t['name']}")
             selected_territories = [t['id'] for t in user_territories]
         else:
-            st.write(f"Select territories:")
-            selected_territories = []
-            for t in user_territories:
-                if st.checkbox(t['name'], value=True, key=f"terr_{t['id']}_{form_id}"):
-                    selected_territories.append(t['id'])
+            # Use multiselect instead of checkboxes
+            territory_options = {t['id']: t['name'] for t in user_territories}
+            selected_territories = st.multiselect(
+                "Select territories:",
+                options=list(territory_options.keys()),
+                default=list(territory_options.keys()),  # All selected by default
+                format_func=lambda x: territory_options[x]
+            )
         
         if not selected_territories:
             st.warning("Please select at least one territory")
@@ -210,10 +213,14 @@ def show_add_doctor_form():
         selected_stockists = []
         
         if stockists:
-            for s in stockists:
-                if st.checkbox(s['name'], key=f"stock_{s['id']}_{form_id}"):
-                    selected_stockists.append(s['id'])
+            stockist_options = {s['id']: s['name'] for s in stockists}
+            selected_stockists = st.multiselect(
+                "Choose stockists (optional):",
+                options=list(stockist_options.keys()),
+                format_func=lambda x: stockist_options[x]
+            )
         else:
+            selected_stockists = []
             st.info("No stockists available for selected territories")
         
         st.write("---")
@@ -224,10 +231,14 @@ def show_add_doctor_form():
         selected_chemists = []
         
         if chemists:
-            for c in chemists:
-                if st.checkbox(f"{c['name']} ({c['shop_name']})", key=f"chem_{c['id']}_{form_id}"):
-                    selected_chemists.append(c['id'])
+            chemist_options = {c['id']: f"{c['name']} ({c['shop_name']})" for c in chemists}
+            selected_chemists = st.multiselect(
+                "Choose chemists (optional):",
+                options=list(chemist_options.keys()),
+                format_func=lambda x: chemist_options[x]
+            )
         else:
+            selected_chemists = []
             st.info("No chemists available for selected territories")
         
         # Submit
