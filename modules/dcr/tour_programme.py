@@ -86,7 +86,7 @@ def show_tour_list():
     st.write("---")
     
     # Get tours
-    tours = get_tour_programmes_list(current_user_id, status_filter, search)
+    tours = []
     
     st.write(f"### 📋 My Tour Programmes ({len(tours)} found)")
     
