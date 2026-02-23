@@ -144,6 +144,11 @@ def show_add_doctor_form():
     """
     Form to add new doctor
     """
+    # Initialize form counter to prevent duplicate keys
+    if "doctors_form_counter" not in st.session_state:
+        st.session_state.doctors_form_counter = 0
+    
+    form_id = st.session_state.doctors_form_counter
     st.write("### ➕ Add New Doctor")
     
     current_user_id = get_current_user_id()
@@ -191,7 +196,7 @@ def show_add_doctor_form():
             st.write(f"Select territories for {user_options.get(selected_user_id)}:")
             selected_territories = []
             for t in user_territories:
-                if st.checkbox(t['name'], value=True, key=f"terr_{t['id']}"):
+                if st.checkbox(t['name'], value=True, key=f"terr_{t['id']}_{form_id}"):
                     selected_territories.append(t['id'])
         
         if not selected_territories:
@@ -245,12 +250,16 @@ def show_add_doctor_form():
                         chemist_ids=selected_chemists,
                         created_by=current_user_id
                     )
-                    st.success("✅ Doctor created successfully!")
-                    st.session_state.doctors_master_action = None
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error creating doctor: {str(e)}")
-
+                    try:
+                        # ... create doctor code ...
+    
+                        st.success("✅ Doctor created successfully!")
+                        st.session_state.doctors_form_counter += 1  # Reset counter
+                        st.session_state.doctors_master_action = None  # Go back to list
+                        st.rerun()
+    
+                    except Exception as e:
+                        st.error(f"Error creating doctor: {str(e)}")
 
 def show_edit_doctor_form():
     """
