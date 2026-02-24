@@ -41,6 +41,10 @@ def run_tour_programme():
         show_edit_tour_form()
     elif action == "VIEW":
         show_view_tour()
+    elif action == "APPROVE":
+        show_approve_tour()
+    elif action == "REJECT":
+        show_reject_tour()
     else:
         show_tour_list()
 
@@ -50,6 +54,7 @@ def show_tour_list():
     List all tour programmes with filters
     """
     current_user_id = get_current_user_id()
+    role = st.session_state.get("role", "user")
     
     # Back button
     if st.button("⬅️ Back to DCR Home"):
@@ -59,6 +64,28 @@ def show_tour_list():
         st.rerun()
     
     st.write("---")
+    
+    # Admin: Select user to view tours for
+    selected_user_id = current_user_id
+    if role == "admin":
+        st.write("### 👤 Admin: View Tours For")
+        
+        from modules.dcr.masters_database import get_all_users
+        users = get_all_users()
+        
+        user_options = {u['id']: u['username'] for u in users}
+        user_options['all'] = 'All Users'
+        
+        view_mode = st.selectbox(
+            "Select user:",
+            options=['all'] + list(user_options.keys())[:-1],  # 'all' first, then users
+            format_func=lambda x: user_options[x]
+        )
+        
+        if view_mode != 'all':
+            selected_user_id = view_mode
+        
+        st.write("---")
     
     # Filters and search
     col1, col2, col3 = st.columns([2, 2, 1])
@@ -75,7 +102,6 @@ def show_tour_list():
     
     with col3:
         if st.button("➕ Create Tour", type="primary"):
-            # Clear any existing tour creation state
             st.session_state.pop("tour_create_selected_user", None)
             st.session_state.pop("tour_create_territories", None)
             st.session_state.tour_form_counter = 0
@@ -86,9 +112,14 @@ def show_tour_list():
     st.write("---")
     
     # Get tours
-    tours = get_tour_programmes_list(current_user_id, status_filter, search)
+    if role == "admin" and view_mode == 'all':
+        # Admin viewing all users - need custom query
+        from modules.dcr.tour_database import get_all_tour_programmes_admin
+        tours = get_all_tour_programmes_admin(status_filter, search)
+    else:
+        tours = get_tour_programmes_list(selected_user_id, status_filter, search)
     
-    st.write(f"### 📋 My Tour Programmes ({len(tours)} found)")
+    st.write(f"### 📋 Tour Programmes ({len(tours)} found)")
     
     if not tours:
         st.info("No tour programmes found. Click 'Create Tour' to start planning!")
@@ -103,63 +134,57 @@ def show_tour_list():
             "rejected": "❌"
         }.get(tour['status'], "📝")
         
-        with st.expander(
-            f"{status_emoji} {tour['tour_date']} | {', '.join(tour['territory_names'][:2])}{'...' if len(tour['territory_names']) > 2 else ''} | {tour['status'].upper()}"
-        ):
+        with st.expander(f"{status_emoji} {tour['tour_date']} | {', '.join(tour['territory_names'][:2])} | {tour['status'].upper()}"):
             col1, col2 = st.columns([3, 1])
             
             with col1:
                 st.write(f"**📅 Date:** {tour['tour_date']}")
                 
                 # Show user if admin
-                role = st.session_state.get("role", "user")
                 if role == "admin":
-                    # Get username
-                    from modules.dcr.tour_database import safe_exec
-                    from anchors.supabase_client import admin_supabase
-                    user_result = safe_exec(
-                        admin_supabase.table("users")
-                        .select("username")
-                        .eq("id", tour.get('user_id'))
-                        .limit(1),
-                        "Error loading username"
-                    )
-                    tour_username = user_result[0]['username'] if user_result else 'Unknown'
+                    from modules.dcr.masters_database import get_all_users
+                    users = get_all_users()
+                    user_dict = {u['id']: u['username'] for u in users}
+                    tour_username = user_dict.get(tour.get('user_id'), 'Unknown')
                     st.write(f"**👤 User:** {tour_username}")
                 
                 st.write(f"**🗺️ Territories:** {', '.join(tour['territory_names'])}")
                 st.write(f"**👥 Worked With:** {tour['worked_with_type'].replace('_', ' ').title()}")
                 st.write(f"**👨‍⚕️ Doctors:** {tour['doctor_count']}")
                 st.write(f"**🏪 Chemists:** {tour['chemist_count']}")
-                st.write(f"**📝 Notes:** {tour.get('notes', 'N/A')}")
                 
-                # Show approval details if approved/rejected
+                if tour.get('notes'):
+                    st.write(f"**📝 Notes:** {tour['notes']}")
+                
+                # Approval info
                 if tour['status'] in ['approved', 'rejected']:
-                    st.write("---")
-                    st.write(f"**{'✅ Approved' if tour['status'] == 'approved' else '❌ Rejected'} by:** {tour.get('approver_name', 'Unknown')}")
-                    st.write(f"**On:** {tour['approved_at'][:10] if tour.get('approved_at') else 'N/A'}")
+                    st.write(f"**{'✅ Approved' if tour['status'] == 'approved' else '❌ Rejected'} by:** {tour.get('approver_name', 'N/A')}")
                     if tour.get('approval_comment'):
-                        st.write(f"**Comment:** {tour['approval_comment']}")
+                        st.write(f"**💬 Comment:** {tour['approval_comment']}")
             
             with col2:
-                if st.button("👁 View", key=f"view_{tour['id']}", use_container_width=True):
+                # View button (everyone)
+                if st.button("👁️ View", key=f"view_{tour['id']}", use_container_width=True):
                     st.session_state.tour_action = "VIEW"
                     st.session_state.selected_tour_id = tour['id']
                     st.rerun()
                 
-                # Can edit only if draft or pending
-                if tour['status'] in ['draft', 'pending']:
+                # Edit button (only if draft/pending and owner or admin)
+                can_edit = tour['status'] in ['draft', 'pending'] and (tour['user_id'] == current_user_id or role == 'admin')
+                if can_edit:
                     if st.button("✏️ Edit", key=f"edit_{tour['id']}", use_container_width=True):
                         st.session_state.tour_action = "EDIT"
                         st.session_state.selected_tour_id = tour['id']
                         st.rerun()
                 else:
-                    st.button("✏️ Edit", key=f"edit_{tour['id']}", disabled=True, use_container_width=True, help="Cannot edit approved/rejected tours")
+                    st.button("✏️ Edit", key=f"edit_{tour['id']}", disabled=True, use_container_width=True, help="Cannot edit")
                 
-                # Can delete only if draft or pending
-                if tour['status'] in ['draft', 'pending']:
+                # Delete button (only if draft/pending and owner or admin)
+                can_delete = tour['status'] in ['draft', 'pending'] and (tour['user_id'] == current_user_id or role == 'admin')
+                if can_delete:
                     if st.button("🗑️ Delete", key=f"delete_{tour['id']}", use_container_width=True):
                         if st.session_state.get(f"confirm_delete_{tour['id']}"):
+                            from modules.dcr.tour_database import delete_tour_programme
                             delete_tour_programme(tour['id'])
                             st.success("Tour deleted!")
                             st.rerun()
@@ -167,8 +192,92 @@ def show_tour_list():
                             st.session_state[f"confirm_delete_{tour['id']}"] = True
                             st.warning("Click again to confirm")
                 else:
-                    st.button("🗑️ Delete", key=f"delete_{tour['id']}", disabled=True, use_container_width=True, help="Cannot delete approved/rejected tours")
+                    st.button("🗑️ Delete", key=f"delete_{tour['id']}", disabled=True, use_container_width=True, help="Cannot delete")
+                
+                # Admin: Approve/Reject buttons (only if pending)
+                if role == "admin" and tour['status'] == 'pending':
+                    st.write("---")
+                    if st.button("✅ Approve", key=f"approve_{tour['id']}", use_container_width=True, type="primary"):
+                        st.session_state.tour_action = "APPROVE"
+                        st.session_state.selected_tour_id = tour['id']
+                        st.rerun()
+                    
+                    if st.button("❌ Reject", key=f"reject_{tour['id']}", use_container_width=True):
+                        st.session_state.tour_action = "REJECT"
+                        st.session_state.selected_tour_id = tour['id']
+                        st.rerun()
 
+def show_approve_tour():
+    """Admin approves tour"""
+    st.write("### ✅ Approve Tour Programme")
+    
+    from modules.dcr.tour_database import approve_tour_programme, get_tour_by_id
+    
+    tour_id = st.session_state.selected_tour_id
+    tour = get_tour_by_id(tour_id)
+    
+    if not tour:
+        st.error("Tour not found")
+        return
+    
+    st.write(f"**Tour Date:** {tour['tour_date']}")
+    st.write(f"**Territories:** {', '.join([t['name'] for t in tour.get('territories', [])])}")
+    
+    comment = st.text_area("Approval Comment (Optional)", placeholder="Looks good!")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("✅ Confirm Approval", type="primary"):
+            approve_tour_programme(tour_id, get_current_user_id(), comment)
+            st.success("Tour approved!")
+            st.session_state.tour_action = None
+            st.session_state.selected_tour_id = None
+            st.rerun()
+    
+    with col2:
+        if st.button("❌ Cancel"):
+            st.session_state.tour_action = None
+            st.session_state.selected_tour_id = None
+            st.rerun()
+
+
+def show_reject_tour():
+    """Admin rejects tour"""
+    st.write("### ❌ Reject Tour Programme")
+    
+    from modules.dcr.tour_database import reject_tour_programme, get_tour_by_id
+    
+    tour_id = st.session_state.selected_tour_id
+    tour = get_tour_by_id(tour_id)
+    
+    if not tour:
+        st.error("Tour not found")
+        return
+    
+    st.write(f"**Tour Date:** {tour['tour_date']}")
+    st.write(f"**Territories:** {', '.join([t['name'] for t in tour.get('territories', [])])}")
+    
+    comment = st.text_area("Rejection Reason *", placeholder="Please revise...")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("❌ Confirm Rejection", type="primary"):
+            if not comment:
+                st.error("Please provide a reason")
+            else:
+                reject_tour_programme(tour_id, get_current_user_id(), comment)
+                st.success("Tour rejected!")
+                st.session_state.tour_action = None
+                st.session_state.selected_tour_id = None
+                st.rerun()
+    
+    with col2:
+        if st.button("Cancel"):
+            st.session_state.tour_action = None
+            st.session_state.selected_tour_id = None
+            st.rerun()
 
 def show_create_tour_form():
     """
