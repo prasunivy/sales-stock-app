@@ -109,9 +109,11 @@ def create_tour_programme(user_id, tour_date, territory_ids, worked_with_type, d
             "notes": notes,
             "status": status,
             "created_at": datetime.now().isoformat()
-        }).select(),
+        }),
         "Error creating tour programme"
     )
+    if not tour:
+        raise Exception("Failed to create tour programme")
     
     tour_id = tour[0]['id']
     
