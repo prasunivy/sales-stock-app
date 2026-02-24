@@ -206,6 +206,35 @@ def get_chemists_by_territories(territory_ids):
     
     return result
 
+def approve_tour_programme(tour_id, admin_user_id, comment):
+    """
+    Approve a tour programme (admin only)
+    """
+    safe_exec(
+        admin_supabase.table("tour_programmes").update({
+            "status": "approved",
+            "approved_by": admin_user_id,
+            "approved_at": datetime.now().isoformat(),
+            "approval_comment": comment
+        }).eq("id", tour_id),
+        "Error approving tour"
+    )
+
+
+def reject_tour_programme(tour_id, admin_user_id, comment):
+    """
+    Reject a tour programme (admin only)
+    """
+    safe_exec(
+        admin_supabase.table("tour_programmes").update({
+            "status": "rejected",
+            "approved_by": admin_user_id,
+            "approved_at": datetime.now().isoformat(),
+            "approval_comment": comment
+        }).eq("id", tour_id),
+        "Error rejecting tour"
+    )
+
 def get_all_tour_programmes_admin(status_filter=None, search=None):
     """Get ALL tour programmes (admin only)"""
     query = admin_supabase.table("tour_programmes").select("id, tour_date, territory_ids, worked_with_type, notes, status, approved_by, approved_at, approval_comment, created_at, user_id").is_("deleted_at", None)
