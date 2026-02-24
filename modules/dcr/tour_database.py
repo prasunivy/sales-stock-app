@@ -205,3 +205,48 @@ def get_chemists_by_territories(territory_ids):
     )
     
     return result
+
+def get_all_tour_programmes_admin(status_filter=None, search=None):
+    """Get ALL tour programmes (admin only)"""
+    query = admin_supabase.table("tour_programmes").select("id, tour_date, territory_ids, worked_with_type, notes, status, approved_by, approved_at, approval_comment, created_at, user_id").is_("deleted_at", None)
+    
+    if status_filter:
+        query = query.eq("status", status_filter)
+    
+    if search:
+        query = query.ilike("notes", f"%{search}%")
+    
+    tours = safe_exec(query.order("tour_date", desc=True), "Error loading tours")
+    
+    if not tours:
+        return []
+    
+    # Enrich (same as get_tour_programmes_list)
+    for tour in tours:
+        territory_ids = tour.get('territory_ids', [])
+        if isinstance(territory_ids, str):
+            territory_ids = json.loads(territory_ids)
+        
+        if territory_ids:
+            territories = safe_exec(
+                admin_supabase.table("territories").select("name").in_("id", territory_ids),
+                "Error loading territory names"
+            )
+            tour['territory_names'] = [t['name'] for t in territories]
+        else:
+            tour['territory_names'] = []
+        
+        doctor_count = safe_exec(
+            admin_supabase.table("tour_programme_doctors").select("id").eq("tour_programme_id", tour['id']),
+            "Error counting doctors"
+        )
+        tour['doctor_count'] = len(doctor_count)
+        
+        chemist_count = safe_exec(
+            admin_supabase.table("tour_programme_chemists").select("id").eq("tour_programme_id", tour['id']),
+            "Error counting chemists"
+        )
+        tour['chemist_count'] = len(chemist_count)
+        tour['approver_name'] = None
+    
+    return tours
