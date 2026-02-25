@@ -465,8 +465,12 @@ def show_stage_2_visits():
     # ========================================
     st.write("---")
     st.write("#### 🎁 Gifts (Optional)")
-    
+
+    # Always reload fresh from dcr_data
     existing_gifts = dcr_data.get('gifts', [])
+    existing_visits_fresh = dcr_data.get('doctor_visits', [])
+
+    # Show existing gifts
     if existing_gifts:
         st.write(f"**Added: {len(existing_gifts)} gift(s)**")
         for idx, gift in enumerate(existing_gifts):
@@ -475,55 +479,51 @@ def show_stage_2_visits():
                 if st.button(f"🗑️ Remove", key=f"remove_gift_{idx}"):
                     remove_gift(gift['id'])
                     st.rerun()
-    
-    # Add gift form
-    if existing_visits:
-        # Get doctors who already have gifts
-        doctors_with_gifts = [g['doctor_id'] for g in existing_gifts]
-        available_gift_doctors = [v['doctor_id'] for v in existing_visits if v['doctor_id'] not in doctors_with_gifts]
-        
-        if not available_gift_doctors:
-            st.info("✅ All visited doctors already have gifts recorded")
-        else:
-            with st.form("add_gift_form"):
-                st.write("**Add Gift**")
-                
-                # Add placeholder
-                gift_doctor_options = [None] + available_gift_doctors
-                
-                gift_doctor = st.selectbox(
-                    "Select Doctor *",
-                    options=gift_doctor_options,
-                    format_func=lambda x: "-- Select a doctor --" if x is None else next((v['doctor_name'] for v in existing_visits if v['doctor_id'] == x), "Unknown"),
-                    index=0
-                )
-                
-                gift_description = st.text_input(
-                    "Gift Description *",
-                    placeholder="e.g., Medical Books, Calendar, Pen Set",
-                    help="Enter what gift was given"
-                )
-                
-                gift_amount = st.number_input(
-                    "Gift Amount (₹) *",
-                    min_value=0.0,
-                    step=10.0,
-                    help="Enter the value of the gift"
-                )
-                
-                submit_gift = st.form_submit_button("➕ Add Gift")
-                
-                if submit_gift:
-                    if gift_doctor is None:
-                        st.error("❌ Please select a doctor")
-                    elif not gift_description or not gift_description.strip():
-                        st.error("❌ Please enter gift description")
-                    elif gift_amount <= 0:
-                        st.error("❌ Gift amount must be greater than zero")
-                    else:
-                        save_gift(dcr_id, gift_doctor, gift_description, gift_amount)
-                        st.success("✅ Gift added!")
-                        st.rerun()
+
+    # Add gift form — show if ANY doctor visits exist
+    if not existing_visits_fresh:
+        st.info("ℹ️ Add doctor visits above first to record gifts")
+    else:
+        # Allow gifts for ANY visited doctor (allow multiple gifts per doctor)
+        with st.form("add_gift_form"):
+            st.write("**Add Gift**")
+
+            # All visited doctors available (allow multiple gifts per same doctor)
+            gift_doctor_options = [None] + [v['doctor_id'] for v in existing_visits_fresh]
+
+            gift_doctor = st.selectbox(
+                "Select Doctor *",
+                options=gift_doctor_options,
+                format_func=lambda x: "-- Select a doctor --" if x is None else next(
+                    (v['doctor_name'] for v in existing_visits_fresh if v['doctor_id'] == x), "Unknown"
+                ),
+                index=0
+            )
+
+            gift_description = st.text_input(
+                "Gift Description *",
+                placeholder="e.g., Medical Books, Calendar, Pen Set"
+            )
+
+            gift_amount = st.number_input(
+                "Gift Amount (₹) *",
+                min_value=0.0,
+                step=10.0
+            )
+
+            submit_gift = st.form_submit_button("➕ Add Gift")
+
+            if submit_gift:
+                if gift_doctor is None:
+                    st.error("❌ Please select a doctor")
+                elif not gift_description or not gift_description.strip():
+                    st.error("❌ Please enter gift description")
+                elif gift_amount <= 0:
+                    st.error("❌ Gift amount must be greater than zero")
+                else:
+                    save_gift(dcr_id, gift_doctor, gift_description, gift_amount)
+                    st.success("✅ Gift added!")
+                    st.rerun()
     
     # Navigation
     st.write("---")
