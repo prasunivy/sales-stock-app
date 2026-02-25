@@ -33,22 +33,18 @@ from modules.dcr.dcr_helpers import (
 )
 from modules.dcr.doctors_master import run_doctors_master
 from modules.dcr.chemists_master import run_chemists_master
-from modules.dcr.tour_programme import run_tour_programme 
+from modules.dcr.doctor_io_main import run_doctor_io
 
 
 def run_dcr():
     """Main entry point for DCR module"""
     init_dcr_session_state()
     
-    # Safety check: If no active workflow, reset to home
-    has_active_dcr = (
-        st.session_state.get("dcr_report_id") or 
-        st.session_state.get("dcr_masters_mode") or
-        st.session_state.get("dcr_submit_done")
-    )
-    
-    if not has_active_dcr:
-        # No active DCR workflow - show home screen
+    # If coming from sidebar fresh (no masters mode, no step, no report_id)
+    # Reset to home screen
+    if (not st.session_state.get("dcr_masters_mode") 
+        and not st.session_state.get("dcr_report_id")
+        and not st.session_state.get("dcr_submit_done")):
         st.session_state.dcr_current_step = 0
     
     st.title("📞 Daily Call Report")
@@ -68,11 +64,10 @@ def run_dcr():
     if st.session_state.get("dcr_masters_mode") == "CHEMISTS":
         run_chemists_master()
         return
-
-    if st.session_state.get("dcr_masters_mode") == "TOUR":
-        run_tour_programme()
-        return
     
+    if st.session_state.get("dcr_masters_mode") == "DOCTOR_IO":
+        run_doctor_io()
+        return
     
     # Route based on state
     if st.session_state.get("dcr_submit_done"):
@@ -82,6 +77,7 @@ def run_dcr():
     else:
         show_home_screen()
 
+
 def show_home_screen():
     """Home screen with DCR options and Masters"""
     st.write("### What would you like to do?")
@@ -90,26 +86,13 @@ def show_home_screen():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("➕ New Daily Report", type="primary", use_container_width=True, key="btn_new_dcr"):
-            # Clear any existing DCR state
+        if st.button("➕ New Daily Report", type="primary", use_container_width=True):
             st.session_state.dcr_current_step = 1
-            st.session_state.dcr_report_id = None
-            st.session_state.dcr_submit_done = False
-            st.session_state.dcr_home_action = None
             st.rerun()
     
     with col2:
-        if st.button("📅 View My Reports", use_container_width=True, key="btn_view_reports"):
-            st.session_state.dcr_home_action = "HISTORY"
-            st.rerun()
-    
-    # Tour Programme
-    st.write("---")
-    st.write("### 📅 Tour Planning")
-    
-    if st.button("📅 Tour Programme", use_container_width=True, key="btn_tour_programme"):
-        st.session_state.dcr_masters_mode = "TOUR"
-        st.rerun()
+        if st.button("📅 View My Reports", use_container_width=True):
+            show_monthly_history()
     
     # Masters Section
     st.write("---")
@@ -118,19 +101,29 @@ def show_home_screen():
     col3, col4 = st.columns(2)
     
     with col3:
-        if st.button("👨‍⚕️ Doctors Master", use_container_width=True, key="btn_doctors_master"):
+        if st.button("👨‍⚕️ Doctors Master", use_container_width=True):
             st.session_state.dcr_masters_mode = "DOCTORS"
             st.rerun()
     
     with col4:
-        if st.button("🏪 Chemists Master", use_container_width=True, key="btn_chemists_master"):
+        if st.button("🏪 Chemists Master", use_container_width=True):
             st.session_state.dcr_masters_mode = "CHEMISTS"
             st.rerun()
-    
-    # Handle history view if requested
-    if st.session_state.get("dcr_home_action") == "HISTORY":
-        st.write("---")
-        show_monthly_history()
+
+    # Doctor Input / Output section
+    st.write("---")
+    st.write("### 💊 Doctor Tracking")
+    col5, col6 = st.columns(2)
+
+    with col5:
+        if st.button("📊 Doctor Input / Output", use_container_width=True, type="primary"):
+            st.session_state.dcr_masters_mode = "DOCTOR_IO"
+            st.session_state.io_mode = "HOME"
+            st.rerun()
+
+    with col6:
+        st.write("")   # placeholder for future buttons
+
 
 
 def show_monthly_history():
