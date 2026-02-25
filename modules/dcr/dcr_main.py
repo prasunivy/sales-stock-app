@@ -41,10 +41,11 @@ def run_dcr():
     init_dcr_session_state()
     
     # If coming from sidebar fresh (no masters mode, no step, no report_id)
-    # Reset to home screen
+    # Reset to home screen - only reset if step is already 0, never override an active step
     if (not st.session_state.get("dcr_masters_mode") 
         and not st.session_state.get("dcr_report_id")
-        and not st.session_state.get("dcr_submit_done")):
+        and not st.session_state.get("dcr_submit_done")
+        and st.session_state.get("dcr_current_step", 0) == 0):
         st.session_state.dcr_current_step = 0
     
     st.title("📞 Daily Call Report")
