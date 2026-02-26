@@ -448,7 +448,7 @@ def _step_review(user_id, role):
     # Doc header
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.write(f"**Doc No:** {doc['doc_no']}")
+        st.write(f"**Doc No:** {doc['pob_no']}")
         st.write(f"**Date:** {doc['doc_date']}")
     with c2:
         st.write(f"**Party:** {doc['party_name']}")
@@ -522,7 +522,7 @@ def _step_done():
         return
 
     label = DOC_LABELS.get(doc["doc_type"], "Document")
-    st.success(f"✅ {label} **{doc['doc_no']}** submitted! Status: 🕐 Pending")
+    st.success(f"✅ {label} **{doc['pob_no']}** submitted! Status: 🕐 Pending")
     st.write(f"Party: **{doc['party_name']}** | Date: **{doc['doc_date']}**")
 
     total = sum(float(l["net_rate"]) for l in lines)
@@ -538,7 +538,7 @@ def _step_done():
         pdf_bytes = pob_generate_pdf(doc, lines)
         if pdf_bytes:
             st.download_button("📄 PDF", data=pdf_bytes,
-                               file_name=f"{doc['doc_no']}.pdf",
+                               file_name=f"{doc['pob_no']}.pdf",
                                mime="application/pdf",
                                use_container_width=True)
         else:
@@ -596,7 +596,7 @@ def _archive(user_id, role):
             username = (doc.get("users") or {}).get("username", "—")
 
             with st.expander(
-                f"{icon} {doc['doc_no']}  |  {doc['party_name']}  |  "
+                f"{icon} {doc['pob_no']}  |  {doc['party_name']}  |  "
                 f"{doc['doc_date']}  |  by {username}"
             ):
                 d1, d2, d3 = st.columns([2, 2, 2])
@@ -655,10 +655,10 @@ def _view_doc(user_id, role):
     label = DOC_LABELS.get(doc["doc_type"], "Document")
     icon  = STATUS_ICON.get(doc["status"], "❓")
 
-    st.write(f"### {label} — {doc['doc_no']}")
+    st.write(f"### {label} — {doc['pob_no']}")
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.write(f"**Doc No:** {doc['doc_no']}")
+        st.write(f"**Doc No:** {doc['pob_no']}")
         st.write(f"**Date:** {doc['doc_date']}")
     with c2:
         st.write(f"**Party:** {doc['party_name']}")
@@ -702,7 +702,7 @@ def _view_doc(user_id, role):
         pdf_bytes = pob_generate_pdf(doc, lines)
         if pdf_bytes:
             st.download_button("📄 PDF", data=pdf_bytes,
-                               file_name=f"{doc['doc_no']}.pdf",
+                               file_name=f"{doc['pob_no']}.pdf",
                                mime="application/pdf",
                                use_container_width=True)
     with e3:
