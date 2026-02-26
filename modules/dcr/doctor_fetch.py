@@ -196,19 +196,93 @@ def show_doctor_update_form():
     # New location form (if under 3)
     if len(existing_locations) < 3:
         st.write(f"**Add New Location ({len(existing_locations)}/3 saved)**")
-        
+
         new_loc_name = st.text_input("Location Name", placeholder="e.g., City Hospital Main Gate")
-        
+
+        # ── Read GPS coords from query params if already fetched ──────────
+        import streamlit.components.v1 as components
+
+        params = st.query_params
+        fetched_lat  = float(params["lat"])  if "lat"  in params else 0.0
+        fetched_long = float(params["long"]) if "long" in params else 0.0
+
+        # GPS button — on success rewrites URL with ?lat=...&long=... and reloads
+        gps_status = ""
+        if fetched_lat != 0.0 or fetched_long != 0.0:
+            gps_status = f"✅ Location fetched automatically!"
+
+        components.html(f"""
+            <style>
+                #gps-btn {{
+                    background-color: #1a6b5a;
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    font-size: 16px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    width: 100%;
+                }}
+                #gps-btn:hover {{ background-color: #145249; }}
+                #gps-btn:disabled {{ background-color: #888; cursor: not-allowed; }}
+                #gps-status {{ font-size: 14px; margin-top: 10px; color: #333; }}
+            </style>
+
+            <button id="gps-btn" onclick="fetchGPS()">📍 Fetch My Current Location</button>
+            <div id="gps-status">{gps_status}</div>
+
+            <script>
+            function fetchGPS() {{
+                var btn    = document.getElementById('gps-btn');
+                var status = document.getElementById('gps-status');
+
+                btn.disabled  = true;
+                btn.innerText = '⏳ Fetching GPS...';
+                status.innerText = '';
+
+                if (!navigator.geolocation) {{
+                    status.innerText = '❌ GPS not supported on this browser.';
+                    btn.disabled  = false;
+                    btn.innerText = '📍 Fetch My Current Location';
+                    return;
+                }}
+
+                navigator.geolocation.getCurrentPosition(
+                    function(pos) {{
+                        var lat  = pos.coords.latitude.toFixed(8);
+                        var lon  = pos.coords.longitude.toFixed(8);
+                        // Write coords into the URL and reload — Streamlit picks them up
+                        var url  = window.parent.location.href.split('?')[0];
+                        window.parent.location.href = url + '?lat=' + lat + '&long=' + lon;
+                    }},
+                    function(err) {{
+                        var msgs = {{
+                            1: '❌ Permission denied. Please allow location access in your browser/phone settings.',
+                            2: '❌ GPS signal unavailable. Try again outdoors.',
+                            3: '❌ Timed out. Please try again.'
+                        }};
+                        status.innerText = msgs[err.code] || '❌ Unknown GPS error.';
+                        btn.disabled  = false;
+                        btn.innerText = '📍 Fetch My Current Location';
+                    }},
+                    {{ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }}
+                );
+            }}
+            </script>
+        """, height=100)
+
+        # Show fetched coordinates (autofilled — user just needs to click Save)
+        if fetched_lat != 0.0 or fetched_long != 0.0:
+            st.success(f"📍 Location autofilled — Lat: {fetched_lat}, Long: {fetched_long}")
+
         col1, col2 = st.columns(2)
         with col1:
-            new_lat = st.number_input("Latitude", format="%.8f", value=0.0)
+            new_lat  = st.number_input("Latitude",  format="%.8f", value=fetched_lat)
         with col2:
-            new_long = st.number_input("Longitude", format="%.8f", value=0.0)
-        
-        st.warning("📱 To fetch your current location, please enable GPS/Location services on your phone")
-        
-        if st.button("📍 Fetch My Current Location"):
-            st.info("🚧 GPS fetch feature coming soon. For now, please enter coordinates manually.")
+            new_long = st.number_input("Longitude", format="%.8f", value=fetched_long)
+
+        # Clear GPS params from URL after user saves (done after save button click below)
+    
     
     st.write("---")
     
@@ -280,6 +354,9 @@ def show_doctor_update_form():
             )
         
         st.success("✅ Doctor details updated successfully!")
+        
+        # Clear GPS params from URL
+        st.query_params.clear()
         
         # Clear state
         del st.session_state.doctor_fetch_territory
@@ -480,6 +557,35 @@ def show_doctor_360_profile():
     )
     
     # ========================================
+    # LOAD INPUT / OUTPUT DATA FOR THIS DOCTOR
+    # ========================================
+    io_admin_input = safe_exec(
+        admin_supabase.table("admin_input")
+        .select("month, year, gift_amount, remarks, date")
+        .eq("doctor_id", doctor_id)
+        .order("year", desc=True)
+        .order("month", desc=True),
+        "Error loading input data"
+    )
+
+    io_dcr_gifts = safe_exec(
+        admin_supabase.table("dcr_gifts")
+        .select("gift_amount, dcr_report_id, dcr_reports(report_date, month, year)")
+        .eq("doctor_id", doctor_id)
+        .order("created_at", desc=True),
+        "Error loading DCR gifts"
+    )
+
+    io_output = safe_exec(
+        admin_supabase.table("input_output")
+        .select("month, year, sales_amount, remarks")
+        .eq("doctor_id", doctor_id)
+        .order("year", desc=True)
+        .order("month", desc=True),
+        "Error loading output data"
+    )
+
+    # ========================================
     # DISPLAY PROFILE
     # ========================================
     
@@ -646,6 +752,82 @@ def show_doctor_360_profile():
                 st.write("")
         else:
             st.info("No remarks recorded yet")
+
+    # ========================================
+    # SECTION 8: INPUT / OUTPUT REPORT
+    # ========================================
+    with st.expander("💊 INPUT / OUTPUT REPORT", expanded=False):
+        import pandas as pd
+
+        MONTHS = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
+                  7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+
+        # Build a combined dict keyed by (year, month)
+        io_map = {}
+
+        # Add admin_input gifts
+        for r in io_admin_input:
+            key = (r["year"], r["month"])
+            if key not in io_map:
+                io_map[key] = {"input_direct": 0.0, "input_dcr": 0.0, "output": 0.0}
+            io_map[key]["input_direct"] += float(r.get("gift_amount", 0))
+
+        # Add DCR gifts
+        for g in io_dcr_gifts:
+            dcr = g.get("dcr_reports") or {}
+            yr  = dcr.get("year")
+            mo  = dcr.get("month")
+            if yr and mo:
+                key = (yr, mo)
+                if key not in io_map:
+                    io_map[key] = {"input_direct": 0.0, "input_dcr": 0.0, "output": 0.0}
+                io_map[key]["input_dcr"] += float(g.get("gift_amount", 0))
+
+        # Add output
+        for r in io_output:
+            key = (r["year"], r["month"])
+            if key not in io_map:
+                io_map[key] = {"input_direct": 0.0, "input_dcr": 0.0, "output": 0.0}
+            io_map[key]["output"] += float(r.get("sales_amount", 0))
+
+        if not io_map:
+            st.info("No input / output data recorded for this doctor yet.")
+        else:
+            # Sort by year desc, month desc
+            sorted_keys = sorted(io_map.keys(), reverse=True)
+
+            # Build table rows
+            rows = []
+            for (yr, mo) in sorted_keys:
+                cell = io_map[(yr, mo)]
+                total_input = cell["input_direct"] + cell["input_dcr"]
+                rows.append({
+                    "Month":        f"{MONTHS[mo]} {yr}",
+                    "Direct Input (₹)": f"₹{cell['input_direct']:,.2f}",
+                    "DCR Gift (₹)":     f"₹{cell['input_dcr']:,.2f}",
+                    "Total Input (₹)":  f"₹{total_input:,.2f}",
+                    "Output (₹)":       f"₹{cell['output']:,.2f}",
+                })
+
+            df = pd.DataFrame(rows)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+            # Summary metrics
+            st.write("---")
+            all_direct  = sum(v["input_direct"] for v in io_map.values())
+            all_dcr     = sum(v["input_dcr"]    for v in io_map.values())
+            all_input   = all_direct + all_dcr
+            all_output  = sum(v["output"]        for v in io_map.values())
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Input (All Time)", f"₹{all_input:,.0f}")
+            with col2:
+                st.metric("Total Output (All Time)", f"₹{all_output:,.0f}")
+            with col3:
+                ratio = (all_output / all_input * 100) if all_input > 0 else 0
+                st.metric("Output / Input Ratio", f"{ratio:.1f}%")
+
 
 def calculate_days_to_next_occurrence(event_date):
     """
