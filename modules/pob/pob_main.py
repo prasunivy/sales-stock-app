@@ -160,7 +160,7 @@ def _step_party(user_id):
             key="pob_chemist_sel"
         )
         name  = next(c["name"] for c in chemists if c["id"] == sel)
-        ptype_val = "chemist"
+        ptype_val = "CHEMIST"
     else:
         if not stockists:
             st.warning("No stockists linked to your account.")
@@ -172,7 +172,7 @@ def _step_party(user_id):
             key="pob_stockist_sel"
         )
         name  = next(s["name"] for s in stockists if s["id"] == sel)
-        ptype_val = "stockist"
+        ptype_val = "STOCKIST"
 
     col1, col2 = st.columns(2)
     with col1:
