@@ -1,18 +1,21 @@
 import streamlit as st
+import sys
+import os
 
 from modules.statement.statement_main import run_statement
 from modules.ops.ops_main import run_ops
 from modules.dcr.dcr_main import run_dcr
 from modules.dcr.doctor_fetch import run_doctor_fetch
 
-# Try to import POB and catch any error so we can see it
+# Debug POB import
 try:
     from modules.pob.pob_main import run_pob
     POB_AVAILABLE = True
     POB_ERROR = None
 except Exception as e:
+    import traceback
     POB_AVAILABLE = False
-    POB_ERROR = str(e)
+    POB_ERROR = traceback.format_exc()
 
 
 def route_module():
@@ -34,15 +37,13 @@ def route_module():
         st.session_state.active_module = "DOCTOR_FETCH"
         st.rerun()
 
-    # Show POB button or error
     if POB_AVAILABLE:
         if st.sidebar.button("📋 POB / Statement / Cr Nt"):
             st.session_state.active_module = "POB"
             st.rerun()
     else:
-        st.sidebar.error(f"POB Error: {POB_ERROR}")
+        st.sidebar.error("POB failed - see main area")
 
-    # Route
     active = st.session_state.get("active_module")
 
     if active == "STATEMENT":
@@ -57,7 +58,21 @@ def route_module():
         if POB_AVAILABLE:
             run_pob()
         else:
-            st.error(f"POB module failed to load: {POB_ERROR}")
+            st.error("POB failed to load")
+            st.code(POB_ERROR)
     else:
         st.title("🏠 Home")
         st.write("👈 Click a module from the sidebar")
+
+        # Debug info always visible on home screen
+        if not POB_AVAILABLE:
+            st.error("⚠️ POB Import Failed")
+            st.code(POB_ERROR)
+            st.write("**Python path:**")
+            st.write(sys.path)
+            st.write("**modules/pob exists:**", os.path.exists("modules/pob"))
+            st.write("**modules/pob files:**")
+            if os.path.exists("modules/pob"):
+                st.write(os.listdir("modules/pob"))
+            else:
+                st.write("FOLDER NOT FOUND")
