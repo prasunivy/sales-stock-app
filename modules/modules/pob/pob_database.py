@@ -159,7 +159,7 @@ def pob_calculate_line(sale_qty, free_qty, mrp_incl_tax, tax_rate, discount) -> 
 # ─────────────────────────────────────────────────────────────
 
 def pob_create_document(doc_type, doc_date, party_type, party_id,
-                        party_name, user_id) -> str | None:
+                        party_name, user_id) -> str:
     """Create header row. Returns new document id or None."""
     doc_no = pob_generate_doc_no(doc_type)
     rows = _exec(
@@ -179,7 +179,7 @@ def pob_create_document(doc_type, doc_date, party_type, party_id,
     return rows[0]["id"] if rows else None
 
 
-def pob_load_document(doc_id) -> dict | None:
+def pob_load_document(doc_id) -> dict:
     try:
         resp = admin_supabase.table("pob_documents") \
             .select("*") \
@@ -351,7 +351,7 @@ def pob_format_whatsapp(doc: dict, lines: list) -> str:
             f"*Total: ₹{total:.2f}*")
 
 
-def pob_generate_pdf(doc: dict, lines: list) -> bytes | None:
+def pob_generate_pdf(doc: dict, lines: list) -> bytes:
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib import colors
