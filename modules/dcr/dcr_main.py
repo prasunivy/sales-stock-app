@@ -41,10 +41,11 @@ def run_dcr():
     init_dcr_session_state()
     
     # Always show home screen on fresh entry
-    # Only skip home if user is actively mid-flow (has a report_id or submit_done)
+    # Only skip home if user is actively mid-flow
     if (not st.session_state.get("dcr_masters_mode")
         and not st.session_state.get("dcr_report_id")
-        and not st.session_state.get("dcr_submit_done")):
+        and not st.session_state.get("dcr_submit_done")
+        and not st.session_state.get("dcr_new_report")):
         st.session_state.dcr_current_step = 0
     
     st.title("📞 Daily Call Report")
@@ -88,6 +89,7 @@ def show_home_screen():
     with col1:
         if st.button("➕ New Daily Report", type="primary", use_container_width=True):
             st.session_state.dcr_current_step = 1
+            st.session_state.dcr_new_report = True
             st.rerun()
     
     with col2:
@@ -295,6 +297,7 @@ def show_stage_1_header():
                         created_by=current_user_id
                     )
                     st.session_state.dcr_report_id = dcr_id
+                    st.session_state.dcr_new_report = False
                 else:
                     save_dcr_header(
                         dcr_id=st.session_state.dcr_report_id,
@@ -323,6 +326,7 @@ def show_stage_1_header():
             # Clear ALL DCR state
             st.session_state.dcr_current_step = 0
             st.session_state.dcr_report_id = None
+            st.session_state.dcr_new_report = False
             st.session_state.engine_stage = None  
             st.session_state.active_module = None
             st.rerun()
@@ -774,5 +778,6 @@ def show_post_submit_screen():
         st.session_state.dcr_report_id = None
         st.session_state.dcr_submit_done = False
         st.session_state.dcr_current_step = 0
+        st.session_state.dcr_new_report = False
         st.session_state.active_module = None
         st.rerun()
