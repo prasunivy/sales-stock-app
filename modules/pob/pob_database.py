@@ -100,14 +100,14 @@ def pob_generate_doc_no(doc_type: str) -> str:
     """
     try:
         resp = admin_supabase.table("pob_number_sequences") \
-            .select("last_no") \
+            .select("last_number") \
             .eq("doc_type", doc_type) \
             .single() \
             .execute()
-        current = resp.data["last_no"]
+        current = resp.data["last_number"]
         next_no = current + 1
         admin_supabase.table("pob_number_sequences") \
-            .update({"last_no": next_no}) \
+            .update({"last_number": next_no}) \
             .eq("doc_type", doc_type) \
             .execute()
         prefix = _PREFIX.get(doc_type, doc_type)
@@ -164,7 +164,7 @@ def pob_create_document(doc_type, doc_date, party_type, party_id,
     doc_no = pob_generate_doc_no(doc_type)
     rows = _exec(
         admin_supabase.table("pob_documents").insert({
-            "doc_no":     doc_no,
+            "pob_no":     doc_no,
             "doc_type":   doc_type,
             "doc_date":   str(doc_date),
             "party_type": party_type,
@@ -194,7 +194,6 @@ def pob_load_document(doc_id) -> dict:
 def pob_submit_document(doc_id) -> bool:
     rows = _exec(
         admin_supabase.table("pob_documents").update({
-            "submitted_at": datetime.now().isoformat(),
             "updated_at":   datetime.now().isoformat(),
         }).eq("id", str(doc_id)),
         "Error submitting document"
@@ -342,7 +341,7 @@ def pob_format_whatsapp(doc: dict, lines: list) -> str:
                   f"   Qty: {ln['sale_qty']} + {ln['free_qty']} free\n"
                   f"   Net: ₹{float(ln['net_rate']):.2f}\n")
         total += float(ln["net_rate"])
-    return (f"*{label} — {doc['doc_no']}*\n"
+    return (f"*{label} — {doc['pob_no']}*\n"
             f"Date: {doc['doc_date']}\n"
             f"Party: {doc['party_name']}\n"
             f"{'─'*28}"
@@ -376,7 +375,7 @@ def pob_generate_pdf(doc: dict, lines: list) -> bytes:
         story.append(Spacer(1, 4*mm))
 
         hdr = [
-            ["Doc No:", doc["doc_no"],    "Date:",   str(doc["doc_date"])],
+            ["Doc No:", doc["pob_no"],    "Date:",   str(doc["doc_date"])],
             ["Party:",  doc["party_name"], "Type:",  doc["party_type"].capitalize()],
             ["Status:", doc["status"].upper(), "", ""],
         ]
