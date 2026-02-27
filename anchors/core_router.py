@@ -1,3 +1,33 @@
+def _render_mobile_nav():
+    """
+    Renders a mobile-friendly bottom navigation bar using Streamlit columns.
+    Only shown on mobile via CSS — hidden on desktop.
+    """
+    import streamlit as st
+    st.markdown('<div class="ivy-mobile-nav-container">', unsafe_allow_html=True)
+    cols = st.columns(8)
+    nav_items = [
+        ("📦", "Statement", "STATEMENT"),
+        ("📥", "OPS",       "OPS"),
+        ("📞", "DCR",       "DCR"),
+        ("🔍", "Doctor",    "DOCTOR_FETCH"),
+        ("📊", "Doc I/O",   "DOCTOR_IO"),
+        ("🗓️", "Tour",      "TOUR"),
+        ("📋", "POB",       "POB"),
+        ("📈", "Reports",   "REPORTS"),
+    ]
+    for i, (icon, label, module) in enumerate(nav_items):
+        with cols[i]:
+            if st.button(f"{icon}\n{label}", key=f"mobile_nav_{module}"):
+                st.session_state.active_module = module
+                for k in ["statement_id", "product_index", "statement_year",
+                          "statement_month", "selected_stockist_id", "engine_stage"]:
+                    if module not in ("STATEMENT", "ADMIN"):
+                        st.session_state[k] = None
+                st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 import streamlit as st
 
 
@@ -144,6 +174,10 @@ def route_module():
 
     else:
         _show_home()
+
+    # Mobile bottom nav — shown via CSS only on mobile screens
+    if st.session_state.get("auth_user"):
+        _render_mobile_nav()
 
 
 def _set_module(name):
