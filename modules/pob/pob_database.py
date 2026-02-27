@@ -103,15 +103,20 @@ _PREFIX = {"POB": "POB", "STATEMENT": "STM", "CREDIT_NOTE": "CRN"}
 def pob_generate_doc_no(doc_type: str) -> str:
     """
     Reads pob_number_sequences, increments by 1, returns formatted number.
-    e.g.  POB-0001, STM-0003, CRN-0011
+    e.g.  POB-0001, STM-0003, CRN-0001
     """
     try:
-        resp = admin_supabase.table("pob_number_sequences") \
-            .select("last_number") \
-            .eq("doc_type", doc_type) \
-            .single() \
-            .execute()
-        current = resp.data["last_number"]
+        rows = _exec(
+            admin_supabase.table("pob_number_sequences")
+            .select("last_number")
+            .eq("doc_type", doc_type),
+            "Error reading sequence"
+        )
+        if not rows:
+            st.error(f"No sequence row found for doc_type: {doc_type}. Check pob_number_sequences table.")
+            import time
+            return f"{doc_type}-{int(time.time())}"
+        current = rows[0]["last_number"]
         next_no = current + 1
         admin_supabase.table("pob_number_sequences") \
             .update({"last_number": next_no}) \
