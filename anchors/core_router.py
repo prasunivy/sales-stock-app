@@ -1,107 +1,110 @@
 import streamlit as st
+from datetime import datetime
 
 
 def route_module():
     """
-    Build the sidebar navigation and route to the active module.
-    Also handles ?nav= URL parameter from mobile bottom nav bar.
+    Top navigation bar — works on mobile and desktop.
+    Replaces the sidebar completely.
     """
-    # Handle mobile nav URL parameter
-    params = st.query_params
-    if "nav" in params:
-        nav_val = params["nav"]
-        if nav_val != st.session_state.get("active_module"):
-            st.session_state.active_module = nav_val
-            st.query_params.clear()
-            st.rerun()
-
     role = st.session_state.get("role", "user")
     user = st.session_state.get("auth_user")
 
-    # ── Sidebar header ────────────────────────────────────────────
-    st.sidebar.title("📂 Ivy Pharmaceuticals")
+    # ── Get username ──────────────────────────────────────────────
+    username = ""
     if user:
-        from anchors.supabase_client import admin_supabase, safe_exec
         try:
+            from anchors.supabase_client import admin_supabase, safe_exec
             profile = safe_exec(
                 admin_supabase.table("users")
                 .select("username, designation")
                 .eq("id", user.id)
-                .limit(1),
-                ""
+                .limit(1), ""
             )
             if profile:
-                st.sidebar.caption(
-                    f"👤 {profile[0]['username']}  |  {profile[0].get('designation','')}"
-                )
+                username = profile[0].get("username", "")
         except Exception:
             pass
 
-    st.sidebar.divider()
+    # ── Top header bar ────────────────────────────────────────────
+    st.markdown(f"""
+    <div class="ivy-topnav">
+        <div class="ivy-topnav-header">
+            <div class="app-title">🌿 Ivy Pharmaceuticals</div>
+            <div class="user-info">👤 {username} &nbsp;|&nbsp; {role.upper()}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # ── Navigation buttons ────────────────────────────────────────
-    st.sidebar.subheader("📋 Modules")
+    # ── Navigation buttons row ────────────────────────────────────
+    st.markdown('<div class="ivy-topnav-buttons">', unsafe_allow_html=True)
 
-    # Statement (available to all, but sidebar logic differs by role)
-    if st.sidebar.button("📦 Sales & Stock Statement", key="nav_statement"):
-        _set_module("STATEMENT")
+    nav_items = [
+        ("📦 Statement",   "STATEMENT"),
+        ("📥 OPS",          "OPS"),
+        ("📞 DCR",          "DCR"),
+        ("🔍 Doctor Fetch", "DOCTOR_FETCH"),
+        ("📊 Doc I/O",      "DOCTOR_IO"),
+        ("🗓️ Tour",         "TOUR"),
+        ("📋 POB",          "POB"),
+        ("📈 Reports",      "REPORTS"),
+    ]
 
-    # OPS
-    if st.sidebar.button("📥 Orders / Purchase / Sales / Payment", key="nav_ops"):
-        _set_module("OPS")
+    # Admin extra items
+    admin_items = [
+        ("📄 Statements",        "Statements"),
+        ("👤 Users",             "Users"),
+        ("➕ Create User",       "Create User"),
+        ("🏪 Stockists",         "Stockists"),
+        ("📦 Products",          "Products"),
+        ("📍 Territories",       "Territories"),
+        ("🔐 Reset Password",    "Reset User Password"),
+        ("📜 Audit Logs",        "Audit Logs"),
+        ("🔒 Lock/Unlock",       "Lock / Unlock Statements"),
+        ("📈 Analytics",         "Analytics"),
+    ]
 
-    # DCR
-    if st.sidebar.button("📞 Daily Call Report", key="nav_dcr"):
-        _set_module("DCR")
+    # Render module buttons in one scrollable row
+    cols = st.columns(len(nav_items) + (1 if role == "admin" else 0) + 1)
 
-    # Doctor Fetch
-    if st.sidebar.button("🔍 Doctor Fetch", key="nav_doctor_fetch"):
-        _set_module("DOCTOR_FETCH")
+    for i, (label, module) in enumerate(nav_items):
+        with cols[i]:
+            if st.button(label, key=f"nav_{module}"):
+                _set_module(module)
 
-    # Doctor I/O
-    if st.sidebar.button("📊 Doctor Input / Output", key="nav_doctor_io"):
-        _set_module("DOCTOR_IO")
-
-    # Tour Programme
-    if st.sidebar.button("🗓️ Tour Programme", key="nav_tour"):
-        _set_module("TOUR")
-
-    # POB
-    if st.sidebar.button("📋 POB / Statement / Cr Nt", key="nav_pob"):
-        _set_module("POB")
-
-    # Reports (admin + managers)
-    if role == "admin" or True:  # visible to all, data filtered by role inside
-        if st.sidebar.button("📊 Reports & Analytics", key="nav_reports"):
-            _set_module("REPORTS")
-
-    # Admin-only section
+    # Admin dropdown
     if role == "admin":
-        st.sidebar.divider()
-        st.sidebar.subheader("🔧 Admin")
-
-        admin_items = {
-            "nav_admin_statements": ("📄 Statements", "Statements"),
-            "nav_admin_users":      ("👤 Users",      "Users"),
-            "nav_admin_create_user":("➕ Create User", "Create User"),
-            "nav_admin_stockists":  ("🏪 Stockists",  "Stockists"),
-            "nav_admin_products":   ("📦 Products",   "Products"),
-            "nav_admin_territories":("📍 Territories","Territories"),
-            "nav_admin_reset_pwd":  ("🔐 Reset Password", "Reset User Password"),
-            "nav_admin_audit":      ("📜 Audit Logs", "Audit Logs"),
-            "nav_admin_lock":       ("🔒 Lock/Unlock Statements", "Lock / Unlock Statements"),
-            "nav_admin_analytics":  ("📈 Analytics",  "Analytics"),
-        }
-
-        for key, (label, section) in admin_items.items():
-            if st.sidebar.button(label, key=key):
-                st.session_state.active_module = "ADMIN"
-                st.session_state.admin_section = section
-                # Clear statement engine when switching to admin panel
-                for k in ["statement_id", "product_index", "statement_year",
-                           "statement_month", "selected_stockist_id", "engine_stage"]:
-                    st.session_state[k] = None
+        with cols[len(nav_items)]:
+            if st.button("🔧 Admin", key="nav_admin_toggle"):
+                current = st.session_state.get("show_admin_menu", False)
+                st.session_state.show_admin_menu = not current
                 st.rerun()
+
+    # Logout button — last column
+    with cols[-1]:
+        st.markdown('<div class="ivy-topnav-logout">', unsafe_allow_html=True)
+        if st.button("🚪 Logout", key="logout_btn"):
+            _do_logout()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Admin submenu ─────────────────────────────────────────────
+    if role == "admin" and st.session_state.get("show_admin_menu"):
+        with st.expander("🔧 Admin Panel — Select Section", expanded=True):
+            a_cols = st.columns(5)
+            for i, (label, section) in enumerate(admin_items):
+                with a_cols[i % 5]:
+                    if st.button(label, key=f"admin_sec_{section}"):
+                        st.session_state.active_module = "ADMIN"
+                        st.session_state.admin_section = section
+                        st.session_state.show_admin_menu = False
+                        for k in ["statement_id", "product_index", "statement_year",
+                                  "statement_month", "selected_stockist_id", "engine_stage"]:
+                            st.session_state[k] = None
+                        st.rerun()
+
+    st.divider()
 
     # ── Route to module ───────────────────────────────────────────
     active = st.session_state.get("active_module")
@@ -143,14 +146,12 @@ def route_module():
         run_admin_panel()
 
     else:
-        _show_home()
-
+        _show_home(username, role)
 
 
 def _set_module(name):
-    """Set active module and clear conflicting session state."""
     st.session_state.active_module = name
-    # Clear statement engine state when switching away
+    st.session_state.show_admin_menu = False
     if name not in ("STATEMENT", "ADMIN"):
         for k in ["statement_id", "product_index", "statement_year",
                   "statement_month", "selected_stockist_id", "engine_stage"]:
@@ -158,18 +159,37 @@ def _set_module(name):
     st.rerun()
 
 
-def _show_home():
-    st.title("🏠 Ivy Pharmaceuticals")
-    st.markdown("""
-    ### 👈 Select a module from the sidebar
+def _do_logout():
+    try:
+        from anchors.supabase_client import admin_supabase
+        if st.session_state.get("statement_id") and st.session_state.get("auth_user"):
+            user_id = st.session_state.auth_user.id
+            admin_supabase.table("statements").update({
+                "editing_by": None,
+                "editing_at": None,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("id", st.session_state.statement_id)\
+              .eq("editing_by", user_id).execute()
+    except Exception:
+        pass
+    st.session_state.clear()
+    st.rerun()
 
-    **Available Modules:**
-    - 📦 **Sales & Stock Statement** — Enter monthly stock data for stockists
-    - 📥 **Orders / Purchase / Sales / Payment** — Full OPS transaction management
-    - 📞 **Daily Call Report** — Record doctor visits, gifts, expenses
-    - 🔍 **Doctor Fetch** — Find and view doctor profiles
-    - 📊 **Doctor Input / Output** — Track gifts given and sales output
-    - 🗓️ **Tour Programme** — Plan and submit tour programmes for approval
-    - 📋 **POB / Statement / Cr Nt** — Proof of Business documents
-    - 📊 **Reports & Analytics** — Stock matrices, trend charts, forecasts
+
+def _show_home(username="", role=""):
+    st.title("🏠 Welcome to Ivy Pharmaceuticals")
+    st.markdown(f"**Logged in as:** {username} ({role})")
+    st.markdown("""
+    ### 👆 Select a module from the navigation bar above
+
+    | Module | Description |
+    |--------|-------------|
+    | 📦 Statement | Enter monthly stock data for stockists |
+    | 📥 OPS | Orders, Purchase, Sales, Payments |
+    | 📞 DCR | Daily Call Report — doctor visits |
+    | 🔍 Doctor Fetch | Find and view doctor profiles |
+    | 📊 Doc I/O | Doctor Input / Output tracking |
+    | 🗓️ Tour | Tour Programme planning |
+    | 📋 POB | Proof of Business documents |
+    | 📈 Reports | Stock matrices, analytics, forecasts |
     """)
