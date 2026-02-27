@@ -234,55 +234,56 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
 footer { visibility: hidden !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
-/* ── MOBILE BOTTOM NAV ───────────────────────── */
-/* Hide the nav container on desktop */
+/* ── MOBILE — hide the bottom nav row on desktop ── */
 .ivy-mobile-nav-container {
-    display: none;
+    display: none !important;
 }
 
 @media (max-width: 768px) {
-    /* Hide sidebar on mobile */
-    [data-testid="stSidebar"] { display: none !important; }
-    [data-testid="collapsedControl"] { display: none !important; }
-
-    /* Show mobile nav container as fixed bottom bar */
     .ivy-mobile-nav-container {
-        display: block;
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 9999;
-        background: var(--ivy-white);
-        border-top: 1px solid var(--ivy-border);
-        box-shadow: 0 -4px 20px rgba(26,107,90,0.1);
-        padding: 4px 2px 8px 2px;
+        display: block !important;
     }
 
-    /* Style each nav button small and icon-like */
-    .ivy-mobile-nav-container .stButton > button {
-        width: 100% !important;
-        min-height: 52px !important;
-        padding: 4px 2px !important;
-        font-size: 0.6rem !important;
-        font-weight: 500 !important;
-        border: none !important;
-        background: transparent !important;
-        box-shadow: none !important;
-        color: var(--ivy-text-soft) !important;
-        line-height: 1.3 !important;
-        white-space: pre-wrap !important;
-        text-align: center !important;
-    }
-
-    .ivy-mobile-nav-container .stButton > button:active {
-        background: var(--ivy-green-light) !important;
-        color: var(--ivy-green) !important;
-    }
-
-    /* Extra bottom padding so content is not hidden behind nav bar */
+    /* Extra bottom padding so content not hidden */
     .main .block-container {
-        padding-bottom: 80px !important;
+        padding-bottom: 30px !important;
+    }
+}
+
+/* ── MOBILE SIDEBAR TOGGLE BUTTON — always visible ── */
+/* Streamlit hides this after navigation — we force it visible */
+[data-testid="collapsedControl"] {
+    visibility: visible !important;
+    opacity: 1 !important;
+    display: flex !important;
+    position: fixed !important;
+    top: 0.5rem !important;
+    left: 0.5rem !important;
+    z-index: 999999 !important;
+    background: var(--ivy-green) !important;
+    border-radius: 8px !important;
+    min-width: 2.6rem !important;
+    min-height: 2.6rem !important;
+    width: 2.6rem !important;
+    height: 2.6rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 2px 10px rgba(26,107,90,0.35) !important;
+    cursor: pointer !important;
+    border: none !important;
+}
+
+[data-testid="collapsedControl"] svg {
+    fill: white !important;
+    color: white !important;
+    width: 1.1rem !important;
+    height: 1.1rem !important;
+}
+
+@media (max-width: 768px) {
+    /* Push main content down so it is not behind the toggle button */
+    .main .block-container {
+        padding-top: 3.5rem !important;
     }
 }
 
