@@ -78,17 +78,13 @@ def pob_get_user_stockists(user_id: str) -> list:
 
 
 def pob_get_all_products() -> list:
-    try:
-        resp = admin_supabase.table("products").select("id, name").order("name").execute()
-        return resp.data or []
-    except Exception as e:
-        try:
-            # retry once
-            resp = admin_supabase.table("products").select("id, name").order("name").execute()
-            return resp.data or []
-        except Exception as e2:
-            st.error(f"Error loading products: {e2}")
-            return []
+    rows = _exec(
+        admin_supabase.table("products")
+        .select("id, name")
+        .order("name"),
+        "Error loading products"
+    )
+    return rows or []
 
 
 # ─────────────────────────────────────────────────────────────
@@ -100,20 +96,15 @@ _PREFIX = {"POB": "POB", "STATEMENT": "STM", "CREDIT_NOTE": "CRN"}
 def pob_generate_doc_no(doc_type: str) -> str:
     """
     Reads pob_number_sequences, increments by 1, returns formatted number.
-    e.g.  POB-0001, STM-0003, CRN-0001
+    e.g.  POB-0001, STM-0003, CRN-0011
     """
     try:
-        rows = _exec(
-            admin_supabase.table("pob_number_sequences")
-            .select("last_number")
-            .eq("doc_type", doc_type),
-            "Error reading sequence"
-        )
-        if not rows:
-            st.error(f"No sequence row found for doc_type: {doc_type}")
-            import time
-            return f"{doc_type}-{int(time.time())}"
-        current = rows[0]["last_number"]
+        resp = admin_supabase.table("pob_number_sequences") \
+            .select("last_number") \
+            .eq("doc_type", doc_type) \
+            .single() \
+            .execute()
+        current = resp.data["last_number"]
         next_no = current + 1
         admin_supabase.table("pob_number_sequences") \
             .update({"last_number": next_no}) \
@@ -228,13 +219,13 @@ def pob_save_line(pob_doc_id, product_id, product_name, seq_no,
             "free_qty":        float(free_qty),
             "mrp_incl_tax":    float(mrp_incl_tax),
             "tax_rate":        float(tax_rate),
-            "discount":        float(discount),
+            "discount_pct":    float(discount),
             "mrp_excl_tax":    float(mrp_excl_tax),
             "retail_price":    float(retail_price),
             "sales_price":     float(sales_price),
             "tax_amount":      float(tax_amount),
             "gross_rate":      float(gross_rate),
-            "net_rate":        float(net_rate),
+            "net_amount":      float(net_rate),
         }),
         "Error saving line"
     )
@@ -250,13 +241,13 @@ def pob_update_line(line_id, sale_qty, free_qty, mrp_incl_tax, tax_rate,
             "free_qty":     float(free_qty),
             "mrp_incl_tax": float(mrp_incl_tax),
             "tax_rate":     float(tax_rate),
-            "discount":     float(discount),
+            "discount_pct": float(discount),
             "mrp_excl_tax": float(mrp_excl_tax),
             "retail_price": float(retail_price),
             "sales_price":  float(sales_price),
             "tax_amount":   float(tax_amount),
             "gross_rate":   float(gross_rate),
-            "net_rate":     float(net_rate),
+            "net_amount":   float(net_rate),
             "updated_at":   datetime.now().isoformat(),
         }).eq("id", str(line_id)),
         "Error updating line"
@@ -273,13 +264,20 @@ def pob_delete_line(line_id) -> bool:
 
 
 def pob_load_lines(pob_doc_id) -> list:
-    return _exec(
+    rows = _exec(
         admin_supabase.table("pob_lines")
         .select("*")
         .eq("pob_document_id", str(pob_doc_id))
         .order("sequence_no"),
         "Error loading lines"
     )
+    # Remap DB column names to internal names used in UI
+    for r in rows:
+        if "discount_pct" in r:
+            r["discount"] = r.pop("discount_pct")
+        if "net_amount" in r:
+            r["net_rate"] = r.pop("net_amount")
+    return rows
 
 
 # ─────────────────────────────────────────────────────────────
