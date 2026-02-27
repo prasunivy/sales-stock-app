@@ -234,6 +234,58 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
 footer { visibility: hidden !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
+/* ── MOBILE BOTTOM NAV ───────────────────────── */
+/* Hide the nav container on desktop */
+.ivy-mobile-nav-container {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    /* Hide sidebar on mobile */
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="collapsedControl"] { display: none !important; }
+
+    /* Show mobile nav container as fixed bottom bar */
+    .ivy-mobile-nav-container {
+        display: block;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 9999;
+        background: var(--ivy-white);
+        border-top: 1px solid var(--ivy-border);
+        box-shadow: 0 -4px 20px rgba(26,107,90,0.1);
+        padding: 4px 2px 8px 2px;
+    }
+
+    /* Style each nav button small and icon-like */
+    .ivy-mobile-nav-container .stButton > button {
+        width: 100% !important;
+        min-height: 52px !important;
+        padding: 4px 2px !important;
+        font-size: 0.6rem !important;
+        font-weight: 500 !important;
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        color: var(--ivy-text-soft) !important;
+        line-height: 1.3 !important;
+        white-space: pre-wrap !important;
+        text-align: center !important;
+    }
+
+    .ivy-mobile-nav-container .stButton > button:active {
+        background: var(--ivy-green-light) !important;
+        color: var(--ivy-green) !important;
+    }
+
+    /* Extra bottom padding so content is not hidden behind nav bar */
+    .main .block-container {
+        padding-bottom: 80px !important;
+    }
+}
+
 /* ── DIVIDERS ────────────────────────────────── */
 hr {
     border: none !important;
@@ -338,40 +390,7 @@ hr {
 </style>
 """
 
-MOBILE_NAV_HTML = """
-<div id="ivy-mobile-nav">
-  <a href="?nav=STATEMENT" onclick="setModule('STATEMENT')">
-    <span class="nav-icon">📦</span>Statement
-  </a>
-  <a href="?nav=OPS" onclick="setModule('OPS')">
-    <span class="nav-icon">📥</span>OPS
-  </a>
-  <a href="?nav=DCR" onclick="setModule('DCR')">
-    <span class="nav-icon">📞</span>DCR
-  </a>
-  <a href="?nav=DOCTOR_FETCH" onclick="setModule('DOCTOR_FETCH')">
-    <span class="nav-icon">🔍</span>Doctor
-  </a>
-  <a href="?nav=DOCTOR_IO" onclick="setModule('DOCTOR_IO')">
-    <span class="nav-icon">📊</span>Doc I/O
-  </a>
-  <a href="?nav=TOUR" onclick="setModule('TOUR')">
-    <span class="nav-icon">🗓️</span>Tour
-  </a>
-  <a href="?nav=POB" onclick="setModule('POB')">
-    <span class="nav-icon">📋</span>POB
-  </a>
-  <a href="?nav=REPORTS" onclick="setModule('REPORTS')">
-    <span class="nav-icon">📈</span>Reports
-  </a>
-</div>
-"""
-
-
 def apply_styles():
-    """Apply all Ivy Pharmaceuticals styles + mobile nav."""
+    """Apply all Ivy Pharmaceuticals styles."""
     import streamlit as st
     st.markdown(IVY_CSS, unsafe_allow_html=True)
-    # Show mobile bottom nav only when logged in
-    if st.session_state.get("auth_user"):
-        st.markdown(MOBILE_NAV_HTML, unsafe_allow_html=True)
