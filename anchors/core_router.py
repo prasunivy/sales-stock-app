@@ -114,11 +114,11 @@ def route_module():
         run_doctor_fetch()
 
     elif active == "DOCTOR_IO":
-        from modules.doctor_io.doctor_io_main import run_doctor_io
+        from modules.dcr.doctor_io_main import run_doctor_io
         run_doctor_io()
 
     elif active == "TOUR":
-        from modules.tour.tour_programme import run_tour_programme
+        from modules.dcr.tour_programme import run_tour_programme
         run_tour_programme()
 
     elif active == "POB":
