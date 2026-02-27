@@ -50,8 +50,7 @@ def handle_login():
     init_session()
 
     if st.session_state.auth_user:
-        _show_logout_button()
-        return
+        return  # Logout is handled in core_router top nav bar
 
     # ── Login screen ──────────────────────────────────────────────
     st.title("🏠 Ivy Pharmaceuticals")
@@ -109,23 +108,3 @@ def handle_login():
     st.stop()
 
 
-def _show_logout_button():
-    """Render logout button in sidebar with statement lock-release."""
-    if st.sidebar.button("🚪 Logout", key="logout_btn"):
-        try:
-            from anchors.supabase_client import admin_supabase
-
-            # Release statement edit lock if held
-            if st.session_state.get("statement_id") and st.session_state.get("auth_user"):
-                user_id = st.session_state.auth_user.id
-                admin_supabase.table("statements").update({
-                    "editing_by": None,
-                    "editing_at": None,
-                    "updated_at": datetime.utcnow().isoformat()
-                }).eq("id", st.session_state.statement_id)\
-                  .eq("editing_by", user_id).execute()
-        except Exception:
-            pass  # Don't block logout on error
-
-        st.session_state.clear()
-        st.rerun()
