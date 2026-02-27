@@ -533,13 +533,40 @@ footer { visibility: hidden !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
 /* ═══════════════════════════════════════════════
+   MOBILE SIDEBAR TOGGLE — ALWAYS VISIBLE
+═══════════════════════════════════════════════ */
+
+/* The hamburger toggle button — always visible, green pill */
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    top: 0.6rem !important;
+    left: 0.6rem !important;
+    z-index: 999999 !important;
+    background: var(--ivy-green) !important;
+    border-radius: 8px !important;
+    width: 2.8rem !important;
+    height: 2.8rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 2px 12px rgba(26,107,90,0.3) !important;
+    cursor: pointer !important;
+}
+
+[data-testid="collapsedControl"] svg {
+    fill: white !important;
+    color: white !important;
+}
+
+/* ═══════════════════════════════════════════════
    MOBILE — GENERAL TWEAKS
 ═══════════════════════════════════════════════ */
 @media (max-width: 768px) {
-    /* Sidebar toggle button bigger */
-    [data-testid="collapsedControl"] {
-        width: 2.5rem !important;
-        height: 2.5rem !important;
+    /* Padding so content doesn't hide behind toggle button */
+    .main .block-container {
+        padding-top: 3.5rem !important;
     }
 
     /* Stack columns on mobile */
@@ -547,7 +574,7 @@ footer { visibility: hidden !important; }
         min-width: 100% !important;
     }
 
-    /* Bigger tap targets for all interactive elements */
+    /* Bigger tap targets */
     button, input, select, textarea {
         min-height: 44px !important;
     }
