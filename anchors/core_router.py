@@ -4,8 +4,17 @@ import streamlit as st
 def route_module():
     """
     Build the sidebar navigation and route to the active module.
-    Role-based: admin sees all buttons; user sees their own.
+    Also handles ?nav= URL parameter from mobile bottom nav bar.
     """
+    # Handle mobile nav URL parameter
+    params = st.query_params
+    if "nav" in params:
+        nav_val = params["nav"]
+        if nav_val != st.session_state.get("active_module"):
+            st.session_state.active_module = nav_val
+            st.query_params.clear()
+            st.rerun()
+
     role = st.session_state.get("role", "user")
     user = st.session_state.get("auth_user")
 
