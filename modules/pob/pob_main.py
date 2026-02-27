@@ -31,7 +31,7 @@ from modules.pob.pob_database import (
 DOC_LABELS = {
     "POB":       "📋 POB",
     "STATEMENT": "📄 Statement",
-    "CREDIT_NOTE":     "🔄 Credit Note",
+    "CREDIT_NOTE": "🔄 Credit Note",
 }
 
 STATUS_ICON = {
@@ -206,7 +206,7 @@ def _step_doctype():
     with c3:
         if st.button("🔄 Credit Note", use_container_width=True,
                      key="pob_type_crnt"):
-            chosen = "CREDIT_NOTE"
+            chosen = "CR_NT"
 
     if chosen:
         st.session_state.pob_doc_type = chosen
@@ -577,7 +577,7 @@ def _archive(user_id, role):
         st.session_state.pob_arc_status = status_f
     with fc2:
         type_f = st.selectbox("Doc Type",
-            ["ALL","POB","STATEMENT","CREDIT_NOTE"],
+            ["ALL","POB","STATEMENT","CR_NT"],
             key="pob_arc_t_sel")
         st.session_state.pob_arc_type = type_f
     with fc3:
