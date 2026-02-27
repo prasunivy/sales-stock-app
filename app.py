@@ -9,6 +9,7 @@ if PROJECT_ROOT not in sys.path:
 
 from anchors.core_session import handle_login
 from anchors.core_router import route_module
+from anchors.ivy_styles import apply_styles
 
 st.set_page_config(
     page_title="Ivy Pharmaceuticals",
@@ -16,22 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.markdown("""
-<style>
-thead th {
-    position: sticky;
-    top: 0;
-    background-color: #fafafa;
-    z-index: 2;
-}
-tbody td:first-child, thead th:first-child {
-    position: sticky;
-    left: 0;
-    background-color: #fafafa;
-    z-index: 1;
-}
-</style>
-""", unsafe_allow_html=True)
+apply_styles()
 
 handle_login()
 route_module()
