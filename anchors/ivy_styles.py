@@ -1,11 +1,6 @@
 """
 Ivy Pharmaceuticals — UI Styling
-Apply this in app.py via: apply_styles()
-Clean & Professional theme — optimised for mobile + desktop
-
-MOBILE STRATEGY:
-- On mobile: fixed bottom navigation bar with key modules
-- On desktop: normal left sidebar
+Top navigation bar replacing sidebar — works on mobile + desktop
 """
 
 IVY_CSS = """
@@ -39,60 +34,30 @@ html, body, [class*="css"] {
 
 .stApp { background-color: var(--ivy-bg) !important; }
 
-/* ── SIDEBAR ─────────────────────────────────── */
-[data-testid="stSidebar"] {
-    background: var(--ivy-white) !important;
-    border-right: 1px solid var(--ivy-border) !important;
-    box-shadow: 2px 0 16px rgba(26,107,90,0.06) !important;
-}
+/* ── HIDE SIDEBAR COMPLETELY ─────────────────── */
+[data-testid="stSidebar"] { display: none !important; }
+[data-testid="collapsedControl"] { display: none !important; }
 
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 {
-    font-size: 0.75rem !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.08em !important;
-    text-transform: uppercase !important;
-    color: var(--ivy-text-muted) !important;
-    margin-top: 1rem !important;
-    margin-bottom: 0.3rem !important;
-}
-
-[data-testid="stSidebar"] .stButton > button {
-    width: 100% !important;
-    text-align: left !important;
-    background: transparent !important;
-    border: none !important;
-    border-radius: var(--ivy-radius-sm) !important;
-    color: var(--ivy-text) !important;
-    font-size: 0.88rem !important;
-    padding: 0.5rem 0.8rem !important;
-    margin-bottom: 2px !important;
-    box-shadow: none !important;
-    transition: all 0.15s ease !important;
-}
-
-[data-testid="stSidebar"] .stButton > button:hover {
-    background: var(--ivy-green-light) !important;
-    color: var(--ivy-green) !important;
-    font-weight: 500 !important;
-}
-
-[data-testid="stSidebar"] hr {
-    border-color: var(--ivy-border) !important;
-    margin: 0.6rem 0 !important;
-}
-
-/* ── MAIN CONTENT ────────────────────────────── */
+/* ── MAIN CONTENT — push down for top nav ────── */
 .main .block-container {
-    padding: 2rem 2rem 4rem 2rem !important;
-    max-width: 1100px !important;
+    padding: 1rem 1.5rem 3rem 1.5rem !important;
+    max-width: 1200px !important;
+    margin-top: 0 !important;
 }
 
 /* ── HEADINGS ────────────────────────────────── */
 h1 { font-size: 1.6rem !important; font-weight: 700 !important; letter-spacing: -0.02em !important; }
 h2 { font-size: 1.25rem !important; font-weight: 600 !important; }
 h3 { font-size: 1rem !important; font-weight: 600 !important; }
+
+@media (max-width: 768px) {
+    h1 { font-size: 1.2rem !important; }
+    h2 { font-size: 1rem !important; }
+    h3 { font-size: 0.9rem !important; }
+    .main .block-container {
+        padding: 0.8rem 0.6rem 2rem 0.6rem !important;
+    }
+}
 
 /* ── BUTTONS ─────────────────────────────────── */
 .stButton > button[kind="primary"] {
@@ -103,13 +68,12 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
     font-weight: 600 !important;
     padding: 0.6rem 1.4rem !important;
     box-shadow: 0 2px 8px rgba(26,107,90,0.25) !important;
+    transition: all 0.15s ease !important;
 }
-
 .stButton > button[kind="primary"]:hover {
     background: var(--ivy-green-mid) !important;
     transform: translateY(-1px) !important;
 }
-
 .stButton > button {
     background: var(--ivy-white) !important;
     color: var(--ivy-text) !important;
@@ -120,10 +84,17 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
     padding: 0.5rem 1.2rem !important;
     transition: all 0.15s ease !important;
 }
-
 .stButton > button:hover {
     border-color: var(--ivy-green) !important;
     color: var(--ivy-green) !important;
+}
+
+@media (max-width: 768px) {
+    .stButton > button {
+        width: 100% !important;
+        min-height: 48px !important;
+        font-size: 0.95rem !important;
+    }
 }
 
 /* ── INPUTS ──────────────────────────────────── */
@@ -136,20 +107,25 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
     font-family: var(--ivy-font) !important;
     font-size: 0.92rem !important;
 }
-
 .stTextInput > div > div > input:focus,
 .stNumberInput > div > div > input:focus,
 .stTextArea > div > div > textarea:focus {
     border-color: var(--ivy-green) !important;
     box-shadow: 0 0 0 3px rgba(26,107,90,0.1) !important;
 }
-
 .stTextInput label, .stNumberInput label, .stTextArea label,
 .stSelectbox label, .stMultiSelect label, .stRadio label,
 .stCheckbox label, .stDateInput label {
     font-size: 0.85rem !important;
     font-weight: 500 !important;
     color: var(--ivy-text-soft) !important;
+}
+@media (max-width: 768px) {
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input {
+        font-size: 1rem !important;
+        min-height: 48px !important;
+    }
 }
 
 /* ── TABLES ──────────────────────────────────── */
@@ -159,7 +135,6 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
     overflow: hidden !important;
     box-shadow: var(--ivy-shadow) !important;
 }
-
 .stDataFrame thead th {
     background: var(--ivy-green) !important;
     color: white !important;
@@ -172,13 +147,18 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
     top: 0 !important;
     z-index: 2 !important;
 }
-
 .stDataFrame tbody tr:nth-child(even) { background: var(--ivy-accent) !important; }
 .stDataFrame tbody tr:hover { background: var(--ivy-green-light) !important; }
 .stDataFrame tbody td {
     padding: 0.5rem 1rem !important;
     border-bottom: 1px solid var(--ivy-border) !important;
     font-size: 0.83rem !important;
+}
+@media (max-width: 768px) {
+    .stDataFrame { overflow-x: auto !important; }
+    .stDataFrame table { font-size: 0.72rem !important; }
+    .stDataFrame tbody td,
+    .stDataFrame thead th { padding: 0.4rem 0.5rem !important; }
 }
 
 /* ── METRICS ─────────────────────────────────── */
@@ -189,7 +169,6 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
     padding: 1rem 1.2rem !important;
     box-shadow: var(--ivy-shadow) !important;
 }
-
 [data-testid="metric-container"] [data-testid="stMetricLabel"] {
     font-size: 0.75rem !important;
     font-weight: 600 !important;
@@ -197,7 +176,6 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
     text-transform: uppercase !important;
     color: var(--ivy-text-soft) !important;
 }
-
 [data-testid="metric-container"] [data-testid="stMetricValue"] {
     font-size: 1.5rem !important;
     font-weight: 700 !important;
@@ -209,14 +187,12 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
     background: var(--ivy-white) !important;
     border-bottom: 2px solid var(--ivy-border) !important;
 }
-
 .stTabs [data-baseweb="tab"] {
     font-size: 0.88rem !important;
     font-weight: 500 !important;
     color: var(--ivy-text-soft) !important;
     padding: 0.65rem 1.1rem !important;
 }
-
 .stTabs [aria-selected="true"] {
     color: var(--ivy-green) !important;
     border-bottom: 2px solid var(--ivy-green) !important;
@@ -229,23 +205,6 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
 ::-webkit-scrollbar-track { background: var(--ivy-bg); }
 ::-webkit-scrollbar-thumb { background: var(--ivy-border); border-radius: 3px; }
 
-/* ── HIDE STREAMLIT BRANDING ─────────────────── */
-#MainMenu { visibility: hidden !important; }
-footer { visibility: hidden !important; }
-[data-testid="stToolbar"] { display: none !important; }
-
-/* ── MOBILE ──────────────────────────────────── */
-@media (max-width: 768px) {
-    .main .block-container {
-        padding: 1rem 0.7rem 2rem 0.7rem !important;
-    }
-    /* Make sidebar full width overlay on mobile */
-    [data-testid="stSidebar"] {
-        width: 85vw !important;
-        min-width: 85vw !important;
-    }
-}
-
 /* ── DIVIDERS ────────────────────────────────── */
 hr {
     border: none !important;
@@ -253,124 +212,127 @@ hr {
     margin: 1.2rem 0 !important;
 }
 
-/* ── MOBILE ──────────────────────────────────── */
-@media (max-width: 768px) {
-    .main .block-container {
-        padding: 0.8rem 0.7rem 6rem 0.7rem !important;
-    }
-    h1 { font-size: 1.2rem !important; }
-    h2 { font-size: 1rem !important; }
-    h3 { font-size: 0.9rem !important; }
-
-    .stButton > button {
-        width: 100% !important;
-        min-height: 48px !important;
-        font-size: 0.95rem !important;
-    }
-
-    .stTextInput > div > div > input,
-    .stNumberInput > div > div > input {
-        font-size: 1rem !important;
-        min-height: 48px !important;
-    }
-
-    .stDataFrame { overflow-x: auto !important; }
-    .stDataFrame table { font-size: 0.72rem !important; }
-    .stDataFrame tbody td,
-    .stDataFrame thead th { padding: 0.4rem 0.5rem !important; }
-
-    /* Hide sidebar on mobile — we use bottom nav instead */
-    [data-testid="stSidebar"] {
-        display: none !important;
-    }
-
-    [data-testid="collapsedControl"] {
-        display: none !important;
-    }
+/* ── ALERTS ──────────────────────────────────── */
+.stAlert {
+    border-radius: var(--ivy-radius-sm) !important;
+    font-size: 0.88rem !important;
 }
 
-/* ── MOBILE BOTTOM NAV BAR ───────────────────── */
-#ivy-mobile-nav {
-    display: none;
-    position: fixed;
-    bottom: 0;
+/* ── HIDE STREAMLIT BRANDING ─────────────────── */
+#MainMenu { visibility: hidden !important; }
+footer { visibility: hidden !important; }
+[data-testid="stToolbar"] { display: none !important; }
+header[data-testid="stHeader"] { display: none !important; }
+
+/* ── TOP NAV BAR ─────────────────────────────── */
+.ivy-topnav {
+    position: sticky;
+    top: 0;
     left: 0;
     right: 0;
     z-index: 9999;
     background: var(--ivy-white);
-    border-top: 1px solid var(--ivy-border);
-    box-shadow: 0 -4px 20px rgba(26,107,90,0.12);
-    padding: 0;
-    height: 60px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    white-space: nowrap;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    border-bottom: 1px solid var(--ivy-border);
+    box-shadow: 0 2px 12px rgba(26,107,90,0.08);
+    margin-bottom: 1rem;
 }
 
-#ivy-mobile-nav::-webkit-scrollbar { display: none; }
-
-#ivy-mobile-nav a {
-    display: inline-flex;
-    flex-direction: column;
+.ivy-topnav-header {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    min-width: 72px;
-    height: 60px;
-    padding: 6px 8px;
-    text-decoration: none;
-    color: var(--ivy-text-soft);
-    font-size: 0.6rem;
-    font-weight: 500;
-    font-family: var(--ivy-font);
-    border-right: 1px solid var(--ivy-border);
-    transition: background 0.15s;
-    -webkit-tap-highlight-color: transparent;
+    justify-content: space-between;
+    padding: 0.6rem 1.2rem;
+    background: var(--ivy-green);
+    color: white;
 }
 
-#ivy-mobile-nav a:last-child { border-right: none; }
-
-#ivy-mobile-nav a .nav-icon {
-    font-size: 1.3rem;
-    margin-bottom: 2px;
-    line-height: 1;
+.ivy-topnav-header .app-title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: white;
 }
 
-#ivy-mobile-nav a:active,
-#ivy-mobile-nav a.active {
-    background: var(--ivy-green-light);
-    color: var(--ivy-green);
+.ivy-topnav-header .user-info {
+    font-size: 0.78rem;
+    opacity: 0.85;
+    color: white;
 }
 
-@media (max-width: 768px) {
-    #ivy-mobile-nav { display: flex; }
+.ivy-topnav-buttons {
+    display: flex;
+    overflow-x: auto;
+    gap: 2px;
+    padding: 4px 6px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    background: var(--ivy-white);
+}
+
+.ivy-topnav-buttons::-webkit-scrollbar { display: none; }
+
+/* Style the Streamlit buttons inside topnav */
+.ivy-topnav-buttons .stButton > button {
+    white-space: nowrap !important;
+    min-width: fit-content !important;
+    width: auto !important;
+    padding: 0.35rem 0.8rem !important;
+    font-size: 0.78rem !important;
+    font-weight: 500 !important;
+    border: 1px solid var(--ivy-border) !important;
+    border-radius: 20px !important;
+    background: var(--ivy-white) !important;
+    color: var(--ivy-text) !important;
+    box-shadow: none !important;
+    min-height: 32px !important;
+    transition: all 0.15s ease !important;
+}
+
+.ivy-topnav-buttons .stButton > button:hover {
+    background: var(--ivy-green-light) !important;
+    border-color: var(--ivy-green) !important;
+    color: var(--ivy-green) !important;
+}
+
+/* Logout button in topnav — red pill */
+.ivy-topnav-logout .stButton > button {
+    white-space: nowrap !important;
+    min-width: fit-content !important;
+    width: auto !important;
+    padding: 0.35rem 0.8rem !important;
+    font-size: 0.78rem !important;
+    font-weight: 500 !important;
+    border: 1px solid #fad7d4 !important;
+    border-radius: 20px !important;
+    background: #fff5f5 !important;
+    color: var(--ivy-danger) !important;
+    box-shadow: none !important;
+    min-height: 32px !important;
+}
+
+/* Statement sidebar replacement — shown as card above content */
+.ivy-stmt-nav .stButton > button {
+    width: 100% !important;
+    text-align: left !important;
+    background: var(--ivy-white) !important;
+    border: 1px solid var(--ivy-border) !important;
+    border-radius: var(--ivy-radius-sm) !important;
+    padding: 0.5rem 0.8rem !important;
+    font-size: 0.85rem !important;
+    margin-bottom: 4px !important;
+    box-shadow: none !important;
+}
+.ivy-stmt-nav .stButton > button:hover {
+    background: var(--ivy-green-light) !important;
+    border-color: var(--ivy-green) !important;
+    color: var(--ivy-green) !important;
 }
 
 </style>
 """
 
-SIDEBAR_OPEN_JS = """
-<script>
-(function() {
-    function openSidebar() {
-        try {
-            // Find the collapsed sidebar toggle button
-            var btn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
-            if (btn) {
-                btn.click();
-            }
-        } catch(e) {}
-    }
-    // Wait for Streamlit to fully render then open sidebar
-    setTimeout(openSidebar, 400);
-})();
-</script>
-"""
 
 def apply_styles():
     """Apply all Ivy Pharmaceuticals styles."""
     import streamlit as st
     st.markdown(IVY_CSS, unsafe_allow_html=True)
-    # Auto-open sidebar on every page load/rerun
-    st.markdown(SIDEBAR_OPEN_JS, unsafe_allow_html=True)
