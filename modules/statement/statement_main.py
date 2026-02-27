@@ -178,8 +178,8 @@ def _render_user_statement_sidebar(user_id):
     """Render the statement selection sidebar for regular users.
     Exact logic from original app.py."""
 
-    st.sidebar.divider()
-    st.sidebar.subheader("🗂 My Statements")
+    st.divider()
+    st.subheader("🗂 My Statements")
 
     # Stockist filter dropdown
     stockist_rows = safe_exec(
@@ -192,7 +192,7 @@ def _render_user_statement_sidebar(user_id):
         for r in stockist_rows
     }
 
-    selected_stockist_filter = st.sidebar.selectbox(
+    selected_stockist_filter = st.selectbox(
         "Select Stockist",
         options=[None] + list(stockist_options.keys()),
         format_func=lambda x: "— All Stockists —" if x is None else stockist_options[x]
@@ -206,7 +206,7 @@ def _render_user_statement_sidebar(user_id):
         .execute().data
 
     if not my_statements:
-        st.sidebar.info("No statements yet")
+        st.info("No statements yet")
     else:
         total_products = len(load_products_cached())
 
@@ -228,7 +228,7 @@ def _render_user_statement_sidebar(user_id):
 
             label = f"{s['month']:02d}/{s['year']} — {status}"
 
-            if st.sidebar.button(f"👁 View • {label}", key=f"user_stmt_{s['id']}"):
+            if st.button(f"👁 View • {label}", key=f"user_stmt_{s['id']}"):
                 st.session_state.statement_id = s["id"]
                 st.session_state.product_index = s.get("current_product_index") or 0
                 st.session_state.statement_year = s["year"]
@@ -238,8 +238,8 @@ def _render_user_statement_sidebar(user_id):
                 st.rerun()
 
     # Create / Resume new statement
-    st.sidebar.divider()
-    st.sidebar.subheader("➕ New Statement")
+    st.divider()
+    st.subheader("➕ New Statement")
 
     stockists = safe_exec(
         supabase.table("user_stockists")
@@ -248,25 +248,25 @@ def _render_user_statement_sidebar(user_id):
     )
 
     if not stockists:
-        st.sidebar.error(
+        st.error(
             "❌ No stockists assigned to your user.\n\n"
             "Please contact admin to assign stockists."
         )
         st.stop()
 
-    selected = st.sidebar.selectbox(
+    selected = st.selectbox(
         "Stockist", stockists,
         format_func=lambda x: x["stockists"]["name"]
     )
 
     today = date.today()
-    year = st.sidebar.selectbox("Year", [today.year - 1, today.year])
-    month = st.sidebar.selectbox(
+    year = st.selectbox("Year", [today.year - 1, today.year])
+    month = st.selectbox(
         "Month",
         list(range(1, today.month + 1)) if year == today.year else list(range(1, 13))
     )
 
-    if st.sidebar.button("➕ Create / Resume"):
+    if st.button("➕ Create / Resume"):
         res = admin_supabase.table("statements").upsert(
             {
                 "user_id": user_id,
@@ -284,15 +284,15 @@ def _render_user_statement_sidebar(user_id):
         stmt = res.data[0]
 
         if stmt["locked"]:
-            st.sidebar.error("Statement is locked by admin")
+            st.error("Statement is locked by admin")
             st.stop()
 
         if stmt["status"] == "admin_edit":
-            st.sidebar.error("Statement is under admin correction")
+            st.error("Statement is under admin correction")
             st.stop()
 
         if stmt.get("editing_by") and stmt["editing_by"] != user_id:
-            st.sidebar.error("Statement is open on another device")
+            st.error("Statement is open on another device")
             st.stop()
 
         # Acquire edit lock
@@ -334,16 +334,7 @@ def run_statement():
         and st.session_state.get("engine_stage") not in ["edit", "preview", "view"]
     ):
         st.title("📦 Sales & Stock Statement")
-        st.markdown("""
-        ### 👈 Start from the Sidebar
-
-        Use the **left sidebar** to manage your statements:
-
-        - ▶ Resume a draft statement
-        - 👁 View a submitted or locked statement
-        - ➕ Create a new statement by selecting Stockist, Year, Month
-        """)
-        st.info("ℹ️ Draft statements are saved automatically. You can safely close and resume later.")
+        st.info("ℹ️ Use the selectors below to create or resume a statement. Drafts are saved automatically.")
         return
 
     sid = st.session_state.get("statement_id")
