@@ -77,14 +77,21 @@ def pob_get_user_stockists(user_id: str) -> list:
     return result
 
 
+@st.cache_data(ttl=300)
 def pob_get_all_products() -> list:
-    rows = _exec(
-        admin_supabase.table("products")
-        .select("id, name")
-        .order("name"),
-        "Error loading products"
-    )
-    return rows or []
+    """Cached 5 min to avoid hammering Supabase connection pool."""
+    import time
+    for attempt in range(3):
+        try:
+            resp = admin_supabase.table("products").select("id, name").order("name").execute()
+            return resp.data or []
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(1)
+            else:
+                st.error(f"Error loading products: {e}")
+                return []
+    return []
 
 
 # ─────────────────────────────────────────────────────────────
