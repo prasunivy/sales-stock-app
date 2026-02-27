@@ -234,56 +234,15 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
 footer { visibility: hidden !important; }
 [data-testid="stToolbar"] { display: none !important; }
 
-/* ── MOBILE — hide the bottom nav row on desktop ── */
-.ivy-mobile-nav-container {
-    display: none !important;
-}
-
+/* ── MOBILE ──────────────────────────────────── */
 @media (max-width: 768px) {
-    .ivy-mobile-nav-container {
-        display: block !important;
-    }
-
-    /* Extra bottom padding so content not hidden */
     .main .block-container {
-        padding-bottom: 30px !important;
+        padding: 1rem 0.7rem 2rem 0.7rem !important;
     }
-}
-
-/* ── MOBILE SIDEBAR TOGGLE BUTTON — always visible ── */
-/* Streamlit hides this after navigation — we force it visible */
-[data-testid="collapsedControl"] {
-    visibility: visible !important;
-    opacity: 1 !important;
-    display: flex !important;
-    position: fixed !important;
-    top: 0.5rem !important;
-    left: 0.5rem !important;
-    z-index: 999999 !important;
-    background: var(--ivy-green) !important;
-    border-radius: 8px !important;
-    min-width: 2.6rem !important;
-    min-height: 2.6rem !important;
-    width: 2.6rem !important;
-    height: 2.6rem !important;
-    align-items: center !important;
-    justify-content: center !important;
-    box-shadow: 0 2px 10px rgba(26,107,90,0.35) !important;
-    cursor: pointer !important;
-    border: none !important;
-}
-
-[data-testid="collapsedControl"] svg {
-    fill: white !important;
-    color: white !important;
-    width: 1.1rem !important;
-    height: 1.1rem !important;
-}
-
-@media (max-width: 768px) {
-    /* Push main content down so it is not behind the toggle button */
-    .main .block-container {
-        padding-top: 3.5rem !important;
+    /* Make sidebar full width overlay on mobile */
+    [data-testid="stSidebar"] {
+        width: 85vw !important;
+        min-width: 85vw !important;
     }
 }
 
@@ -391,7 +350,27 @@ hr {
 </style>
 """
 
+SIDEBAR_OPEN_JS = """
+<script>
+(function() {
+    function openSidebar() {
+        try {
+            // Find the collapsed sidebar toggle button
+            var btn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
+            if (btn) {
+                btn.click();
+            }
+        } catch(e) {}
+    }
+    // Wait for Streamlit to fully render then open sidebar
+    setTimeout(openSidebar, 400);
+})();
+</script>
+"""
+
 def apply_styles():
     """Apply all Ivy Pharmaceuticals styles."""
     import streamlit as st
     st.markdown(IVY_CSS, unsafe_allow_html=True)
+    # Auto-open sidebar on every page load/rerun
+    st.markdown(SIDEBAR_OPEN_JS, unsafe_allow_html=True)
