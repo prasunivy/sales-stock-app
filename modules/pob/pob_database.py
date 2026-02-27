@@ -78,33 +78,42 @@ def pob_get_user_stockists(user_id: str) -> list:
 
 
 def pob_get_all_products() -> list:
-    rows = _exec(
-        admin_supabase.table("products")
-        .select("id, name")
-        .order("name"),
-        "Error loading products"
-    )
-    return rows or []
+    try:
+        resp = admin_supabase.table("products").select("id, name").order("name").execute()
+        return resp.data or []
+    except Exception as e:
+        try:
+            # retry once
+            resp = admin_supabase.table("products").select("id, name").order("name").execute()
+            return resp.data or []
+        except Exception as e2:
+            st.error(f"Error loading products: {e2}")
+            return []
 
 
 # ─────────────────────────────────────────────────────────────
 # DOC NUMBER GENERATOR
 # ─────────────────────────────────────────────────────────────
 
-_PREFIX = {"POB": "POB", "STATEMENT": "STM", "CR_NT": "CRN"}
+_PREFIX = {"POB": "POB", "STATEMENT": "STM", "CREDIT_NOTE": "CRN"}
 
 def pob_generate_doc_no(doc_type: str) -> str:
     """
     Reads pob_number_sequences, increments by 1, returns formatted number.
-    e.g.  POB-0001, STM-0003, CRN-0011
+    e.g.  POB-0001, STM-0003, CRN-0001
     """
     try:
-        resp = admin_supabase.table("pob_number_sequences") \
-            .select("last_number") \
-            .eq("doc_type", doc_type) \
-            .single() \
-            .execute()
-        current = resp.data["last_number"]
+        rows = _exec(
+            admin_supabase.table("pob_number_sequences")
+            .select("last_number")
+            .eq("doc_type", doc_type),
+            "Error reading sequence"
+        )
+        if not rows:
+            st.error(f"No sequence row found for doc_type: {doc_type}")
+            import time
+            return f"{doc_type}-{int(time.time())}"
+        current = rows[0]["last_number"]
         next_no = current + 1
         admin_supabase.table("pob_number_sequences") \
             .update({"last_number": next_no}) \
@@ -332,7 +341,7 @@ def pob_reject(doc_id, admin_user_id, comment="") -> bool:
 # ─────────────────────────────────────────────────────────────
 
 def pob_format_whatsapp(doc: dict, lines: list) -> str:
-    labels = {"POB": "POB", "STATEMENT": "Statement", "CR_NT": "Credit Note"}
+    labels = {"POB": "POB", "STATEMENT": "Statement", "CREDIT_NOTE": "Credit Note"}
     label  = labels.get(doc["doc_type"], doc["doc_type"])
     body   = ""
     total  = 0.0
@@ -369,7 +378,7 @@ def pob_generate_pdf(doc: dict, lines: list) -> bytes:
         story  = []
 
         labels = {"POB": "PROOF OF BUSINESS", "STATEMENT": "STATEMENT",
-                  "CR_NT": "CREDIT NOTE"}
+                  "CREDIT_NOTE": "CREDIT NOTE"}
         story.append(Paragraph(f"<b>{labels.get(doc['doc_type'], doc['doc_type'])}</b>",
                                 styles["Title"]))
         story.append(Spacer(1, 4*mm))
