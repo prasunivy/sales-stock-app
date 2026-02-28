@@ -293,151 +293,65 @@ def run_ops():
 
 
     # =========================
-    # OPS INTERNAL NAVIGATION
+    # OPS INTERNAL NAVIGATION — selectbox (replaces sidebar)
     # =========================
-    st.sidebar.subheader("⚙ OPS Menu")
+    OPS_OPTIONS = {
+        "— Select OPS Function —":          None,
+        "🧾 Invoices":                      "DOCUMENT_BROWSER_INVOICES",
+        "🗄️ Archived Invoices":             "DOCUMENT_BROWSER_ARCHIVED",
+        "📝 Credit Notes":                  "DOCUMENT_BROWSER_CREDIT_NOTES",
+        "🗄️ Archived Credit Notes":         "DOCUMENT_BROWSER_ARCHIVED_CN",
+        "🔄 Transfers":                     "DOCUMENT_BROWSER_TRANSFERS",
+        "🗄️ Archived Transfers":            "DOCUMENT_BROWSER_ARCHIVED_TRANSFERS",
+        "🎁 Samples & Lots":                "DOCUMENT_BROWSER_SAMPLES",
+        "🗄️ Archived Samples/Lots":         "DOCUMENT_BROWSER_ARCHIVED_SAMPLES",
+        "🛒 Purchases":                     "DOCUMENT_BROWSER_PURCHASES",
+        "🗄️ Archived Purchases":            "DOCUMENT_BROWSER_ARCHIVED_PURCHASES",
+        "🚚 Freight Entries":               "DOCUMENT_BROWSER_FREIGHT",
+        "📦 Opening Stock":                 "OPENING_STOCK",
+        "💰 Opening Balance":               "OPENING_BALANCE",
+        "💰 Party Balance":                 "PARTY_BALANCE",
+        "📒 Ledger":                        "LEDGER",
+        "📦 Stock Ledger":                  "STOCK_LEDGER",
+        "🏢 CNF Master":                    "CNF_MASTER",
+        "🔗 CNF–User Mapping":              "CNF_USER_MAPPING",
+        "🏭 Purchaser Master":              "PURCHASER_MASTER",
+        "🔁 Stock In / Stock Out":          "STOCK_FLOW",
+        "🧾 Orders":                        "ORDERS",
+        "💳 Payments":                      "PAYMENTS",
+        "🔗 Allocate Payments":             "ALLOCATE_PAYMENTS",
+        "🚚 Freight":                       "FREIGHT",
+        "📋 Freight Register":              "FREIGHT_REGISTER",
+        "🔄 Return/Replace Register":       "RETURN_REPLACE_REGISTER",
+        "💰 Payment Register":              "PAYMENT_REGISTER",
+        "🔄 Return / Replace":              "RETURN_REPLACE",
+        "🔄 Recalculate Balances":          "RECALC_BALANCES",
+    }
 
-    
-    
+    current_section = st.session_state.ops_section
+    current_label = next(
+        (lbl for lbl, val in OPS_OPTIONS.items() if val == current_section),
+        "— Select OPS Function —"
+    )
+    labels = list(OPS_OPTIONS.keys())
+    current_index = labels.index(current_label)
 
-    # =========================
-    # DOCUMENT BROWSER
-    # =========================
-    st.sidebar.subheader("📂 Documents")
+    selected_label = st.selectbox(
+        "⚙ OPS Menu",
+        labels,
+        index=current_index,
+        key="ops_section_selectbox"
+    )
+    selected_section = OPS_OPTIONS[selected_label]
 
-    if st.sidebar.button("🧾 Invoices"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+    if selected_section != current_section:
+        st.session_state.ops_section = selected_section
         st.rerun()
 
-    if st.sidebar.button("🗄️ Archived Invoices"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED"
-        st.rerun()
-
-    if st.sidebar.button("📝 Credit Notes"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_CREDIT_NOTES"
-        st.rerun()
-
-    if st.sidebar.button("🗄️ Archived Credit Notes"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_CN"
-        st.rerun()
-
-    if st.sidebar.button("🔄 Transfers"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFERS"
-        st.rerun()
-
-    if st.sidebar.button("🗄️ Archived Transfers"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_TRANSFERS"
-        st.rerun()
-
-    if st.sidebar.button("🎁 Samples & Lots"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_SAMPLES"
-        st.rerun()
-
-    if st.sidebar.button("🗄️ Archived Samples/Lots"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_SAMPLES"
-        st.rerun()
-
-
-    if st.sidebar.button("🛒 Purchases"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_PURCHASES"
-        st.rerun()
-
-    if st.sidebar.button("🗄️ Archived Purchases"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_PURCHASES"
-        st.rerun()
-    
-
-    if st.sidebar.button("🚚 Freight Entries"):
-        st.session_state.ops_section = "DOCUMENT_BROWSER_FREIGHT"
-        st.rerun()
-    
-
-    
-    if st.sidebar.button("📦 Opening Stock"):
-        st.session_state.ops_section = "OPENING_STOCK"
-        st.rerun()
-
-    if st.sidebar.button("💰 Opening Balance"):
-        st.session_state.ops_section = "OPENING_BALANCE"
-        st.rerun()
-
-    if st.sidebar.button("💰 Party Balance"):
-        st.session_state.ops_section = "PARTY_BALANCE"
-        st.rerun()
-
-    if st.sidebar.button("📒 Ledger"):
-        st.session_state.ops_section = "LEDGER"
-        st.rerun()
-
-    if st.sidebar.button("📦 Stock Ledger"):
-        st.session_state.ops_section = "STOCK_LEDGER"
-        st.rerun()
-
-
-
-    if st.sidebar.button("🏢 CNF Master"):
-        st.session_state.ops_section = "CNF_MASTER"
-        st.rerun()
-
-    if st.sidebar.button("🔗 CNF–User Mapping"):
-        st.session_state.ops_section = "CNF_USER_MAPPING"
-        st.rerun()
-
-    if st.sidebar.button("🏭 Purchaser Master"):
-        st.session_state.ops_section = "PURCHASER_MASTER"
-        st.rerun()
-
-
-
-    if st.sidebar.button("🔁 Stock In / Stock Out"):
-        st.session_state.ops_section = "STOCK_FLOW"
-        st.rerun()
-
-    if st.sidebar.button("🧾 Orders"):
-        st.session_state.ops_section = "ORDERS"
-        st.rerun()
-
-    if st.sidebar.button("💳 Payments"):
-        st.session_state.ops_section = "PAYMENTS"
-        st.rerun()
-
-    if st.sidebar.button("🔗 Allocate Payments"):
-        st.session_state.ops_section = "ALLOCATE_PAYMENTS"
-        st.rerun()
-
-
-    if st.sidebar.button("🚚 Freight"):
-        st.session_state.ops_section = "FREIGHT"
-        st.rerun()
-
-    if st.sidebar.button("📋 Freight Register"):
-        st.session_state.ops_section = "FREIGHT_REGISTER"
-        st.rerun()
-
-    if st.sidebar.button("🔄 Return/Replace Register"):
-        st.session_state.ops_section = "RETURN_REPLACE_REGISTER"
-        st.rerun()
-
-    if st.sidebar.button("💰 Payment Register"):
-        st.session_state.ops_section = "PAYMENT_REGISTER"
-        st.rerun()
-
-
-        
-    if st.sidebar.button("🔄 Return / Replace"):
-        st.session_state.ops_section = "RETURN_REPLACE"
-        st.rerun()
-
-    if st.sidebar.button("🔄 Recalculate Balances"):
-        st.session_state.ops_section = "RECALC_BALANCES"
-        st.rerun()
-
-
-    
     section = st.session_state.ops_section
 
     if not section:
-        st.info("👈 Select an OPS function from the sidebar")
+        st.info("☝️ Select an OPS function from the menu above")
         return
 
     
@@ -7103,7 +7017,6 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             st.rerun()
                 
                 st.divider()
-
 
 
 
