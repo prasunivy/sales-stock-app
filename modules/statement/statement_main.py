@@ -995,8 +995,35 @@ def run_admin_panel():
 
     st.title("🔧 Admin Dashboard")
 
+    # ── Admin section selector (replaces sidebar) ────────────────
+    ADMIN_SECTIONS = [
+        "— Select Admin Section —",
+        "Statements",
+        "Users",
+        "Create User",
+        "Stockists",
+        "Products",
+        "Territories",
+        "Reset User Password",
+        "Audit Logs",
+        "Lock / Unlock Statements",
+        "Analytics",
+    ]
+    current_index = ADMIN_SECTIONS.index(section) if section in ADMIN_SECTIONS else 0
+    selected = st.selectbox(
+        "Admin Section",
+        ADMIN_SECTIONS,
+        index=current_index,
+        key="admin_section_picker"
+    )
+    if selected != section:
+        st.session_state.admin_section = selected if selected != "— Select Admin Section —" else None
+        st.rerun()
+
+    section = st.session_state.get("admin_section")
+
     if not section:
-        st.info("Select an admin action from the sidebar")
+        st.info("☝️ Select an admin section from the dropdown above")
         return
 
     # ── STATEMENTS ──────────────────────────────────────────────
