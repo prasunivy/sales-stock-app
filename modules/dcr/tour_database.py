@@ -136,7 +136,19 @@ def create_tour_programme(user_id, tour_date, territory_ids, worked_with_type, d
                 }),
                 "Error adding chemist"
             )
-    
+
+    # Audit log
+    safe_exec(
+        admin_supabase.table("audit_logs").insert({
+            "action": "TOUR_CREATED",
+            "target_type": "tour_programmes",
+            "target_id": tour_id,
+            "performed_by": user_id,
+            "message": f"Tour programme created for {tour_date} (status: {status})"
+        }),
+        "Error creating audit log"
+    )
+
     return tour_id
 
 
@@ -165,12 +177,33 @@ def update_tour_programme(tour_id, tour_date, territory_ids, worked_with_type, d
         for chemist_id in chemist_ids:
             safe_exec(admin_supabase.table("tour_programme_chemists").insert({"tour_programme_id": tour_id, "chemist_id": chemist_id}), "Error adding chemist")
 
+    # Audit log
+    safe_exec(
+        admin_supabase.table("audit_logs").insert({
+            "action": "TOUR_UPDATED",
+            "target_type": "tour_programmes",
+            "target_id": tour_id,
+            "message": f"Tour programme updated for {tour_date} (status: {status})"
+        }),
+        "Error creating audit log"
+    )
+
 
 def delete_tour_programme(tour_id):
     """Soft delete tour programme"""
     safe_exec(
         admin_supabase.table("tour_programmes").update({"deleted_at": datetime.now().isoformat()}).eq("id", tour_id),
         "Error deleting tour"
+    )
+    # Audit log
+    safe_exec(
+        admin_supabase.table("audit_logs").insert({
+            "action": "TOUR_DELETED",
+            "target_type": "tour_programmes",
+            "target_id": tour_id,
+            "message": "Tour programme deleted"
+        }),
+        "Error creating audit log"
     )
 
 
@@ -219,6 +252,17 @@ def approve_tour_programme(tour_id, admin_user_id, comment):
         }).eq("id", tour_id),
         "Error approving tour"
     )
+    # Audit log
+    safe_exec(
+        admin_supabase.table("audit_logs").insert({
+            "action": "TOUR_APPROVED",
+            "target_type": "tour_programmes",
+            "target_id": tour_id,
+            "performed_by": admin_user_id,
+            "message": f"Tour programme approved. Comment: {comment}" if comment else "Tour programme approved"
+        }),
+        "Error creating audit log"
+    )
 
 
 def reject_tour_programme(tour_id, admin_user_id, comment):
@@ -233,6 +277,17 @@ def reject_tour_programme(tour_id, admin_user_id, comment):
             "approval_comment": comment
         }).eq("id", tour_id),
         "Error rejecting tour"
+    )
+    # Audit log
+    safe_exec(
+        admin_supabase.table("audit_logs").insert({
+            "action": "TOUR_REJECTED",
+            "target_type": "tour_programmes",
+            "target_id": tour_id,
+            "performed_by": admin_user_id,
+            "message": f"Tour programme rejected. Reason: {comment}" if comment else "Tour programme rejected"
+        }),
+        "Error creating audit log"
     )
 
 def get_all_tour_programmes_admin(status_filter=None, search=None):
