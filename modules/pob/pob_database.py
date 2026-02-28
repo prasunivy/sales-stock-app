@@ -188,7 +188,21 @@ def pob_create_document(doc_type, doc_date, party_type, party_id,
         }),
         "Error creating document"
     )
-    return rows[0]["id"] if rows else None
+    doc_id = rows[0]["id"] if rows else None
+
+    if doc_id:
+        _exec(
+            admin_supabase.table("audit_logs").insert({
+                "action": "POB_CREATED",
+                "target_type": "pob_documents",
+                "target_id": doc_id,
+                "performed_by": str(user_id),
+                "message": f"{doc_type} document {doc_no} created for {party_name}"
+            }),
+            "Error creating audit log"
+        )
+
+    return doc_id
 
 
 def pob_load_document(doc_id) -> dict:
@@ -210,6 +224,21 @@ def pob_submit_document(doc_id) -> bool:
         }).eq("id", str(doc_id)),
         "Error submitting document"
     )
+    # Load doc info for audit message
+    try:
+        doc = admin_supabase.table("pob_documents").select("pob_no, doc_type, party_name, user_id").eq("id", str(doc_id)).single().execute().data
+        _exec(
+            admin_supabase.table("audit_logs").insert({
+                "action": "POB_SUBMITTED",
+                "target_type": "pob_documents",
+                "target_id": str(doc_id),
+                "performed_by": str(doc["user_id"]),
+                "message": f"{doc['doc_type']} document {doc['pob_no']} submitted for {doc['party_name']}"
+            }),
+            "Error creating audit log"
+        )
+    except Exception:
+        pass
     return True
 
 
@@ -329,6 +358,20 @@ def pob_approve(doc_id, admin_user_id, comment="") -> bool:
         }).eq("id", str(doc_id)),
         "Error approving"
     )
+    try:
+        doc = admin_supabase.table("pob_documents").select("pob_no, doc_type, party_name").eq("id", str(doc_id)).single().execute().data
+        _exec(
+            admin_supabase.table("audit_logs").insert({
+                "action": "POB_APPROVED",
+                "target_type": "pob_documents",
+                "target_id": str(doc_id),
+                "performed_by": str(admin_user_id),
+                "message": f"{doc['doc_type']} {doc['pob_no']} approved for {doc['party_name']}"
+            }),
+            "Error creating audit log"
+        )
+    except Exception:
+        pass
     return True
 
 
@@ -343,6 +386,20 @@ def pob_reject(doc_id, admin_user_id, comment="") -> bool:
         }).eq("id", str(doc_id)),
         "Error rejecting"
     )
+    try:
+        doc = admin_supabase.table("pob_documents").select("pob_no, doc_type, party_name").eq("id", str(doc_id)).single().execute().data
+        _exec(
+            admin_supabase.table("audit_logs").insert({
+                "action": "POB_REJECTED",
+                "target_type": "pob_documents",
+                "target_id": str(doc_id),
+                "performed_by": str(admin_user_id),
+                "message": f"{doc['doc_type']} {doc['pob_no']} rejected for {doc['party_name']}. Reason: {comment}" if comment else f"{doc['doc_type']} {doc['pob_no']} rejected for {doc['party_name']}"
+            }),
+            "Error creating audit log"
+        )
+    except Exception:
+        pass
     return True
 
 
