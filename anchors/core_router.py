@@ -121,13 +121,13 @@ def route_module():
     ]
 
     if role == "admin" and active == "ADMIN":
-        admin_section_labels = [label for label, _ in admin_items]
+        admin_section_labels = ["— Select Section —"] + [label for label, _ in admin_items]
         admin_section_map = {label: key for label, key in admin_items}
 
         current_section = st.session_state.get("admin_section")
         current_section_label = next(
             (lbl for lbl, key in admin_items if key == current_section),
-            admin_section_labels[0]
+            "— Select Section —"
         )
         current_section_index = admin_section_labels.index(current_section_label)
 
@@ -137,7 +137,12 @@ def route_module():
             index=current_section_index,
             key="admin_section_selectbox"
         )
-        new_section = admin_section_map[selected_section_label]
+
+        if selected_section_label == "— Select Section —":
+            new_section = None
+        else:
+            new_section = admin_section_map.get(selected_section_label)
+
         if new_section != current_section:
             st.session_state.admin_section = new_section
             st.rerun()
