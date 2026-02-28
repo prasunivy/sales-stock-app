@@ -278,6 +278,18 @@ def delete_dcr_soft(dcr_id, deleted_by):
         "Error deleting DCR"
     )
 
+    # Audit log
+    safe_exec(
+        admin_supabase.table("audit_logs").insert({
+            "action": "DCR_DELETED",
+            "target_type": "dcr_reports",
+            "target_id": dcr_id,
+            "performed_by": deleted_by,
+            "message": "Daily Call Report deleted"
+        }),
+        "Error creating audit log"
+    )
+
 
 def get_dcr_by_id(dcr_id):
     """
