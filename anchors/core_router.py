@@ -4,8 +4,8 @@ from datetime import datetime
 
 def route_module():
     """
-    Top navigation bar — works on mobile and desktop.
-    Replaces the sidebar completely.
+    Navigation — green header bar + selectbox nav.
+    Works perfectly on mobile and desktop.
     """
     role = st.session_state.get("role", "user")
     user = st.session_state.get("auth_user")
@@ -26,89 +26,125 @@ def route_module():
         except Exception:
             pass
 
-    # ── Top header bar ────────────────────────────────────────────
+    # ── Green header bar (pure HTML — always visible) ─────────────
     st.markdown(f"""
-    <div class="ivy-topnav">
-        <div class="ivy-topnav-header">
-            <div class="app-title">🌿 Ivy Pharmaceuticals</div>
-            <div class="user-info">👤 {username} &nbsp;|&nbsp; {role.upper()}</div>
+    <div style="
+        background: #1a6b5a;
+        color: white;
+        padding: 0.55rem 1.2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-radius: 0 0 10px 10px;
+        margin-bottom: 0.75rem;
+        box-shadow: 0 2px 8px rgba(26,107,90,0.18);
+    ">
+        <div style="font-size:1rem; font-weight:700; letter-spacing:0.01em;">
+            🌿 Ivy Pharmaceuticals
+        </div>
+        <div style="font-size:0.78rem; opacity:0.88;">
+            👤 {username}&nbsp;&nbsp;|&nbsp;&nbsp;{role.upper()}
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Navigation buttons row ────────────────────────────────────
-    st.markdown('<div class="ivy-topnav-buttons">', unsafe_allow_html=True)
+    # ── Nav + Logout in one row ───────────────────────────────────
+    nav_col, logout_col = st.columns([5, 1])
 
-    nav_items = [
-        ("📦 Statement",   "STATEMENT"),
-        ("📥 OPS",          "OPS"),
-        ("📞 DCR",          "DCR"),
-        ("🔍 Doctor Fetch", "DOCTOR_FETCH"),
-        ("📊 Doc I/O",      "DOCTOR_IO"),
-        ("🗓️ Tour",         "TOUR"),
-        ("📋 POB",          "POB"),
-        ("📈 Reports",      "REPORTS"),
+    # Build module options
+    nav_options = [
+        "🏠 Home",
+        "📦 Statement",
+        "📥 OPS",
+        "📞 DCR",
+        "🔍 Doctor Fetch",
+        "📊 Doc I/O",
+        "🗓️ Tour",
+        "📋 POB",
+        "📈 Reports",
     ]
-
-    # Admin extra items
-    admin_items = [
-        ("📄 Statements",        "Statements"),
-        ("👤 Users",             "Users"),
-        ("➕ Create User",       "Create User"),
-        ("🏪 Stockists",         "Stockists"),
-        ("📦 Products",          "Products"),
-        ("📍 Territories",       "Territories"),
-        ("🔐 Reset Password",    "Reset User Password"),
-        ("📜 Audit Logs",        "Audit Logs"),
-        ("🔒 Lock/Unlock",       "Lock / Unlock Statements"),
-        ("📈 Analytics",         "Analytics"),
-    ]
-
-    # Render module buttons in one scrollable row
-    cols = st.columns(len(nav_items) + (1 if role == "admin" else 0) + 1)
-
-    for i, (label, module) in enumerate(nav_items):
-        with cols[i]:
-            if st.button(label, key=f"nav_{module}"):
-                _set_module(module)
-
-    # Admin dropdown
     if role == "admin":
-        with cols[len(nav_items)]:
-            if st.button("🔧 Admin", key="nav_admin_toggle"):
-                current = st.session_state.get("show_admin_menu", False)
-                st.session_state.show_admin_menu = not current
-                st.rerun()
+        nav_options.append("🔧 Admin")
 
-    # Logout button — last column
-    with cols[-1]:
-        st.markdown('<div class="ivy-topnav-logout">', unsafe_allow_html=True)
-        if st.button("🚪 Logout", key="logout_btn"):
+    # Map label → module key
+    label_to_module = {
+        "🏠 Home":          None,
+        "📦 Statement":     "STATEMENT",
+        "📥 OPS":           "OPS",
+        "📞 DCR":           "DCR",
+        "🔍 Doctor Fetch":  "DOCTOR_FETCH",
+        "📊 Doc I/O":       "DOCTOR_IO",
+        "🗓️ Tour":          "TOUR",
+        "📋 POB":           "POB",
+        "📈 Reports":       "REPORTS",
+        "🔧 Admin":         "ADMIN",
+    }
+
+    # Find current selection label from active_module
+    module_to_label = {v: k for k, v in label_to_module.items()}
+    active = st.session_state.get("active_module")
+    current_label = module_to_label.get(active, "🏠 Home")
+    current_index = nav_options.index(current_label) if current_label in nav_options else 0
+
+    with nav_col:
+        selected_label = st.selectbox(
+            "Navigate",
+            nav_options,
+            index=current_index,
+            key="nav_selectbox",
+            label_visibility="collapsed"
+        )
+
+    with logout_col:
+        if st.button("🚪 Logout", key="logout_btn", use_container_width=True):
             _do_logout()
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ── Admin submenu ─────────────────────────────────────────────
-    if role == "admin" and st.session_state.get("show_admin_menu"):
-        with st.expander("🔧 Admin Panel — Select Section", expanded=True):
-            a_cols = st.columns(5)
-            for i, (label, section) in enumerate(admin_items):
-                with a_cols[i % 5]:
-                    if st.button(label, key=f"admin_sec_{section}"):
-                        st.session_state.active_module = "ADMIN"
-                        st.session_state.admin_section = section
-                        st.session_state.show_admin_menu = False
-                        for k in ["statement_id", "product_index", "statement_year",
-                                  "statement_month", "selected_stockist_id", "engine_stage"]:
-                            st.session_state[k] = None
-                        st.rerun()
+    # ── Handle navigation change ──────────────────────────────────
+    selected_module = label_to_module.get(selected_label)
+    if selected_module != active:
+        _set_module(selected_module)
 
     st.divider()
 
-    # ── Route to module ───────────────────────────────────────────
-    active = st.session_state.get("active_module")
+    # ── Admin submenu ─────────────────────────────────────────────
+    admin_items = [
+        ("📄 Statements",     "Statements"),
+        ("👤 Users",          "Users"),
+        ("➕ Create User",    "Create User"),
+        ("🏪 Stockists",      "Stockists"),
+        ("📦 Products",       "Products"),
+        ("📍 Territories",    "Territories"),
+        ("🔐 Reset Password", "Reset User Password"),
+        ("📜 Audit Logs",     "Audit Logs"),
+        ("🔒 Lock/Unlock",    "Lock / Unlock Statements"),
+        ("📈 Analytics",      "Analytics"),
+    ]
 
+    if role == "admin" and active == "ADMIN":
+        admin_section_labels = [label for label, _ in admin_items]
+        admin_section_map = {label: key for label, key in admin_items}
+
+        current_section = st.session_state.get("admin_section")
+        current_section_label = next(
+            (lbl for lbl, key in admin_items if key == current_section),
+            admin_section_labels[0]
+        )
+        current_section_index = admin_section_labels.index(current_section_label)
+
+        selected_section_label = st.selectbox(
+            "Admin Section",
+            admin_section_labels,
+            index=current_section_index,
+            key="admin_section_selectbox"
+        )
+        new_section = admin_section_map[selected_section_label]
+        if new_section != current_section:
+            st.session_state.admin_section = new_section
+            st.rerun()
+
+        st.divider()
+
+    # ── Route to module ───────────────────────────────────────────
     if active == "STATEMENT":
         from modules.statement.statement_main import run_statement
         run_statement()
@@ -151,11 +187,12 @@ def route_module():
 
 def _set_module(name):
     st.session_state.active_module = name
-    st.session_state.show_admin_menu = False
     if name not in ("STATEMENT", "ADMIN"):
         for k in ["statement_id", "product_index", "statement_year",
                   "statement_month", "selected_stockist_id", "engine_stage"]:
             st.session_state[k] = None
+    if name != "ADMIN":
+        st.session_state.admin_section = None
     st.rerun()
 
 
@@ -180,7 +217,7 @@ def _show_home(username="", role=""):
     st.title("🏠 Welcome to Ivy Pharmaceuticals")
     st.markdown(f"**Logged in as:** {username} ({role})")
     st.markdown("""
-    ### 👆 Select a module from the navigation bar above
+    Use the **Navigate** dropdown above to go to any module.
 
     | Module | Description |
     |--------|-------------|
