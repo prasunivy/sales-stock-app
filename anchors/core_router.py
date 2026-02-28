@@ -64,6 +64,7 @@ def route_module():
         "📈 Reports",
     ]
     if role == "admin":
+        nav_options.append("🔔 Notifications")
         nav_options.append("🔧 Admin")
 
     # Map label → module key
@@ -77,6 +78,7 @@ def route_module():
         "🗓️ Tour":          "TOUR",
         "📋 POB":           "POB",
         "📈 Reports":       "REPORTS",
+        "🔔 Notifications": "NOTIFICATIONS",
         "🔧 Admin":         "ADMIN",
     }
 
@@ -121,13 +123,13 @@ def route_module():
     ]
 
     if role == "admin" and active == "ADMIN":
-        admin_section_labels = ["— Select Section —"] + [label for label, _ in admin_items]
+        admin_section_labels = [label for label, _ in admin_items]
         admin_section_map = {label: key for label, key in admin_items}
 
         current_section = st.session_state.get("admin_section")
         current_section_label = next(
             (lbl for lbl, key in admin_items if key == current_section),
-            "— Select Section —"
+            admin_section_labels[0]
         )
         current_section_index = admin_section_labels.index(current_section_label)
 
@@ -137,12 +139,7 @@ def route_module():
             index=current_section_index,
             key="admin_section_selectbox"
         )
-
-        if selected_section_label == "— Select Section —":
-            new_section = None
-        else:
-            new_section = admin_section_map.get(selected_section_label)
-
+        new_section = admin_section_map[selected_section_label]
         if new_section != current_section:
             st.session_state.admin_section = new_section
             st.rerun()
@@ -181,6 +178,10 @@ def route_module():
     elif active == "REPORTS":
         from modules.statement.statement_main import run_reports
         run_reports()
+
+    elif active == "NOTIFICATIONS":
+        from modules.statement.notifications import run_notifications
+        run_notifications()
 
     elif active == "ADMIN":
         from modules.statement.statement_main import run_admin_panel
