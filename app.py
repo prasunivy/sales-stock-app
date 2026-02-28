@@ -14,7 +14,7 @@ from anchors.ivy_styles import apply_styles
 st.set_page_config(
     page_title="Ivy Pharmaceuticals",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 apply_styles()
