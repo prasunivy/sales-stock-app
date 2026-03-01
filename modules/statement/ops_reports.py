@@ -383,13 +383,22 @@ def _report1(role, user_id):
     with st.spinner("Fetching product lines..."):
         lines_raw = safe_exec(
             admin_supabase.table("ops_lines")
-            .select("ops_document_id, sale_qty, products(name)")
+            .select("ops_document_id, sale_qty, product_id")
             .in_("ops_document_id", doc_ids)
         ) or []
 
     if not lines_raw:
         st.info("No product lines found for the matching documents.")
         return
+
+    # Build product_id -> name lookup
+    all_product_ids = list({ln["product_id"] for ln in lines_raw if ln.get("product_id")})
+    products_raw = safe_exec(
+        admin_supabase.table("products")
+        .select("id, name")
+        .in_("id", all_product_ids)
+    ) or []
+    product_name_map = {p["id"]: p["name"] for p in products_raw}
 
     periods    = _period_range(yf, mf, yt, mt)
     period_set = {(y, m) for y, m in periods}
@@ -403,7 +412,7 @@ def _report1(role, user_id):
         y, mo = int(ops_date[:4]), int(ops_date[5:7])
         if (y, mo) not in period_set:
             continue
-        product  = (ln.get("products") or {}).get("name") or "Unknown"
+        product  = product_name_map.get(ln.get("product_id"), "Unknown")
         qty      = _safe_float(ln.get("sale_qty"))
         type_key = "Invoice" if stock_as == "normal" else stock_as.capitalize()
         k        = (product, y, mo, type_key)
