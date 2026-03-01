@@ -1,4 +1,5 @@
 import os
+import time
 import streamlit as st
 from supabase import create_client
 
@@ -35,20 +36,63 @@ elif SUPABASE_URL and SUPABASE_SERVICE_KEY:
     supabase = admin_supabase
 
 
+# Errors that are transient and safe to retry
+_RETRY_SIGNALS = (
+    "resource temporarily unavailable",
+    "errno 11",
+    "connection reset",
+    "connection refused",
+    "broken pipe",
+    "timed out",
+    "timeout",
+    "readtimeout",
+    "remotedisconnected",
+    "ssl",
+)
+
+_MAX_RETRIES  = 3
+_RETRY_DELAYS = [0.5, 1.5, 3.0]   # seconds between retries
+
+
 def safe_exec(q, msg="Database error"):
     """
-    Safely execute Supabase query with error handling
-    Returns data or empty list on error
+    Safely execute a Supabase query with automatic retry for transient
+    network errors (e.g. 'Resource temporarily unavailable', errno 11).
+
+    Returns data list or empty list on error.
+    Stops the app with an error message only after all retries are exhausted.
     """
-    try:
-        res = q.execute()
-    except Exception as e:
+    last_exc = None
+
+    for attempt in range(_MAX_RETRIES):
+        try:
+            res = q.execute()
+
+            if hasattr(res, "error") and res.error:
+                st.error(msg)
+                st.stop()
+
+            return res.data or []
+
+        except Exception as e:
+            err_lower = str(e).lower()
+            is_transient = any(sig in err_lower for sig in _RETRY_SIGNALS)
+
+            if is_transient and attempt < _MAX_RETRIES - 1:
+                # Wait then retry
+                time.sleep(_RETRY_DELAYS[attempt])
+                last_exc = e
+                continue
+
+            # Not transient, or final attempt — surface the error
+            st.error(msg)
+            st.exception(e)
+            st.stop()
+
+    # Should not reach here, but just in case
+    if last_exc:
         st.error(msg)
-        st.exception(e)
+        st.exception(last_exc)
         st.stop()
 
-    if hasattr(res, "error") and res.error:
-        st.error(msg)
-        st.stop()
-
-    return res.data or []
+    return []
