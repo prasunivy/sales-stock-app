@@ -640,130 +640,341 @@ def _run_preview(sid, user_id, role):
 # ======================================================
 
 def run_reports():
-    st.title("📊 Reports & Matrices")
     user_id = st.session_state.auth_user.id
     role = st.session_state.get("role", "user")
 
-    col1, col2, col3 = st.columns(3)
+    st.title("📊 Reports & Matrices")
 
-    with col1:
-        if role == "admin":
-            users = supabase.table("users").select("id, username").order("username").execute().data
-            selected_users = st.multiselect("Users", users, default=users, format_func=lambda x: x["username"])
-            visible_user_ids = [u["id"] for u in selected_users]
-        else:
-            my_profile = supabase.table("users").select("id, designation").eq("id", user_id).limit(1).execute().data[0]
-            if my_profile["designation"] in ("manager", "senior_manager"):
-                reps = supabase.table("users").select("id").eq("report_to", user_id).execute().data
-                visible_user_ids = [user_id] + [r["id"] for r in reps]
+    # ── Top-level tab split ──────────────────────────────────────
+    tab1, tab2 = st.tabs(["📦 Stock Control Reports", "📊 OPS Reports"])
+
+    with tab2:
+        from modules.statement.ops_reports import run_ops_reports
+        run_ops_reports()
+
+    with tab1:
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            if role == "admin":
+                users = supabase.table("users").select("id, username").order("username").execute().data
+                selected_users = st.multiselect("Users", users, default=users, format_func=lambda x: x["username"])
+                visible_user_ids = [u["id"] for u in selected_users]
             else:
-                visible_user_ids = [user_id]
-            st.text_input("User Scope", value="Auto (Hierarchy Based)", disabled=True)
+                my_profile = supabase.table("users").select("id, designation").eq("id", user_id).limit(1).execute().data[0]
+                if my_profile["designation"] in ("manager", "senior_manager"):
+                    reps = supabase.table("users").select("id").eq("report_to", user_id).execute().data
+                    visible_user_ids = [user_id] + [r["id"] for r in reps]
+                else:
+                    visible_user_ids = [user_id]
+                st.text_input("User Scope", value="Auto (Hierarchy Based)", disabled=True)
 
-    with col2:
-        year_from = st.selectbox("Year From", list(range(2020, date.today().year + 1)))
-        month_from = st.selectbox("Month From", list(range(1, 13)))
+        with col2:
+            year_from = st.selectbox("Year From", list(range(2020, date.today().year + 1)))
+            month_from = st.selectbox("Month From", list(range(1, 13)))
 
-    with col3:
-        year_to = st.selectbox("Year To", list(range(2020, date.today().year + 1)))
-        month_to = st.selectbox("Month To", list(range(1, 13)))
+        with col3:
+            year_to = st.selectbox("Year To", list(range(2020, date.today().year + 1)))
+            month_to = st.selectbox("Month To", list(range(1, 13)))
 
-    raw_stockists = supabase.table("user_stockists") \
-        .select("stockist_id, stockists(name)") \
-        .in_("user_id", visible_user_ids) \
-        .execute().data
+        raw_stockists = supabase.table("user_stockists") \
+            .select("stockist_id, stockists(name)") \
+            .in_("user_id", visible_user_ids) \
+            .execute().data
 
-    stockists = [{"id": r["stockist_id"], "name": r["stockists"]["name"]} for r in raw_stockists]
+        stockists = [{"id": r["stockist_id"], "name": r["stockists"]["name"]} for r in raw_stockists]
 
-    if not stockists:
-        st.warning("No stockists available for your reporting scope")
-        return
+        if not stockists:
+            st.warning("No stockists available for your reporting scope")
+            return
 
-    selected_stockists = st.multiselect("Stockists", stockists, default=stockists, format_func=lambda x: x["name"])
-    stockist_ids = [s["id"] for s in selected_stockists]
+        selected_stockists = st.multiselect("Stockists", stockists, default=stockists, format_func=lambda x: x["name"])
+        stockist_ids = [s["id"] for s in selected_stockists]
 
-    summary_rows = safe_exec(
-        admin_supabase.table("monthly_summary")
-        .select("year, month, total_issue, total_closing, total_order, products(name), stockist_id")
-        .in_("stockist_id", stockist_ids)
-    )
-
-    if not summary_rows:
-        st.info("No data for selected filters")
-        return
-
-    df = pd.DataFrame([{
-        "Product": r["products"]["name"],
-        "Year-Month": f"{r['year']}-{r['month']:02d}",
-        "Issue": r["total_issue"],
-        "Closing": r["total_closing"],
-        "Order": r["total_order"]
-    } for r in summary_rows])
-
-    if "drilldown_product" not in st.session_state:
-        st.session_state.drilldown_product = None
-
-    if st.session_state.drilldown_product:
-        df = df[df["Product"] == st.session_state.drilldown_product]
-
-    # Alerts
-    st.subheader("🚨 Alerts Summary")
-    df_sorted = df.sort_values(["Product", "Year-Month"])
-    alert_found = False
-    for product in df_sorted["Product"].unique():
-        df_p = df_sorted[df_sorted["Product"] == product]
-        if len(df_p) < 2:
-            continue
-        latest, previous = df_p.iloc[-1], df_p.iloc[-2]
-        if latest["Issue"] < previous["Issue"]:
-            alert_found = True
-            if st.button(f"🔻 {product}: Issue degrowth", key=f"deg_{product}"):
-                st.session_state.drilldown_product = product
-                st.rerun()
-        if latest["Issue"] > 0 and latest["Closing"] >= 2 * latest["Issue"]:
-            alert_found = True
-            if st.button(f"⚠️ {product}: High closing stock", key=f"stk_{product}"):
-                st.session_state.drilldown_product = product
-                st.rerun()
-        if latest["Issue"] == 0 and latest["Closing"] == 0:
-            alert_found = True
-            if st.button(f"📣 {product}: Promotion needed", key=f"pro_{product}"):
-                st.session_state.drilldown_product = product
-                st.rerun()
-    if not alert_found:
-        st.success("✅ No alerts for selected period")
-
-    if st.session_state.drilldown_product:
-        st.info(f"🔍 Viewing detailed insights for **{st.session_state.drilldown_product}**")
-        if st.button("⬅️ Back to All Products"):
-            st.session_state.drilldown_product = None
-            st.rerun()
-
-    # Matrices
-    st.subheader("📦 Stock Control Matrix")
-    stockist_for_matrix = st.selectbox("Select Stockist (Required)", selected_stockists, format_func=lambda x: x["name"])
-    m_year = st.selectbox("Year", sorted(set(df["Year-Month"].str[:4])))
-    m_month = st.selectbox("Month", list(range(1, 13)))
-
-    if stockist_for_matrix:
-        stmt = safe_exec(
-            admin_supabase.table("statements").select("id")
-            .eq("stockist_id", stockist_for_matrix["id"])
-            .eq("year", int(m_year)).eq("month", int(m_month))
-            .eq("status", "final").limit(1)
+        summary_rows = safe_exec(
+            admin_supabase.table("monthly_summary")
+            .select("year, month, total_issue, total_closing, total_order, products(name), stockist_id")
+            .in_("stockist_id", stockist_ids)
         )
-        if not stmt:
-            st.warning("No final statement for selected period")
+
+        if not summary_rows:
+            st.info("No data for selected filters")
+            return
+
+        df = pd.DataFrame([{
+            "Product": r["products"]["name"],
+            "Year-Month": f"{r['year']}-{r['month']:02d}",
+            "Issue": r["total_issue"],
+            "Closing": r["total_closing"],
+            "Order": r["total_order"]
+        } for r in summary_rows])
+
+        if "drilldown_product" not in st.session_state:
+            st.session_state.drilldown_product = None
+
+        if st.session_state.drilldown_product:
+            df = df[df["Product"] == st.session_state.drilldown_product]
+
+        # Alerts
+        st.subheader("🚨 Alerts Summary")
+        df_sorted = df.sort_values(["Product", "Year-Month"])
+        alert_found = False
+        for product in df_sorted["Product"].unique():
+            df_p = df_sorted[df_sorted["Product"] == product]
+            if len(df_p) < 2:
+                continue
+            latest, previous = df_p.iloc[-1], df_p.iloc[-2]
+            if latest["Issue"] < previous["Issue"]:
+                alert_found = True
+                if st.button(f"🔻 {product}: Issue degrowth", key=f"deg_{product}"):
+                    st.session_state.drilldown_product = product
+                    st.rerun()
+            if latest["Issue"] > 0 and latest["Closing"] >= 2 * latest["Issue"]:
+                alert_found = True
+                if st.button(f"⚠️ {product}: High closing stock", key=f"stk_{product}"):
+                    st.session_state.drilldown_product = product
+                    st.rerun()
+            if latest["Issue"] == 0 and latest["Closing"] == 0:
+                alert_found = True
+                if st.button(f"📣 {product}: Promotion needed", key=f"pro_{product}"):
+                    st.session_state.drilldown_product = product
+                    st.rerun()
+        if not alert_found:
+            st.success("✅ No alerts for selected period")
+
+        if st.session_state.drilldown_product:
+            st.info(f"🔍 Viewing detailed insights for **{st.session_state.drilldown_product}**")
+            if st.button("⬅️ Back to All Products"):
+                st.session_state.drilldown_product = None
+                st.rerun()
+
+        # Matrices
+        st.subheader("📦 Stock Control Matrix")
+        stockist_for_matrix = st.selectbox("Select Stockist (Required)", selected_stockists, format_func=lambda x: x["name"])
+        m_year = st.selectbox("Year", sorted(set(df["Year-Month"].str[:4])))
+        m_month = st.selectbox("Month", list(range(1, 13)))
+
+        if stockist_for_matrix:
+            stmt = safe_exec(
+                admin_supabase.table("statements").select("id")
+                .eq("stockist_id", stockist_for_matrix["id"])
+                .eq("year", int(m_year)).eq("month", int(m_month))
+                .eq("status", "final").limit(1)
+            )
+            if not stmt:
+                st.warning("No final statement for selected period")
+            else:
+                stmt_id = stmt[0]["id"]
+                rows = safe_exec(
+                    admin_supabase.table("statement_products")
+                    .select("opening,purchase,issue,closing,difference,order_qty,issue_guidance,stock_guidance,product_id,products!statement_products_product_id_fkey(name)")
+                    .eq("statement_id", stmt_id)
+                )
+                matrix = []
+                for r in rows:
+                    last_closing = fetch_last_month_closing_only(stockist_for_matrix["id"], r["product_id"], int(m_year), int(m_month))
+                    matrix.append({
+                        "Product": r["products"]["name"],
+                        "Last Month Closing": last_closing,
+                        "Opening": r["opening"],
+                        "Closing": r["closing"],
+                        "Issue Guidance": r["issue_guidance"],
+                        "Stock Guidance": r["stock_guidance"],
+                        "Order": r["order_qty"],
+                        "Difference": r["difference"]
+                    })
+                st.dataframe(pd.DataFrame(matrix).sort_values("Product"), use_container_width=True, hide_index=True)
+
+        st.subheader("📦 Matrix 1 — Product-wise Sales (Issue)")
+        st.dataframe(df.pivot_table(index="Product", columns="Year-Month", values="Issue", aggfunc="sum", fill_value=0), use_container_width=True)
+
+        st.subheader("🧾 Matrix 2 — Product-wise Order")
+        st.dataframe(df.pivot_table(index="Product", columns="Year-Month", values="Order", aggfunc="sum", fill_value=0), use_container_width=True)
+
+        st.subheader("📊 Matrix 3 — Product-wise Closing")
+        st.dataframe(df.pivot_table(index="Product", columns="Year-Month", values="Closing", aggfunc="sum", fill_value=0), use_container_width=True)
+
+        st.subheader("📦📊 Matrix 4 — Issue & Closing")
+        st.dataframe(
+            df.melt(id_vars=["Product", "Year-Month"], value_vars=["Issue", "Closing"])
+            .pivot_table(index="Product", columns=["Year-Month", "variable"], values="value", aggfunc="sum", fill_value=0),
+            use_container_width=True
+        )
+
+        # Trend charts
+        st.subheader("📈 Trend Charts — Last 6 Months")
+        today = date.today()
+        last_6 = []
+        y, m = today.year, today.month
+        for _ in range(6):
+            last_6.append(f"{y}-{m:02d}")
+            m -= 1
+            if m == 0:
+                m = 12
+                y -= 1
+
+        df_trend = df[df["Year-Month"].isin(last_6)]
+        if df_trend.empty:
+            st.info("No trend data available for last 6 months")
         else:
-            stmt_id = stmt[0]["id"]
+            trend_products = sorted(df_trend["Product"].unique())
+            default_index = 0
+            if st.session_state.get("drilldown_product") in trend_products:
+                default_index = trend_products.index(st.session_state.drilldown_product)
+            trend_product = st.selectbox("Select Product for Trend", trend_products, index=default_index)
+            chart_df = (
+                df_trend[df_trend["Product"] == trend_product]
+                .sort_values("Year-Month")
+                .set_index("Year-Month")[["Issue", "Closing"]]
+            )
+            st.line_chart(chart_df)
+
+        # Forecast
+        st.subheader("🔮 Forecast — Next 3 Months")
+        products_master = [p for p in load_products_cached() if "peak_months" in p]
+        forecast_rows = []
+        for p in products_master:
+            df_p = df[df["Product"] == p["name"]]
+            if df_p.empty:
+                continue
+            last_issue = df_p.sort_values("Year-Month").iloc[-1]["Issue"]
+            fy, fm = today.year, today.month + 1
+            if fm == 13:
+                fm = 1
+                fy += 1
+            for _ in range(3):
+                if fm in (p.get("peak_months") or []):
+                    factor = 2
+                elif fm in (p.get("high_months") or []):
+                    factor = 1.5
+                elif fm in (p.get("lowest_months") or []):
+                    factor = 0.8
+                else:
+                    factor = 1
+                forecast_rows.append({"Product": p["name"], "Forecast Month": f"{fy}-{fm:02d}", "Forecast Issue": round(last_issue * factor, 2)})
+                fm += 1
+                if fm == 13:
+                    fm = 1
+                    fy += 1
+
+        if forecast_rows:
+            st.dataframe(
+                pd.DataFrame(forecast_rows).pivot_table(index="Product", columns="Forecast Month", values="Forecast Issue", fill_value=0),
+                use_container_width=True
+            )
+        else:
+            st.info("Forecast not available for selected filters")
+
+        # KPI
+        st.subheader("📊 KPI — Month-on-Month")
+        kpi_df = df.groupby("Year-Month", as_index=False).agg({"Issue": "sum"}).sort_values("Year-Month")
+        if len(kpi_df) >= 2:
+            cur, prev = kpi_df.iloc[-1], kpi_df.iloc[-2]
+            mom = cur["Issue"] - prev["Issue"]
+            pct = (mom / prev["Issue"] * 100) if prev["Issue"] else 0
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Current Issue", round(cur["Issue"], 2))
+            c2.metric("MoM Change", round(mom, 2), round(mom, 2))
+            c3.metric("Growth %", f"{round(pct, 2)}%", f"{round(pct, 2)}%")
+        else:
+            st.info("Not enough data for KPI")
+
+        # Product KPI
+        st.subheader("📊 Product-level KPI Cards")
+        product_list = sorted(df["Product"].unique())
+        selected_product = st.selectbox("Select Product", product_list)
+        df_p = df[df["Product"] == selected_product].groupby("Year-Month", as_index=False).agg({"Issue": "sum"}).sort_values("Year-Month")
+        if len(df_p) >= 2:
+            latest, previous = df_p.iloc[-1], df_p.iloc[-2]
+            mom = latest["Issue"] - previous["Issue"]
+            pct = (mom / previous["Issue"] * 100) if previous["Issue"] else 0
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Latest Issue", round(latest["Issue"], 2))
+            c2.metric("Previous Issue", round(previous["Issue"], 2))
+            c3.metric("MoM Change", round(mom, 2), round(mom, 2))
+            c4.metric("Growth %", f"{round(pct, 2)}%", f"{round(pct, 2)}%")
+        else:
+            st.info("Not enough data for product KPI")
+
+        # Authorized stockists panel
+        st.divider()
+        st.title("🏪 Authorized Stockists — Last Submitted Stock Control")
+        if role == "admin":
+            authorized_stockists = safe_exec(
+                supabase.table("stockists").select("id, name").eq("authorization_status", "AUTHORIZED").order("name")
+            )
+        else:
+            scoped = safe_exec(
+                supabase.table("user_stockists")
+                .select("stockist_id, stockists(id, name, authorization_status)")
+                .in_("user_id", visible_user_ids)
+            )
+            authorized_stockists = list({
+                r["stockists"]["id"]: {"id": r["stockists"]["id"], "name": r["stockists"]["name"]}
+                for r in scoped
+                if r["stockists"]["authorization_status"] == "AUTHORIZED"
+            }.values())
+
+        if not authorized_stockists:
+            st.info("No authorized stockists found.")
+            return
+
+        for stockist in authorized_stockists:
+            stockist_id = stockist["id"]
+            last_stmt = safe_exec(
+                admin_supabase.table("statements").select("id, year, month")
+                .eq("stockist_id", stockist_id).eq("status", "final")
+                .order("year", desc=True).order("month", desc=True).limit(1)
+            )
+            if not last_stmt:
+                continue
+
+            stmt_id, stmt_year, stmt_month = last_stmt[0]["id"], last_stmt[0]["year"], last_stmt[0]["month"]
+            territory_rows = safe_exec(
+                supabase.table("territory_stockists").select("territories(name)").eq("stockist_id", stockist_id)
+            )
+            territory_label = ", ".join(sorted({t["territories"]["name"] for t in territory_rows if t.get("territories")})) or "—"
+
+            st.subheader(f"🏪 {stockist['name']}")
+            st.caption(f"📍 Territory: {territory_label}  |  🗓 Last Submitted: {stmt_month:02d}/{stmt_year}")
+
             rows = safe_exec(
                 admin_supabase.table("statement_products")
-                .select("opening,purchase,issue,closing,difference,order_qty,issue_guidance,stock_guidance,product_id,products!statement_products_product_id_fkey(name)")
+                .select("opening,issue,closing,difference,order_qty,issue_guidance,stock_guidance,product_id,products!statement_products_product_id_fkey(name)")
                 .eq("statement_id", stmt_id)
             )
+            if not rows:
+                st.warning("No product data found for this statement.")
+                continue
+
+            flags = detect_red_flags(rows)
+            if any(flags.values()):
+                st.error("🔴 Red Flags Detected")
+                if flags["overstock"]:
+                    st.markdown(f"• **Overstock ({len(flags['overstock'])})**: {', '.join(flags['overstock'])}")
+                if flags["zero_issue"]:
+                    st.markdown(f"• **Zero Issue ({len(flags['zero_issue'])})**: {', '.join(flags['zero_issue'])}")
+                if flags["mismatch"]:
+                    st.markdown(f"• **Data Mismatch ({len(flags['mismatch'])})**: {', '.join(flags['mismatch'])}")
+            else:
+                st.success("🟢 No red flags detected")
+
+            overstock_count = len(flags["overstock"])
+            zero_issue_count = len(flags["zero_issue"])
+            st.info("🧠 AI Summary")
+            if overstock_count == 0 and zero_issue_count == 0:
+                summary = f"{stockist['name']}'s last submitted statement ({stmt_month:02d}/{stmt_year}) shows a stable stock position."
+            elif overstock_count > 0:
+                summary = f"{stockist['name']}'s latest statement indicates overstocking in {overstock_count} product(s)."
+            elif zero_issue_count > 0:
+                summary = f"Several products show zero issue despite available stock in {stockist['name']}'s latest statement."
+            else:
+                summary = f"Data inconsistencies present in the latest statement ({stmt_month:02d}/{stmt_year}). Review recommended."
+            st.markdown(summary)
+
             matrix = []
             for r in rows:
-                last_closing = fetch_last_month_closing_only(stockist_for_matrix["id"], r["product_id"], int(m_year), int(m_month))
+                last_closing = fetch_last_month_closing_only(stockist_id, r["product_id"], stmt_year, stmt_month)
                 matrix.append({
                     "Product": r["products"]["name"],
                     "Last Month Closing": last_closing,
@@ -775,208 +986,6 @@ def run_reports():
                     "Difference": r["difference"]
                 })
             st.dataframe(pd.DataFrame(matrix).sort_values("Product"), use_container_width=True, hide_index=True)
-
-    st.subheader("📦 Matrix 1 — Product-wise Sales (Issue)")
-    st.dataframe(df.pivot_table(index="Product", columns="Year-Month", values="Issue", aggfunc="sum", fill_value=0), use_container_width=True)
-
-    st.subheader("🧾 Matrix 2 — Product-wise Order")
-    st.dataframe(df.pivot_table(index="Product", columns="Year-Month", values="Order", aggfunc="sum", fill_value=0), use_container_width=True)
-
-    st.subheader("📊 Matrix 3 — Product-wise Closing")
-    st.dataframe(df.pivot_table(index="Product", columns="Year-Month", values="Closing", aggfunc="sum", fill_value=0), use_container_width=True)
-
-    st.subheader("📦📊 Matrix 4 — Issue & Closing")
-    st.dataframe(
-        df.melt(id_vars=["Product", "Year-Month"], value_vars=["Issue", "Closing"])
-        .pivot_table(index="Product", columns=["Year-Month", "variable"], values="value", aggfunc="sum", fill_value=0),
-        use_container_width=True
-    )
-
-    # Trend charts
-    st.subheader("📈 Trend Charts — Last 6 Months")
-    today = date.today()
-    last_6 = []
-    y, m = today.year, today.month
-    for _ in range(6):
-        last_6.append(f"{y}-{m:02d}")
-        m -= 1
-        if m == 0:
-            m = 12
-            y -= 1
-
-    df_trend = df[df["Year-Month"].isin(last_6)]
-    if df_trend.empty:
-        st.info("No trend data available for last 6 months")
-    else:
-        trend_products = sorted(df_trend["Product"].unique())
-        default_index = 0
-        if st.session_state.get("drilldown_product") in trend_products:
-            default_index = trend_products.index(st.session_state.drilldown_product)
-        trend_product = st.selectbox("Select Product for Trend", trend_products, index=default_index)
-        chart_df = (
-            df_trend[df_trend["Product"] == trend_product]
-            .sort_values("Year-Month")
-            .set_index("Year-Month")[["Issue", "Closing"]]
-        )
-        st.line_chart(chart_df)
-
-    # Forecast
-    st.subheader("🔮 Forecast — Next 3 Months")
-    products_master = [p for p in load_products_cached() if "peak_months" in p]
-    forecast_rows = []
-    for p in products_master:
-        df_p = df[df["Product"] == p["name"]]
-        if df_p.empty:
-            continue
-        last_issue = df_p.sort_values("Year-Month").iloc[-1]["Issue"]
-        fy, fm = today.year, today.month + 1
-        if fm == 13:
-            fm = 1
-            fy += 1
-        for _ in range(3):
-            if fm in (p.get("peak_months") or []):
-                factor = 2
-            elif fm in (p.get("high_months") or []):
-                factor = 1.5
-            elif fm in (p.get("lowest_months") or []):
-                factor = 0.8
-            else:
-                factor = 1
-            forecast_rows.append({"Product": p["name"], "Forecast Month": f"{fy}-{fm:02d}", "Forecast Issue": round(last_issue * factor, 2)})
-            fm += 1
-            if fm == 13:
-                fm = 1
-                fy += 1
-
-    if forecast_rows:
-        st.dataframe(
-            pd.DataFrame(forecast_rows).pivot_table(index="Product", columns="Forecast Month", values="Forecast Issue", fill_value=0),
-            use_container_width=True
-        )
-    else:
-        st.info("Forecast not available for selected filters")
-
-    # KPI
-    st.subheader("📊 KPI — Month-on-Month")
-    kpi_df = df.groupby("Year-Month", as_index=False).agg({"Issue": "sum"}).sort_values("Year-Month")
-    if len(kpi_df) >= 2:
-        cur, prev = kpi_df.iloc[-1], kpi_df.iloc[-2]
-        mom = cur["Issue"] - prev["Issue"]
-        pct = (mom / prev["Issue"] * 100) if prev["Issue"] else 0
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Current Issue", round(cur["Issue"], 2))
-        c2.metric("MoM Change", round(mom, 2), round(mom, 2))
-        c3.metric("Growth %", f"{round(pct, 2)}%", f"{round(pct, 2)}%")
-    else:
-        st.info("Not enough data for KPI")
-
-    # Product KPI
-    st.subheader("📊 Product-level KPI Cards")
-    product_list = sorted(df["Product"].unique())
-    selected_product = st.selectbox("Select Product", product_list)
-    df_p = df[df["Product"] == selected_product].groupby("Year-Month", as_index=False).agg({"Issue": "sum"}).sort_values("Year-Month")
-    if len(df_p) >= 2:
-        latest, previous = df_p.iloc[-1], df_p.iloc[-2]
-        mom = latest["Issue"] - previous["Issue"]
-        pct = (mom / previous["Issue"] * 100) if previous["Issue"] else 0
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Latest Issue", round(latest["Issue"], 2))
-        c2.metric("Previous Issue", round(previous["Issue"], 2))
-        c3.metric("MoM Change", round(mom, 2), round(mom, 2))
-        c4.metric("Growth %", f"{round(pct, 2)}%", f"{round(pct, 2)}%")
-    else:
-        st.info("Not enough data for product KPI")
-
-    # Authorized stockists panel
-    st.divider()
-    st.title("🏪 Authorized Stockists — Last Submitted Stock Control")
-    if role == "admin":
-        authorized_stockists = safe_exec(
-            supabase.table("stockists").select("id, name").eq("authorization_status", "AUTHORIZED").order("name")
-        )
-    else:
-        scoped = safe_exec(
-            supabase.table("user_stockists")
-            .select("stockist_id, stockists(id, name, authorization_status)")
-            .in_("user_id", visible_user_ids)
-        )
-        authorized_stockists = list({
-            r["stockists"]["id"]: {"id": r["stockists"]["id"], "name": r["stockists"]["name"]}
-            for r in scoped
-            if r["stockists"]["authorization_status"] == "AUTHORIZED"
-        }.values())
-
-    if not authorized_stockists:
-        st.info("No authorized stockists found.")
-        return
-
-    for stockist in authorized_stockists:
-        stockist_id = stockist["id"]
-        last_stmt = safe_exec(
-            admin_supabase.table("statements").select("id, year, month")
-            .eq("stockist_id", stockist_id).eq("status", "final")
-            .order("year", desc=True).order("month", desc=True).limit(1)
-        )
-        if not last_stmt:
-            continue
-
-        stmt_id, stmt_year, stmt_month = last_stmt[0]["id"], last_stmt[0]["year"], last_stmt[0]["month"]
-        territory_rows = safe_exec(
-            supabase.table("territory_stockists").select("territories(name)").eq("stockist_id", stockist_id)
-        )
-        territory_label = ", ".join(sorted({t["territories"]["name"] for t in territory_rows if t.get("territories")})) or "—"
-
-        st.subheader(f"🏪 {stockist['name']}")
-        st.caption(f"📍 Territory: {territory_label}  |  🗓 Last Submitted: {stmt_month:02d}/{stmt_year}")
-
-        rows = safe_exec(
-            admin_supabase.table("statement_products")
-            .select("opening,issue,closing,difference,order_qty,issue_guidance,stock_guidance,product_id,products!statement_products_product_id_fkey(name)")
-            .eq("statement_id", stmt_id)
-        )
-        if not rows:
-            st.warning("No product data found for this statement.")
-            continue
-
-        flags = detect_red_flags(rows)
-        if any(flags.values()):
-            st.error("🔴 Red Flags Detected")
-            if flags["overstock"]:
-                st.markdown(f"• **Overstock ({len(flags['overstock'])})**: {', '.join(flags['overstock'])}")
-            if flags["zero_issue"]:
-                st.markdown(f"• **Zero Issue ({len(flags['zero_issue'])})**: {', '.join(flags['zero_issue'])}")
-            if flags["mismatch"]:
-                st.markdown(f"• **Data Mismatch ({len(flags['mismatch'])})**: {', '.join(flags['mismatch'])}")
-        else:
-            st.success("🟢 No red flags detected")
-
-        overstock_count = len(flags["overstock"])
-        zero_issue_count = len(flags["zero_issue"])
-        st.info("🧠 AI Summary")
-        if overstock_count == 0 and zero_issue_count == 0:
-            summary = f"{stockist['name']}'s last submitted statement ({stmt_month:02d}/{stmt_year}) shows a stable stock position."
-        elif overstock_count > 0:
-            summary = f"{stockist['name']}'s latest statement indicates overstocking in {overstock_count} product(s)."
-        elif zero_issue_count > 0:
-            summary = f"Several products show zero issue despite available stock in {stockist['name']}'s latest statement."
-        else:
-            summary = f"Data inconsistencies present in the latest statement ({stmt_month:02d}/{stmt_year}). Review recommended."
-        st.markdown(summary)
-
-        matrix = []
-        for r in rows:
-            last_closing = fetch_last_month_closing_only(stockist_id, r["product_id"], stmt_year, stmt_month)
-            matrix.append({
-                "Product": r["products"]["name"],
-                "Last Month Closing": last_closing,
-                "Opening": r["opening"],
-                "Closing": r["closing"],
-                "Issue Guidance": r["issue_guidance"],
-                "Stock Guidance": r["stock_guidance"],
-                "Order": r["order_qty"],
-                "Difference": r["difference"]
-            })
-        st.dataframe(pd.DataFrame(matrix).sort_values("Product"), use_container_width=True, hide_index=True)
 
 
 # ======================================================
