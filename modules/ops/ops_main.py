@@ -3697,9 +3697,278 @@ This action will:
         # CLOSING STOCK REPORT
         # =========================
         else:  # Closing Stock
-            # [SAME AS BEFORE - Stock report code unchanged]
-            st.markdown("### 📦 Product-wise Stock Report")
-            st.info("Stock report code remains the same as previous version...")
+            st.markdown("### 📦 Stock Report — Opening / IN / OUT / Closing")
+            st.caption(
+                "Select entity type (Company / CNF / User), pick one or more entities, "
+                "and set the date range. The report shows opening stock before the period, "
+                "total stock received IN, total stock dispatched OUT, and closing balance."
+            )
+
+            from datetime import datetime as _dt
+            import pandas as _pd
+            from io import BytesIO as _BytesIO
+            from collections import defaultdict as _defaultdict
+
+            # ── Filters ──────────────────────────────────────────────────────
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                cs_from = st.date_input("From Date", key="cs_from",
+                                        value=_dt.now().date().replace(day=1))
+            with col2:
+                cs_to = st.date_input("To Date", key="cs_to",
+                                      value=_dt.now().date())
+            with col3:
+                cs_entity_type = st.selectbox(
+                    "Entity Type", ["Company", "CNF", "User"], key="cs_etype"
+                )
+
+            # ── Entity multi-select ──────────────────────────────────────────
+            if cs_entity_type == "Company":
+                cs_entity_ids   = [None]
+                cs_entity_label = "Company"
+            elif cs_entity_type == "CNF":
+                cnf_opts = st.session_state.get("cnfs_master", [])
+                if not cnf_opts:
+                    st.warning("No CNFs loaded.")
+                    st.stop()
+                sel_cnfs = st.multiselect("Select CNF(s)", cnf_opts,
+                                          default=cnf_opts,
+                                          format_func=lambda x: x["name"],
+                                          key="cs_cnf")
+                cs_entity_ids   = [c["id"] for c in sel_cnfs]
+                cs_entity_label = ", ".join(c["name"] for c in sel_cnfs) or "—"
+            else:  # User
+                user_opts = [u for u in st.session_state.get("users_master", [])
+                             if u.get("is_active", True)]
+                if not user_opts:
+                    st.warning("No users loaded.")
+                    st.stop()
+                sel_users = st.multiselect("Select User(s)", user_opts,
+                                           default=user_opts,
+                                           format_func=lambda x: x["username"],
+                                           key="cs_users")
+                cs_entity_ids   = [u["id"] for u in sel_users]
+                cs_entity_label = ", ".join(u["username"] for u in sel_users) or "—"
+
+            if not cs_entity_ids:
+                st.info("Select at least one entity.")
+                st.stop()
+
+            if not st.button("Generate Stock Report", key="cs_gen", type="primary"):
+                st.stop()
+
+            # ── Helper: filter rows by entity ────────────────────────────────
+            def _filter_entity(rows):
+                if cs_entity_type == "Company":
+                    return [r for r in rows if not r.get("entity_id")]
+                return [r for r in rows if r.get("entity_id") in cs_entity_ids]
+
+            # ── Helper: entity display name ───────────────────────────────────
+            def _ename(eid):
+                if cs_entity_type == "Company":
+                    return "Company"
+                if cs_entity_type == "CNF":
+                    return next(
+                        (c["name"] for c in st.session_state.get("cnfs_master", [])
+                         if c["id"] == eid), str(eid)[:8]
+                    )
+                return next(
+                    (u["username"] for u in st.session_state.get("users_master", [])
+                     if u["id"] == eid), str(eid)[:8]
+                )
+
+            # ── 1. Opening stock = all ledger rows BEFORE from_date ───────────
+            with st.spinner("Fetching opening stock..."):
+                open_rows_raw = (
+                    admin_supabase.table("stock_ledger")
+                    .select("product_id, entity_id, qty_in, qty_out")
+                    .eq("entity_type", cs_entity_type)
+                    .lt("txn_date", cs_from.isoformat())
+                    .execute().data or []
+                )
+            open_rows = _filter_entity(open_rows_raw)
+
+            # ── 2. Period rows = ledger rows WITHIN from_date to to_date ──────
+            with st.spinner("Fetching period movements..."):
+                period_rows_raw = (
+                    admin_supabase.table("stock_ledger")
+                    .select("product_id, entity_id, qty_in, qty_out")
+                    .eq("entity_type", cs_entity_type)
+                    .gte("txn_date", cs_from.isoformat())
+                    .lte("txn_date", cs_to.isoformat())
+                    .execute().data or []
+                )
+            period_rows = _filter_entity(period_rows_raw)
+
+            if not open_rows and not period_rows:
+                st.info("No stock data found for the selected entity and date range.")
+                st.stop()
+
+            # ── 3. Aggregate ──────────────────────────────────────────────────
+            # opening[key] = qty_in - qty_out before from_date
+            opening = _defaultdict(float)
+            for r in open_rows:
+                key = (r.get("entity_id"), r["product_id"])
+                opening[key] += float(r.get("qty_in") or 0) - float(r.get("qty_out") or 0)
+
+            # period_in / period_out during date range
+            period_in  = _defaultdict(float)
+            period_out = _defaultdict(float)
+            for r in period_rows:
+                key = (r.get("entity_id"), r["product_id"])
+                period_in[key]  += float(r.get("qty_in")  or 0)
+                period_out[key] += float(r.get("qty_out") or 0)
+
+            # Union of all keys
+            all_keys = set(opening.keys()) | set(period_in.keys()) | set(period_out.keys())
+
+            # ── 4. Fetch product names ────────────────────────────────────────
+            with st.spinner("Loading products..."):
+                prod_ids = list({k[1] for k in all_keys if k[1]})
+                prod_map = {}
+                if prod_ids:
+                    p_rows = (admin_supabase.table("products")
+                              .select("id, name, sort_order")
+                              .in_("id", prod_ids)
+                              .execute().data or [])
+                    prod_map = {p["id"]: p for p in p_rows}
+
+            # ── 5. Build display DataFrame ────────────────────────────────────
+            rows_list = []
+            for (eid, pid) in all_keys:
+                if not pid:
+                    continue
+                op  = opening[(eid, pid)]
+                p_in  = period_in[(eid, pid)]
+                p_out = period_out[(eid, pid)]
+                closing = op + p_in - p_out
+                prod = prod_map.get(pid, {})
+                rows_list.append({
+                    "Entity":          _ename(eid),
+                    "Product":         prod.get("name", "Unknown"),
+                    "_sort":           prod.get("sort_order", 9999),
+                    "Opening Stock":   int(op),
+                    "Stock IN":        int(p_in),
+                    "Stock OUT":       int(p_out),
+                    "Closing Stock":   int(closing),
+                })
+
+            if not rows_list:
+                st.info("No data to display.")
+                st.stop()
+
+            df_cs = (_pd.DataFrame(rows_list)
+                       .sort_values(["Entity", "_sort", "Product"])
+                       .drop(columns=["_sort"])
+                       .reset_index(drop=True))
+
+            # ── 6. KPI summary ────────────────────────────────────────────────
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Opening Stock",  int(df_cs["Opening Stock"].sum()))
+            k2.metric("Total IN",       int(df_cs["Stock IN"].sum()))
+            k3.metric("Total OUT",      int(df_cs["Stock OUT"].sum()))
+            k4.metric("Closing Stock",  int(df_cs["Closing Stock"].sum()))
+
+            st.divider()
+
+            # ── 7. Display table ──────────────────────────────────────────────
+            st.dataframe(df_cs, use_container_width=True, hide_index=True)
+
+            # ── 8. PDF download ───────────────────────────────────────────────
+            st.divider()
+            if st.button("Download PDF", key="cs_pdf_btn"):
+                try:
+                    from reportlab.lib.pagesizes import A4, landscape
+                    from reportlab.lib import colors
+                    from reportlab.lib.units import cm
+                    from reportlab.platypus import (SimpleDocTemplate, Table,
+                                                    TableStyle, Paragraph, Spacer)
+                    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                    from datetime import date as _date
+
+                    buf    = _BytesIO()
+                    psize  = landscape(A4)
+                    doc_p  = SimpleDocTemplate(
+                        buf, pagesize=psize,
+                        leftMargin=1*cm, rightMargin=1*cm,
+                        topMargin=1.5*cm, bottomMargin=1*cm,
+                    )
+                    styles  = getSampleStyleSheet()
+                    ivy_g   = colors.HexColor("#1a6b5a")
+                    row_sh  = colors.HexColor("#e8f5f1")
+
+                    h1s  = ParagraphStyle("h1",  parent=styles["Heading1"],
+                                           textColor=ivy_g, fontSize=13, spaceAfter=3)
+                    h2s  = ParagraphStyle("h2",  parent=styles["Heading2"],
+                                           textColor=colors.HexColor("#1c2b27"),
+                                           fontSize=10, spaceAfter=2)
+                    subs = ParagraphStyle("sub", parent=styles["Normal"],
+                                           textColor=colors.HexColor("#5a7268"),
+                                           fontSize=8, spaceAfter=10)
+                    fts  = ParagraphStyle("ft",  parent=styles["Normal"],
+                                           textColor=colors.HexColor("#aaaaaa"),
+                                           fontSize=7)
+
+                    sub_txt = (
+                        f"Entity: {cs_entity_label}  |  "
+                        f"Period: {cs_from.strftime('%d %b %Y')} to "
+                        f"{cs_to.strftime('%d %b %Y')}"
+                    )
+                    story = [
+                        Paragraph("Ivy Pharmaceuticals", h1s),
+                        Paragraph("Stock Report — Opening / IN / OUT / Closing", h2s),
+                        Paragraph(sub_txt, subs),
+                        Spacer(1, 0.2*cm),
+                    ]
+
+                    headers  = list(df_cs.columns)
+                    tbl_data = [headers]
+                    for _, row in df_cs.iterrows():
+                        tbl_data.append([str(v) for v in row])
+
+                    usable  = psize[0] - 2*cm
+                    ent_w   = min(3.5*cm, usable * 0.20)
+                    prod_w  = min(4.5*cm, usable * 0.28)
+                    rest_w  = (usable - ent_w - prod_w) / max(len(headers) - 2, 1)
+                    col_ws  = [ent_w, prod_w] + [rest_w] * (len(headers) - 2)
+
+                    tbl = Table(tbl_data, colWidths=col_ws, repeatRows=1)
+                    tbl.setStyle(TableStyle([
+                        ("BACKGROUND",    (0, 0), (-1, 0), ivy_g),
+                        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+                        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE",      (0, 0), (-1, 0), 8),
+                        ("ALIGN",         (0, 0), (-1, 0), "CENTER"),
+                        ("TOPPADDING",    (0, 0), (-1, 0), 5),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+                        ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
+                        ("FONTSIZE",      (0, 1), (-1, -1), 7.5),
+                        ("ALIGN",         (0, 1), (1, -1), "LEFT"),
+                        ("ALIGN",         (2, 1), (-1, -1), "CENTER"),
+                        ("TOPPADDING",    (0, 1), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
+                        *[("BACKGROUND", (0, i), (-1, i), row_sh)
+                          for i in range(2, len(tbl_data), 2)],
+                        ("GRID",      (0, 0), (-1, -1), 0.35, colors.HexColor("#c5ddd8")),
+                        ("LINEBELOW", (0, 0), (-1, 0),  1.2,  ivy_g),
+                    ]))
+                    story.append(tbl)
+                    story.append(Spacer(1, 0.4*cm))
+                    story.append(Paragraph(
+                        f"Generated on {_date.today().strftime('%d %b %Y')} -- Ivy Pharmaceuticals",
+                        fts,
+                    ))
+                    doc_p.build(story)
+                    buf.seek(0)
+                    st.download_button(
+                        "Download Stock Report PDF",
+                        data=buf.read(),
+                        file_name=f"stock_report_{cs_from}_{cs_to}.pdf",
+                        mime="application/pdf",
+                        key="cs_pdf_dl",
+                    )
+                except Exception as _pdf_err:
+                    st.error(f"PDF generation failed: {_pdf_err}")
 
 
     
@@ -7017,7 +7286,6 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             st.rerun()
                 
                 st.divider()
-
 
 
 
