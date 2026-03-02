@@ -3171,10 +3171,10 @@ This action will:
     elif section == "PARTY_BALANCE":
         st.subheader("📊 Party Balance & Stock Report")
         
-        # Main selection: Closing Balance or Closing Stock
+        # Main selection: Closing Balance, Closing Stock, or Damaged/Destroyed
         report_type = st.radio(
             "Select Report Type",
-            ["Closing Balance", "Closing Stock"],
+            ["Closing Balance", "Closing Stock", "Damaged / Destroyed"],
             horizontal=True,
             key="party_balance_report_type"
         )
@@ -3696,7 +3696,7 @@ This action will:
         # =========================
         # CLOSING STOCK REPORT
         # =========================
-        else:  # Closing Stock
+        elif report_type == "Closing Stock":
             st.markdown("### 📦 Stock Report — Opening / IN / OUT / Closing")
             st.caption(
                 "Select entity type (Company / CNF / User), pick one or more entities, "
@@ -3970,8 +3970,165 @@ This action will:
                 except Exception as _pdf_err:
                     st.error(f"PDF generation failed: {_pdf_err}")
 
+        # =========================
+        # DAMAGED / DESTROYED REPORT
+        # =========================
+        elif report_type == "Damaged / Destroyed":
+            st.markdown("### ☠️ Damaged / Destroyed Stock Report")
+            st.caption(
+                "Shows all stock recorded as damaged or destroyed — from Return transactions "
+                "(Mark as Damaged or Transfer to Destroyed) and Credit Notes (Stock is Damaged)."
+            )
 
-    
+            col1, col2 = st.columns(2)
+            with col1:
+                dd_from = st.date_input("From Date", value=date.today().replace(day=1), key="dd_from")
+            with col2:
+                dd_to = st.date_input("To Date", value=date.today(), key="dd_to")
+
+            if st.button("Generate Report", key="dd_generate"):
+                with st.spinner("Fetching damaged/destroyed stock..."):
+                    try:
+                        rows = []
+
+                        # ── Source 1: stock_ledger where entity_type = "Destroyed" ──
+                        sl_res = supabase.table("stock_ledger")                             .select("txn_date, product_id, qty_in, narration, ops_document_id")                             .eq("entity_type", "Destroyed")                             .gte("txn_date", dd_from.isoformat())                             .lte("txn_date", dd_to.isoformat())                             .execute()
+
+                        prod_ids = list({r["product_id"] for r in (sl_res.data or [])})
+                        prod_map = {}
+                        if prod_ids:
+                            p_res = supabase.table("products").select("id, name").in_("id", prod_ids).execute()
+                            prod_map = {p["id"]: p["name"] for p in (p_res.data or [])}
+
+                        for r in (sl_res.data or []):
+                            rows.append({
+                                "Date":    r["txn_date"],
+                                "Type":    "Destroyed",
+                                "Product": prod_map.get(r["product_id"], r["product_id"]),
+                                "Qty":     int(r["qty_in"] or 0),
+                                "Source":  r.get("narration", ""),
+                            })
+
+                        # ── Source 2: ops_documents where stock_disposition = "damaged" ──
+                        od_res = supabase.table("ops_documents")                             .select("id, ops_no, ops_date, narration, from_entity_type, from_entity_id")                             .eq("stock_disposition", "damaged")                             .gte("ops_date", dd_from.isoformat())                             .lte("ops_date", dd_to.isoformat())                             .execute()
+
+                        od_ids = [r["id"] for r in (od_res.data or [])]
+                        if od_ids:
+                            ol_res = supabase.table("ops_lines")                                 .select("ops_document_id, product_id, qty")                                 .in_("ops_document_id", od_ids)                                 .execute()
+
+                            line_prod_ids = list({r["product_id"] for r in (ol_res.data or [])})
+                            if line_prod_ids:
+                                lp_res = supabase.table("products").select("id, name").in_("id", line_prod_ids).execute()
+                                for p in (lp_res.data or []):
+                                    prod_map[p["id"]] = p["name"]
+
+                            od_map = {r["id"]: r for r in (od_res.data or [])}
+                            for line in (ol_res.data or []):
+                                doc = od_map.get(line["ops_document_id"], {})
+                                rows.append({
+                                    "Date":    doc.get("ops_date", ""),
+                                    "Type":    "Mark as Damaged",
+                                    "Product": prod_map.get(line["product_id"], line["product_id"]),
+                                    "Qty":     int(line.get("qty") or 0),
+                                    "Source":  doc.get("narration", ""),
+                                })
+
+                        if not rows:
+                            st.info("No damaged or destroyed stock found for the selected period.")
+                        else:
+                            import pandas as pd
+                            df_dd = pd.DataFrame(rows).sort_values(["Date", "Type", "Product"])
+                            df_dd["Date"] = pd.to_datetime(df_dd["Date"]).dt.strftime("%d-%b-%Y")
+
+                            # KPI metrics
+                            k1, k2, k3 = st.columns(3)
+                            k1.metric("Total Destroyed Qty",  int(df_dd[df_dd["Type"] == "Destroyed"]["Qty"].sum()))
+                            k2.metric("Total Damaged Qty",    int(df_dd[df_dd["Type"] == "Mark as Damaged"]["Qty"].sum()))
+                            k3.metric("Total Combined Qty",   int(df_dd["Qty"].sum()))
+
+                            st.divider()
+                            st.dataframe(df_dd, use_container_width=True, hide_index=True)
+
+                            # PDF Export
+                            try:
+                                from reportlab.lib.pagesizes import A4, landscape
+                                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+                                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                                from reportlab.lib import colors
+                                from reportlab.lib.units import mm
+                                import io as _io
+
+                                buf = _io.BytesIO()
+                                doc_p = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                                    leftMargin=15*mm, rightMargin=15*mm,
+                                    topMargin=15*mm, bottomMargin=15*mm)
+                                styles = getSampleStyleSheet()
+                                story = []
+
+                                IVY_GREEN = colors.HexColor("#1a6b5a")
+                                hdr_style = ParagraphStyle("hdr", fontSize=14, textColor=colors.white,
+                                    fontName="Helvetica-Bold", alignment=1)
+                                sub_style = ParagraphStyle("sub", fontSize=9, textColor=colors.white,
+                                    fontName="Helvetica", alignment=1)
+
+                                header_data = [[
+                                    Paragraph("Ivy Pharmaceuticals", hdr_style),
+                                    Paragraph(
+                                        f"Damaged / Destroyed Stock Report<br/>"
+                                        f"{dd_from.strftime('%d-%b-%Y')} to {dd_to.strftime('%d-%b-%Y')}",
+                                        sub_style
+                                    )
+                                ]]
+                                header_table = Table(header_data, colWidths=["50%", "50%"])
+                                header_table.setStyle(TableStyle([
+                                    ("BACKGROUND", (0,0), (-1,-1), IVY_GREEN),
+                                    ("VALIGN",     (0,0), (-1,-1), "MIDDLE"),
+                                    ("TOPPADDING", (0,0), (-1,-1), 8),
+                                    ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+                                ]))
+                                story.append(header_table)
+                                story.append(Spacer(1, 8*mm))
+
+                                col_headers = ["Date", "Type", "Product", "Qty", "Source"]
+                                table_data = [col_headers] + [
+                                    [row["Date"], row["Type"], row["Product"], str(row["Qty"]), row["Source"]]
+                                    for _, row in df_dd.iterrows()
+                                ]
+                                col_w = [28*mm, 38*mm, 60*mm, 18*mm, 96*mm]
+                                t = Table(table_data, colWidths=col_w, repeatRows=1)
+                                t.setStyle(TableStyle([
+                                    ("BACKGROUND",     (0,0), (-1,0), IVY_GREEN),
+                                    ("TEXTCOLOR",      (0,0), (-1,0), colors.white),
+                                    ("FONTNAME",       (0,0), (-1,0), "Helvetica-Bold"),
+                                    ("FONTSIZE",       (0,0), (-1,-1), 8),
+                                    ("ALIGN",          (3,0), (3,-1), "CENTER"),
+                                    ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f0f7f5")]),
+                                    ("GRID",           (0,0), (-1,-1), 0.3, colors.HexColor("#cccccc")),
+                                    ("TOPPADDING",     (0,0), (-1,-1), 4),
+                                    ("BOTTOMPADDING",  (0,0), (-1,-1), 4),
+                                ]))
+                                story.append(t)
+                                story.append(Spacer(1, 6*mm))
+                                story.append(Paragraph(
+                                    f"Generated on {date.today().strftime('%d-%b-%Y')}  |  Ivy Pharmaceuticals",
+                                    ParagraphStyle("ft", fontSize=7, textColor=colors.grey, alignment=2)
+                                ))
+                                doc_p.build(story)
+                                buf.seek(0)
+                                st.download_button(
+                                    "Download Damaged/Destroyed PDF",
+                                    data=buf.read(),
+                                    file_name=f"damaged_destroyed_{dd_from}_{dd_to}.pdf",
+                                    mime="application/pdf",
+                                    key="dd_pdf_dl",
+                                )
+                            except Exception as _pdf_err:
+                                st.error(f"PDF generation failed: {_pdf_err}")
+
+                    except Exception as e:
+                        st.error(f"Error fetching data: {e}")
+
+
     # =========================
     # LEDGER STATEMENT (FINANCIAL LEDGER ONLY)
     # =========================
@@ -6285,6 +6442,11 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 user_id = resolve_user_id()
 
                 # Create OPS document for return
+                disposition_map = {
+                    "Add to Saleable Stock (goods are OK)": "saleable",
+                    "Mark as Damaged (don't add to stock)": "damaged",
+                    "Transfer to Destroyed": "destroyed"
+                }
                 return_ops = admin_supabase.table("ops_documents").insert({
                     "ops_no": f"RET-{__import__('datetime').datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                     "ops_date": return_date.isoformat(),
@@ -6293,6 +6455,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                     "direction": "ADJUST",
                     "narration": f"{return_type} from {from_name} to {to_name}",
                     "reference_no": reference_no,
+                    "stock_disposition": disposition_map.get(stock_disposition, None),
                     "created_by": user_id
                 }).execute()
 
@@ -7286,6 +7449,5 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             st.rerun()
                 
                 st.divider()
-
 
 
