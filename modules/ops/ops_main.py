@@ -326,6 +326,7 @@ def run_ops():
         "💰 Payment Register":              "PAYMENT_REGISTER",
         "🔄 Return / Replace":              "RETURN_REPLACE",
         "🔄 Recalculate Balances":          "RECALC_BALANCES",
+        "📊 OPS Insights":                  "OPS_INSIGHTS",
     }
 
     current_section = st.session_state.ops_section
@@ -7451,3 +7452,551 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 st.divider()
 
 
+    # =========================
+    # OPS INSIGHTS REPORT
+    # =========================
+    elif section == "OPS_INSIGHTS":
+        import pandas as pd
+        from datetime import date, timedelta
+
+        st.subheader("📊 OPS Insights — Product Movement & Sales Intelligence")
+        st.caption(
+            "Rule-based analysis of invoices, samples, payments, credit notes and stock. "
+            "Flags red flags per User (MR), Stockist, and Company-wide."
+        )
+
+        # ── Thresholds ────────────────────────────────────────────────────────
+        SAMPLE_RATIO_THRESHOLD   = 2.0   # sample qty > 2x invoice qty = red flag
+        CREDIT_NOTE_PCT          = 2.0   # credit note > 2% of invoice value = red flag
+        PAYMENT_DELAY_DAYS       = 30    # outstanding invoice > 30 days = red flag
+        STOCK_IDLE_THRESHOLD     = 0.2   # stock_out / stock_in < 20% = not moving
+
+        # ── Filters ───────────────────────────────────────────────────────────
+        today = date.today()
+        three_months_ago = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        three_months_ago = three_months_ago.replace(
+            month=three_months_ago.month - 2 if three_months_ago.month > 2
+            else three_months_ago.month + 10,
+            year=three_months_ago.year if three_months_ago.month > 2 else three_months_ago.year - 1
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            ins_from = st.date_input("From Date", value=three_months_ago, key="ins_from")
+        with col2:
+            ins_to = st.date_input("To Date", value=today, key="ins_to")
+
+        entity_focus = st.radio(
+            "Analyse by",
+            ["User (MR)", "Stockist", "Company"],
+            horizontal=True,
+            key="ins_entity_focus"
+        )
+
+        role = st.session_state.get("role", "user")
+        auth_user_id = st.session_state.auth_user.id
+
+        # User selector
+        if role == "admin":
+            users_res = admin_supabase.table("users").select("id, username").order("username").execute()
+            all_users = users_res.data or []
+            sel_users = st.multiselect(
+                "Select User(s)", all_users,
+                default=all_users,
+                format_func=lambda x: x["username"],
+                key="ins_users"
+            )
+            sel_user_ids   = [u["id"] for u in sel_users]
+            user_name_map  = {u["id"]: u["username"] for u in all_users}
+        else:
+            sel_user_ids  = [auth_user_id]
+            u_res = admin_supabase.table("users").select("id, username").eq("id", auth_user_id).execute()
+            user_name_map = {u["id"]: u["username"] for u in (u_res.data or [])}
+
+        if not sel_user_ids:
+            st.info("Select at least one user.")
+            st.stop()
+
+        if not st.button("📊 Generate Insights", key="ins_generate", type="primary"):
+            st.info("Configure filters above and click Generate Insights.")
+            st.stop()
+
+        with st.spinner("Fetching and analysing data..."):
+
+            from_iso = ins_from.isoformat()
+            to_iso   = ins_to.isoformat()
+
+            # ── Fetch all ops_documents in range ─────────────────────────────
+            docs = admin_supabase.table("ops_documents") \
+                .select(
+                    "id, ops_date, stock_as, ops_type, "
+                    "invoice_total, paid_amount, outstanding_balance, payment_status, "
+                    "from_entity_type, from_entity_id, "
+                    "to_entity_type, to_entity_id"
+                ) \
+                .gte("ops_date", from_iso) \
+                .lte("ops_date", to_iso) \
+                .eq("is_deleted", False) \
+                .execute().data or []
+
+            if not docs:
+                st.warning("No transactions found for the selected period.")
+                st.stop()
+
+            doc_ids = [d["id"] for d in docs]
+
+            # ── Fetch ops_lines ───────────────────────────────────────────────
+            lines = admin_supabase.table("ops_lines") \
+                .select("ops_document_id, product_id, sale_qty, free_qty, total_qty, gross_amount, net_amount") \
+                .in_("ops_document_id", doc_ids) \
+                .execute().data or []
+
+            # ── Fetch stock_ledger ────────────────────────────────────────────
+            stock_rows = admin_supabase.table("stock_ledger") \
+                .select("entity_type, entity_id, product_id, qty_in, qty_out, txn_date") \
+                .gte("txn_date", from_iso) \
+                .lte("txn_date", to_iso) \
+                .execute().data or []
+
+            # ── Fetch stockists assigned to selected users ────────────────────
+            us_rows = admin_supabase.table("user_stockists") \
+                .select("user_id, stockist_id, stockists(id, name)") \
+                .in_("user_id", sel_user_ids) \
+                .execute().data or []
+
+            stockist_map  = {}   # stockist_id → name
+            user_stockist = {}   # user_id → [stockist_ids]
+            for r in us_rows:
+                s = r.get("stockists") or {}
+                sid = s.get("id") or r.get("stockist_id")
+                if sid:
+                    stockist_map[sid] = s.get("name", str(sid))
+                    user_stockist.setdefault(r["user_id"], []).append(sid)
+
+            # ── Fetch product names ───────────────────────────────────────────
+            all_prod_ids = list({ln["product_id"] for ln in lines if ln.get("product_id")})
+            prod_map = {}
+            if all_prod_ids:
+                p_res = admin_supabase.table("products").select("id, name").in_("id", all_prod_ids).execute()
+                prod_map = {p["id"]: p["name"] for p in (p_res.data or [])}
+
+            # ── Build lookups ─────────────────────────────────────────────────
+            lines_by_doc = {}
+            for ln in lines:
+                lines_by_doc.setdefault(ln["ops_document_id"], []).append(ln)
+
+            def _f(v):
+                try: return float(v or 0)
+                except: return 0.0
+
+            def _int(v):
+                try: return int(float(v or 0))
+                except: return 0
+
+            # ── Core aggregation function ─────────────────────────────────────
+            def _aggregate(entity_id, entity_type_key):
+                """
+                Returns dict of aggregated signals for one entity.
+                entity_type_key: "user" | "stockist" | "company"
+                """
+                agg = {
+                    "invoice_value":    0.0,
+                    "invoice_qty":      0,
+                    "sample_qty":       0,
+                    "lot_qty":          0,
+                    "credit_note_value":0.0,
+                    "paid_amount":      0.0,
+                    "outstanding":      0.0,
+                    "overdue_count":    0,
+                    "overdue_value":    0.0,
+                    "monthly_sales":    {},   # YYYY-MM → invoice_value
+                    "products":         {},   # product_name → {inv_qty, sample_qty, cn_val}
+                }
+
+                for doc in docs:
+                    fet = (doc.get("from_entity_type") or "").lower()
+                    tet = (doc.get("to_entity_type")   or "").lower()
+                    fid = doc.get("from_entity_id")
+                    tid = doc.get("to_entity_id")
+                    sa  = (doc.get("stock_as") or "").lower()
+                    month = doc["ops_date"][:7]
+
+                    # Match entity
+                    if entity_type_key == "company":
+                        matched = (fet == "company" or tet == "company")
+                    elif entity_type_key == "user":
+                        matched = (
+                            (fet == "user" and fid == entity_id) or
+                            (tet == "user" and tid == entity_id)
+                        )
+                    elif entity_type_key == "stockist":
+                        matched = (
+                            (fet == "stockist" and fid == entity_id) or
+                            (tet == "stockist" and tid == entity_id)
+                        )
+                    else:
+                        matched = False
+
+                    if not matched:
+                        continue
+
+                    doc_lines = lines_by_doc.get(doc["id"], [])
+
+                    if sa == "normal":
+                        inv_val = _f(doc.get("invoice_total"))
+                        agg["invoice_value"]  += inv_val
+                        agg["paid_amount"]    += _f(doc.get("paid_amount"))
+                        agg["outstanding"]    += _f(doc.get("outstanding_balance"))
+                        agg["monthly_sales"][month] = agg["monthly_sales"].get(month, 0.0) + inv_val
+
+                        # Overdue: unpaid and older than PAYMENT_DELAY_DAYS
+                        try:
+                            doc_date = date.fromisoformat(doc["ops_date"])
+                            days_old = (today - doc_date).days
+                        except:
+                            days_old = 0
+
+                        if doc.get("payment_status") in ("UNPAID", "PARTIAL") and days_old > PAYMENT_DELAY_DAYS:
+                            agg["overdue_count"] += 1
+                            agg["overdue_value"] += _f(doc.get("outstanding_balance"))
+
+                        for ln in doc_lines:
+                            pname = prod_map.get(ln.get("product_id"), "Unknown")
+                            agg["products"].setdefault(pname, {"inv_qty": 0, "sample_qty": 0, "cn_val": 0.0})
+                            agg["products"][pname]["inv_qty"] += _int(ln.get("sale_qty", 0)) + _int(ln.get("free_qty", 0))
+                            agg["invoice_qty"] += _int(ln.get("sale_qty", 0))
+
+                    elif sa == "sample":
+                        for ln in doc_lines:
+                            pname = prod_map.get(ln.get("product_id"), "Unknown")
+                            qty = _int(ln.get("total_qty") or 0) or _int(ln.get("sale_qty") or 0)
+                            agg["products"].setdefault(pname, {"inv_qty": 0, "sample_qty": 0, "cn_val": 0.0})
+                            agg["products"][pname]["sample_qty"] += qty
+                            agg["sample_qty"] += qty
+
+                    elif sa == "lot":
+                        for ln in doc_lines:
+                            qty = _int(ln.get("total_qty") or 0) or _int(ln.get("sale_qty") or 0)
+                            agg["lot_qty"] += qty
+
+                    elif sa == "credit_note":
+                        for ln in doc_lines:
+                            pname = prod_map.get(ln.get("product_id"), "Unknown")
+                            cn_v = _f(ln.get("net_amount")) or _f(ln.get("gross_amount"))
+                            agg["products"].setdefault(pname, {"inv_qty": 0, "sample_qty": 0, "cn_val": 0.0})
+                            agg["products"][pname]["cn_val"] += cn_v
+                            agg["credit_note_value"] += cn_v
+
+                # ── Stock movement for this entity ────────────────────────────
+                stock_in  = 0.0
+                stock_out = 0.0
+                for s in stock_rows:
+                    et = (s.get("entity_type") or "").lower()
+                    eid = s.get("entity_id")
+                    if entity_type_key == "company" and et == "company":
+                        stock_in  += _f(s.get("qty_in"))
+                        stock_out += _f(s.get("qty_out"))
+                    elif entity_type_key == "user" and et == "user" and eid == entity_id:
+                        stock_in  += _f(s.get("qty_in"))
+                        stock_out += _f(s.get("qty_out"))
+                    elif entity_type_key == "stockist" and et == "stockist" and eid == entity_id:
+                        stock_in  += _f(s.get("qty_in"))
+                        stock_out += _f(s.get("qty_out"))
+                agg["stock_in"]  = stock_in
+                agg["stock_out"] = stock_out
+
+                return agg
+
+            # ── RED FLAG ENGINE ───────────────────────────────────────────────
+            def _red_flags(agg):
+                flags = []
+                inv_v = agg["invoice_value"]
+                inv_q = agg["invoice_qty"]
+
+                # 1. High samples, low sales
+                if agg["sample_qty"] > 0 and inv_q == 0:
+                    flags.append(f"🚨 Samples given ({agg['sample_qty']} units) but ZERO invoice sales")
+                elif inv_q > 0 and agg["sample_qty"] / max(inv_q, 1) > SAMPLE_RATIO_THRESHOLD:
+                    ratio = round(agg["sample_qty"] / inv_q, 1)
+                    flags.append(f"🚨 Excess Sampling: {agg['sample_qty']} samples vs {inv_q} invoiced units (ratio {ratio}x)")
+
+                # 2. Payment delayed
+                if agg["overdue_count"] > 0:
+                    flags.append(f"⏰ Payment Delay: {agg['overdue_count']} invoice(s) overdue > {PAYMENT_DELAY_DAYS} days (₹{agg['overdue_value']:,.0f} outstanding)")
+
+                # 3. Credit note ratio
+                if inv_v > 0:
+                    cn_pct = agg["credit_note_value"] / inv_v * 100
+                    if cn_pct > CREDIT_NOTE_PCT:
+                        flags.append(f"📋 High Credit Notes: ₹{agg['credit_note_value']:,.0f} = {cn_pct:.1f}% of invoice value (threshold {CREDIT_NOTE_PCT}%)")
+
+                # 4. Stock not moving
+                if agg["stock_in"] > 0 and agg["stock_out"] < agg["stock_in"] * STOCK_IDLE_THRESHOLD:
+                    flags.append(f"📦 Stock Not Moving: {agg['stock_in']:.0f} units received, only {agg['stock_out']:.0f} units dispatched")
+
+                # 5. Sales declining trend (month on month)
+                monthly = sorted(agg["monthly_sales"].items())
+                if len(monthly) >= 3:
+                    v = [v for _, v in monthly]
+                    if v[-1] < v[-2] < v[-3]:
+                        flags.append(f"📉 Sales Declining 3 months: ₹{v[-3]:,.0f} → ₹{v[-2]:,.0f} → ₹{v[-1]:,.0f}")
+                elif len(monthly) == 2:
+                    v = [v for _, v in monthly]
+                    if v[-1] < v[-2]:
+                        flags.append(f"📉 Sales Declining: ₹{v[-2]:,.0f} → ₹{v[-1]:,.0f}")
+
+                # 6. Low overall sales
+                if inv_v == 0 and (agg["sample_qty"] > 0 or agg["lot_qty"] > 0):
+                    flags.append("⚠️ No Invoice Sales recorded in this period")
+
+                return flags
+
+            # ── Product-level flags ───────────────────────────────────────────
+            def _product_flags(agg):
+                insights = []
+                for pname, p in agg["products"].items():
+                    parts = []
+                    if p["sample_qty"] > 0 and p["inv_qty"] == 0:
+                        parts.append(f"{p['sample_qty']} samples, 0 sales")
+                    elif p["inv_qty"] > 0 and p["sample_qty"] > p["inv_qty"] * SAMPLE_RATIO_THRESHOLD:
+                        parts.append(f"sample {p['sample_qty']} > {SAMPLE_RATIO_THRESHOLD}x invoice {p['inv_qty']}")
+                    if p["cn_val"] > 0 and p["inv_qty"] > 0:
+                        parts.append(f"CN ₹{p['cn_val']:,.0f}")
+                    if parts:
+                        insights.append(f"**{pname}**: {', '.join(parts)}")
+                    elif p["inv_qty"] > 0:
+                        insights.append(f"✅ **{pname}**: {p['inv_qty']} units sold")
+                return insights[:8]  # top 8 products
+
+            # ── Health score ──────────────────────────────────────────────────
+            def _health(flags):
+                red_count = sum(1 for f in flags if "🚨" in f or "📉" in f or "⏰" in f)
+                if red_count == 0 and len(flags) == 0:
+                    return "GREEN", "No issues detected"
+                elif red_count == 0:
+                    return "YELLOW", f"{len(flags)} minor issue(s) noted"
+                elif red_count >= 2:
+                    return "RED", f"{red_count} critical issue(s) require attention"
+                else:
+                    return "YELLOW", f"{red_count} issue(s) require attention"
+
+            # ── Build entity list ─────────────────────────────────────────────
+            entities = []
+            if entity_focus == "Company":
+                entities = [("company", "Company (Overall)", "company")]
+            elif entity_focus == "User (MR)":
+                for uid in sel_user_ids:
+                    entities.append((uid, user_name_map.get(uid, str(uid)), "user"))
+            elif entity_focus == "Stockist":
+                seen = set()
+                for uid in sel_user_ids:
+                    for sid in user_stockist.get(uid, []):
+                        if sid not in seen:
+                            seen.add(sid)
+                            entities.append((sid, stockist_map.get(sid, str(sid)), "stockist"))
+
+            if not entities:
+                st.warning("No entities found to analyse.")
+                st.stop()
+
+            # ── Compute results ───────────────────────────────────────────────
+            results = []
+            for eid, ename, ekey in entities:
+                agg   = _aggregate(eid, ekey)
+                flags = _red_flags(agg)
+                prod_insights = _product_flags(agg)
+                health, health_reason = _health(flags)
+                results.append({
+                    "name":           ename,
+                    "entity_type":    ekey,
+                    "health":         health,
+                    "health_reason":  health_reason,
+                    "agg":            agg,
+                    "flags":          flags,
+                    "prod_insights":  prod_insights,
+                })
+
+            # ── Sort: RED first, then YELLOW, then GREEN ──────────────────────
+            order = {"RED": 0, "YELLOW": 1, "GREEN": 2}
+            results.sort(key=lambda x: order.get(x["health"], 3))
+
+        # ── RENDER ────────────────────────────────────────────────────────────
+        period_label = f"{ins_from.strftime('%d-%b-%Y')} to {ins_to.strftime('%d-%b-%Y')}"
+        st.success(f"✅ Analysis complete — {period_label} — {len(results)} entities analysed")
+
+        # Summary bar
+        red_c   = sum(1 for r in results if r["health"] == "RED")
+        yel_c   = sum(1 for r in results if r["health"] == "YELLOW")
+        grn_c   = sum(1 for r in results if r["health"] == "GREEN")
+        s1, s2, s3 = st.columns(3)
+        s1.metric("🔴 Critical",     red_c)
+        s2.metric("🟡 Needs Attention", yel_c)
+        s3.metric("🟢 Healthy",      grn_c)
+        st.divider()
+
+        ICON  = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴"}
+        BG    = {"GREEN": "#d4edda", "YELLOW": "#fff3cd", "RED": "#f8d7da"}
+
+        for r in results:
+            health = r["health"]
+            agg    = r["agg"]
+            icon   = ICON.get(health, "🟡")
+            bg     = BG.get(health, "#fff3cd")
+
+            st.markdown(
+                f"""<div style="background:{bg};padding:10px 16px;border-radius:8px;margin-bottom:4px;">
+                <b style="font-size:1.05em">{icon} {r['name']}
+                <span style="font-size:0.8em;color:#666"> — {r['health_reason']}</span></b>
+                </div>""",
+                unsafe_allow_html=True
+            )
+
+            # KPI row
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("Invoice Value",    f"₹{agg['invoice_value']:,.0f}")
+            k2.metric("Outstanding",      f"₹{agg['outstanding']:,.0f}")
+            k3.metric("Credit Notes",     f"₹{agg['credit_note_value']:,.0f}")
+            k4.metric("Samples Given",    str(agg["sample_qty"]))
+            k5.metric("Invoice Qty",      str(agg["invoice_qty"]))
+
+            col_a, col_b = st.columns([1, 1])
+
+            with col_a:
+                if r["flags"]:
+                    st.markdown("**🚨 Red Flags**")
+                    for f in r["flags"]:
+                        st.markdown(f"- {f}")
+                else:
+                    st.markdown("**✅ No Red Flags**")
+
+            with col_b:
+                if r["prod_insights"]:
+                    st.markdown("**📦 Product Breakdown**")
+                    for p in r["prod_insights"]:
+                        st.markdown(f"- {p}")
+
+            # Monthly trend mini-chart
+            monthly = sorted(agg["monthly_sales"].items())
+            if len(monthly) >= 2:
+                df_m = pd.DataFrame(monthly, columns=["Month", "Sales (₹)"])
+                st.line_chart(df_m.set_index("Month"), height=120, use_container_width=True)
+
+            st.divider()
+
+        # ── PDF Export ────────────────────────────────────────────────────────
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import ParagraphStyle
+            from reportlab.lib import colors
+            from reportlab.lib.units import mm
+            from io import BytesIO as _BytesIO
+
+            buf = _BytesIO()
+            doc_pdf = SimpleDocTemplate(buf, pagesize=A4,
+                leftMargin=15*mm, rightMargin=15*mm,
+                topMargin=15*mm, bottomMargin=15*mm)
+            story = []
+            IVY   = colors.HexColor("#1a6b5a")
+
+            hdr_s  = ParagraphStyle("h",  fontSize=14, textColor=colors.white, fontName="Helvetica-Bold", alignment=1)
+            sub_s  = ParagraphStyle("s",  fontSize=9,  textColor=colors.white, fontName="Helvetica",      alignment=1)
+            body_s = ParagraphStyle("b",  fontSize=8,  leading=12)
+            bold_s = ParagraphStyle("bb", fontSize=9,  fontName="Helvetica-Bold", leading=13)
+            flag_s = ParagraphStyle("f",  fontSize=8,  textColor=colors.HexColor("#c0392b"), leading=11)
+            ok_s   = ParagraphStyle("ok", fontSize=8,  textColor=colors.HexColor("#1a6b5a"), leading=11)
+
+            hdr_tbl = Table([[
+                Paragraph("Ivy Pharmaceuticals", hdr_s),
+                Paragraph(f"OPS Insights Report<br/>{period_label}", sub_s)
+            ]], colWidths=["50%", "50%"])
+            hdr_tbl.setStyle(TableStyle([
+                ("BACKGROUND",    (0,0),(-1,-1), IVY),
+                ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+                ("TOPPADDING",    (0,0),(-1,-1), 8),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 8),
+            ]))
+            story.append(hdr_tbl)
+            story.append(Spacer(1, 5*mm))
+
+            # Summary row
+            summ_data = [[
+                f"🔴 Critical: {red_c}",
+                f"🟡 Needs Attention: {yel_c}",
+                f"🟢 Healthy: {grn_c}",
+                f"Period: {period_label}"
+            ]]
+            st_tbl = Table(summ_data, colWidths=["25%","25%","25%","25%"])
+            st_tbl.setStyle(TableStyle([
+                ("FONTSIZE",(0,0),(-1,-1),8),
+                ("TOPPADDING",(0,0),(-1,-1),4),
+                ("BOTTOMPADDING",(0,0),(-1,-1),4),
+                ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#f5f5f5")),
+                ("GRID",(0,0),(-1,-1),0.3,colors.grey),
+            ]))
+            story.append(st_tbl)
+            story.append(Spacer(1, 4*mm))
+
+            HCOL = {
+                "RED":    colors.HexColor("#f8d7da"),
+                "YELLOW": colors.HexColor("#fff3cd"),
+                "GREEN":  colors.HexColor("#d4edda"),
+            }
+
+            for r in results:
+                health = r["health"]
+                agg    = r["agg"]
+                hcol   = HCOL.get(health, colors.HexColor("#fff3cd"))
+                icon   = {"GREEN":"✓","YELLOW":"!","RED":"✗"}.get(health,"!")
+
+                story.append(Paragraph(
+                    f"{icon}  {r['name']}  ({r['health']}) — {r['health_reason']}",
+                    bold_s
+                ))
+
+                m_data = [[
+                    f"Invoice: ₹{agg['invoice_value']:,.0f}",
+                    f"Outstanding: ₹{agg['outstanding']:,.0f}",
+                    f"Credit Notes: ₹{agg['credit_note_value']:,.0f}",
+                    f"Samples: {agg['sample_qty']}  |  Inv Qty: {agg['invoice_qty']}"
+                ]]
+                m_tbl = Table(m_data, colWidths=["25%","25%","25%","25%"])
+                m_tbl.setStyle(TableStyle([
+                    ("BACKGROUND",(0,0),(-1,-1), hcol),
+                    ("FONTSIZE",(0,0),(-1,-1),7),
+                    ("TOPPADDING",(0,0),(-1,-1),3),
+                    ("BOTTOMPADDING",(0,0),(-1,-1),3),
+                    ("GRID",(0,0),(-1,-1),0.3,colors.grey),
+                ]))
+                story.append(m_tbl)
+                story.append(Spacer(1, 1*mm))
+
+                if r["flags"]:
+                    for f in r["flags"]:
+                        story.append(Paragraph(f"• {f}", flag_s))
+                else:
+                    story.append(Paragraph("• No red flags", ok_s))
+
+                if r["prod_insights"]:
+                    for p in r["prod_insights"]:
+                        clean = p.replace("**", "")
+                        story.append(Paragraph(f"  {clean}", body_s))
+
+                story.append(Spacer(1, 4*mm))
+
+            story.append(Paragraph(
+                f"Generated on {today.strftime('%d-%b-%Y')}  |  Ivy Pharmaceuticals",
+                ParagraphStyle("ft", fontSize=7, textColor=colors.grey, alignment=2)
+            ))
+
+            doc_pdf.build(story)
+            buf.seek(0)
+            st.download_button(
+                "📄 Download Insights PDF",
+                data=buf.read(),
+                file_name=f"ops_insights_{ins_from}_{ins_to}.pdf",
+                mime="application/pdf",
+                key="ins_pdf_dl"
+            )
+        except Exception as _pdf_err:
+            st.warning(f"PDF generation failed: {_pdf_err}")
