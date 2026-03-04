@@ -1360,7 +1360,7 @@ This action will:
             st.session_state.ops_master_confirmed = False
             st.rerun()
 
-        date = st.date_input("Date")
+        ops_txn_date = st.date_input("Date")
 
         stock_as = st.selectbox("Stock As", stock_as_options)
 
@@ -1557,7 +1557,7 @@ This action will:
                 st.write("From:", st.session_state.ops_from_entity_type, "-", from_display)
                 st.write("To:", st.session_state.ops_to_entity_type, "-", to_display)
 
-                st.write("Date:", date)
+                st.write("Date:", ops_txn_date)
                 st.write("Stock As:", stock_as)
                 st.write("Reference No:", reference_no)
 
@@ -1626,7 +1626,7 @@ This action will:
                         f"OPS PREVIEW\n"
                         f"From: {from_display}\n"
                         f"To: {to_display}\n"
-                        f"Date: {date}\n"
+                        f"Date: {ops_txn_date}\n"
                         f"Reference: {reference_no}\n\n"
                         f"Stock As: {stock_as}\n"
                         f"Narration: {narration_text}\n\n"
@@ -1736,7 +1736,7 @@ This action will:
                     try:
                         response = admin_supabase.table("ops_documents").insert({
                             "ops_no": f"OPS-{__import__('datetime').datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
-                            "ops_date": date.isoformat(),
+                            "ops_date": ops_txn_date.isoformat(),
                             "ops_type": ops_type_val,
                             "stock_as": stock_as_val,
                             "direction": direction_val,
@@ -1820,7 +1820,7 @@ This action will:
                         admin_supabase.table("financial_ledger").insert({
                             "ops_document_id": ops_document_id,
                             "party_id": party_id,
-                            "txn_date": date.isoformat(),
+                            "txn_date": ops_txn_date.isoformat(),
                             "debit": debit,
                             "credit": credit,
                             "closing_balance": 0,
@@ -1871,7 +1871,7 @@ This action will:
                                     "product_id": p["product_id"],
                                     "entity_type": st.session_state.ops_from_entity_type,
                                     "entity_id": st.session_state.ops_from_entity_id,
-                                    "txn_date": date.isoformat(),
+                                    "txn_date": ops_txn_date.isoformat(),
                                     "qty_in": 0,
                                     "qty_out": qty,
                                     "closing_qty": 0,
@@ -1887,7 +1887,7 @@ This action will:
                                         "product_id": p["product_id"],
                                         "entity_type": st.session_state.ops_to_entity_type,
                                         "entity_id": st.session_state.ops_to_entity_id,
-                                        "txn_date": date.isoformat(),
+                                        "txn_date": ops_txn_date.isoformat(),
                                         "qty_in": qty,
                                         "qty_out": 0,
                                         "closing_qty": 0,
@@ -1916,7 +1916,7 @@ This action will:
                                     "product_id": s["product_id"],
                                     "entity_type": s["entity_type"],
                                     "entity_id": s["entity_id"],
-                                    "txn_date": date.isoformat(),
+                                    "txn_date": ops_txn_date.isoformat(),
                                     "qty_in": s["qty_out"],  # Reverse
                                     "qty_out": s["qty_in"],  # Reverse
                                     "closing_qty": 0,
@@ -1934,7 +1934,7 @@ This action will:
                                 admin_supabase.table("financial_ledger").insert({
                                     "ops_document_id": ops_document_id,
                                     "party_id": l["party_id"],
-                                    "txn_date": date.isoformat(),
+                                    "txn_date": ops_txn_date.isoformat(),
                                     "debit": l["credit"],  # Reverse
                                     "credit": l["debit"],  # Reverse
                                     "closing_balance": 0,
