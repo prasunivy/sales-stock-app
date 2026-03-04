@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from anchors.supabase_client import admin_supabase
 # ---------- Helper: resolve entity display name ----------
 def resolve_entity_name(entity_type, entity_id):
@@ -2744,7 +2744,6 @@ This action will:
             from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
             from reportlab.lib.enums import TA_CENTER, TA_RIGHT
             from io import BytesIO
-            from datetime import datetime
 
             export_rows = []
 
@@ -3205,7 +3204,6 @@ This action will:
         # CLOSING BALANCE REPORT
         # =========================
         if report_type == "Closing Balance":
-            from datetime import datetime
             st.markdown("### 📋 Outstanding Invoice Report")
             
             # Filters
@@ -3277,7 +3275,6 @@ This action will:
                 st.stop()
             
             # Calculate aging and prepare display
-            from datetime import datetime, timedelta
             
             invoice_data = []
             total_due = 0
@@ -3724,7 +3721,6 @@ This action will:
                 "total stock received IN, total stock dispatched OUT, and closing balance."
             )
 
-            from datetime import datetime as _dt
             import pandas as _pd
             from io import BytesIO as _BytesIO
             from collections import defaultdict as _defaultdict
@@ -3904,7 +3900,6 @@ This action will:
                     from reportlab.platypus import (SimpleDocTemplate, Table,
                                                     TableStyle, Paragraph, Spacer)
                     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-                    from datetime import date as _date
 
                     buf    = _BytesIO()
                     psize  = landscape(A4)
@@ -4587,7 +4582,6 @@ This action will:
         display_rows = []
 
         # 🔒 ENSURE CHRONOLOGICAL ORDER FOR RUNNING STOCK
-        from datetime import date
         stock_rows = sorted(
             stock_rows,
             key=lambda x: (
@@ -5581,7 +5575,6 @@ This action will:
     # =========================
     elif section == "FREIGHT_REGISTER":
         # Import datetime at the very beginning
-        from datetime import datetime, timedelta
         
         st.subheader("🚚 Freight Register")
         
@@ -5831,7 +5824,6 @@ This action will:
     elif section == "RETURN_REPLACE_REGISTER":
         st.subheader("🔄 Return / Replace Register")
         
-        from datetime import datetime, timedelta
         
         # Filters
         col1, col2, col3 = st.columns(3)
@@ -6116,7 +6108,6 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 with conf_col1:
                     if st.button("✅ Confirm Delete", key=f"confirm_{entry['id']}", type="primary"):
                         try:
-                            from datetime import datetime
                             user_id = resolve_user_id()
                             
                             for sm in entry['stock_moves']:
@@ -6942,7 +6933,6 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
         
         # Filter by date
         if filter_days != "All Dates":
-            from datetime import datetime, timedelta
             
             if filter_days == "Last 7 Days":
                 cutoff_date = (datetime.now() - timedelta(days=7)).date()
@@ -7339,19 +7329,15 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             query = query.eq("payment_mode", filter_mode)
         
         if filter_date_range == "Today":
-            from datetime import datetime
             today = datetime.now().date().isoformat()
             query = query.eq("ops_date", today)
         elif filter_date_range == "Last 7 Days":
-            from datetime import datetime, timedelta
             cutoff = (datetime.now() - timedelta(days=7)).date().isoformat()
             query = query.gte("ops_date", cutoff)
         elif filter_date_range == "Last 30 Days":
-            from datetime import datetime, timedelta
             cutoff = (datetime.now() - timedelta(days=30)).date().isoformat()
             query = query.gte("ops_date", cutoff)
         elif filter_date_range == "Last 90 Days":
-            from datetime import datetime, timedelta
             cutoff = (datetime.now() - timedelta(days=90)).date().isoformat()
             query = query.gte("ops_date", cutoff)
         elif filter_date_range == "Custom":
@@ -7632,7 +7618,6 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
     # =========================
     elif section == "OPS_INSIGHTS":
         import pandas as pd
-        from datetime import date, timedelta
 
         st.subheader("📊 OPS Insights — Product Movement & Sales Intelligence")
         st.caption(
