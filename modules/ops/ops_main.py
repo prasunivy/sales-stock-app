@@ -402,8 +402,14 @@ def run_ops():
 
         # ---- Product selection ----
         product_map = {p["name"]: p["id"] for p in st.session_state.products_master}
+        if not product_map:
+            st.warning("No products found. Please add products in master data first.")
+            st.stop()
         product_name = st.selectbox("Select Product", list(product_map.keys()))
-        product_id = product_map[product_name]
+        product_id = product_map.get(product_name)
+        if not product_id:
+            st.warning("Please select a valid product.")
+            st.stop()
 
         opening_stock_date = st.date_input(
             "Opening Stock Date"
@@ -967,7 +973,7 @@ This action will:
             entity_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
 
         entity_name = st.selectbox("Select Name", list(entity_map.keys()))
-        entity_id = entity_map[entity_name]
+        entity_id = entity_map.get(entity_name)
 
         opening_date = st.date_input(
             "Opening Balance Date"
@@ -1237,7 +1243,7 @@ This action will:
                 selected = st.selectbox("Select CNF", list(cnf_map.keys()))
                 if st.button("Confirm CNF"):
                     st.session_state.ops_from_entity_type = "CNF"
-                    st.session_state.ops_from_entity_id = cnf_map[selected]
+                    st.session_state.ops_from_entity_id = cnf_map.get(selected)
                     st.session_state.ops_line2_complete = True
                     st.rerun()
 
@@ -1246,7 +1252,7 @@ This action will:
                 selected = st.selectbox("Select User", list(user_map.keys()))
                 if st.button("Confirm User"):
                     st.session_state.ops_from_entity_type = "User"
-                    st.session_state.ops_from_entity_id = user_map[selected]
+                    st.session_state.ops_from_entity_id = user_map.get(selected)
                     st.session_state.ops_line2_complete = True
                     st.rerun()
 
@@ -1255,7 +1261,7 @@ This action will:
                 selected = st.selectbox("Select Stockist", list(stockist_map.keys()))
                 if st.button("Confirm Stockist"):
                     st.session_state.ops_from_entity_type = "Stockist"
-                    st.session_state.ops_from_entity_id = stockist_map[selected]
+                    st.session_state.ops_from_entity_id = stockist_map.get(selected)
                     st.session_state.ops_line2_complete = True
                     st.rerun()
 
@@ -1264,7 +1270,7 @@ This action will:
                 selected = st.selectbox("Select Purchaser", list(purchaser_map.keys()))
                 if st.button("Confirm Purchaser"):
                     st.session_state.ops_from_entity_type = "Purchaser"
-                    st.session_state.ops_from_entity_id = purchaser_map[selected]
+                    st.session_state.ops_from_entity_id = purchaser_map.get(selected)
                     st.session_state.ops_line2_complete = True
                     st.rerun()
 
@@ -1328,7 +1334,7 @@ This action will:
                 selected = st.selectbox("Select Destination", list(dest_map.keys()))
                 if st.button("Confirm Destination"):
                     st.session_state.ops_to_entity_type = to_entity
-                    st.session_state.ops_to_entity_id = dest_map[selected]
+                    st.session_state.ops_to_entity_id = dest_map.get(selected)
                     st.session_state.ops_line3_complete = True
                     st.rerun()
 
@@ -1469,7 +1475,7 @@ This action will:
                 key=f"product_select_{st.session_state.ops_product_index}"
             )
 
-            product_id = product_map[selected_product]
+            product_id = product_map.get(selected_product)
 
             sale_qty = st.number_input(
                 "Saleable Quantity",
@@ -2080,7 +2086,7 @@ This action will:
             options=list(cnf_map.keys())
         )
 
-        selected_cnf_id = cnf_map[selected_cnf_name]
+        selected_cnf_id = cnf_map.get(selected_cnf_name)
 
         st.divider()
 
@@ -4155,7 +4161,7 @@ This action will:
         party_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
 
         party_name = st.selectbox("Select Party (Stockist)", list(party_map.keys()))
-        party_id = party_map[party_name]
+        party_id = party_map.get(party_name)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -4490,24 +4496,24 @@ This action will:
         elif entity_type == "CNF":
             cnf_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
             entity_name = st.selectbox("Select CNF", list(cnf_map.keys()))
-            entity_id = cnf_map[entity_name]
+            entity_id = cnf_map.get(entity_name)
 
         elif entity_type == "User":
             user_map = {u["username"]: u["id"] for u in st.session_state.users_master}
             entity_name = st.selectbox("Select User", list(user_map.keys()))
-            entity_id = user_map[entity_name]
+            entity_id = user_map.get(entity_name)
 
         else:  # Stockist
             stockist_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
             entity_name = st.selectbox("Select Stockist", list(stockist_map.keys()))
-            entity_id = stockist_map[entity_name]
+            entity_id = stockist_map.get(entity_name)
 
         # -------------------------
         # PRODUCT FILTER
         # -------------------------
         product_map = {p["name"]: p["id"] for p in st.session_state.products_master}
         product_name = st.selectbox("Select Product", list(product_map.keys()))
-        product_id = product_map[product_name]
+        product_id = product_map.get(product_name)
 
         # -------------------------
         # DATE FILTER
@@ -6281,7 +6287,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             from_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
 
         from_name = st.selectbox(f"Select {from_entity_type}", list(from_map.keys()))
-        from_id = from_map[from_name]
+        from_id = from_map.get(from_name)
 
         if to_entity_type == "Company":
             to_id = None
@@ -6289,11 +6295,11 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
         elif to_entity_type == "User":
             to_map = {u["username"]: u["id"] for u in st.session_state.users_master}
             to_name = st.selectbox(f"Select {to_entity_type}", list(to_map.keys()))
-            to_id = to_map[to_name]
+            to_id = to_map.get(to_name)
         else:  # CNF
             to_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
             to_name = st.selectbox(f"Select {to_entity_type}", list(to_map.keys()))
-            to_id = to_map[to_name]
+            to_id = to_map.get(to_name)
 
         return_date = st.date_input("Return Date")
         reference_no = st.text_input("Reference Number")
@@ -6692,7 +6698,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             list(stockist_map.keys()),
             help="Stockist for whom freight was paid"
         )
-        stockist_id = stockist_map[stockist_name]
+        stockist_id = stockist_map.get(stockist_name)
         
         # Amount entry
         freight_amount = st.number_input(
