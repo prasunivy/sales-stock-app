@@ -3993,12 +3993,12 @@ This action will:
                         rows = []
 
                         # ── Source 1: stock_ledger where entity_type = "Destroyed" ──
-                        sl_res = supabase.table("stock_ledger")                             .select("txn_date, product_id, qty_in, narration, ops_document_id")                             .eq("entity_type", "Destroyed")                             .gte("txn_date", dd_from.isoformat())                             .lte("txn_date", dd_to.isoformat())                             .execute()
+                        sl_res = admin_supabase.table("stock_ledger")                             .select("txn_date, product_id, qty_in, narration, ops_document_id")                             .eq("entity_type", "Destroyed")                             .gte("txn_date", dd_from.isoformat())                             .lte("txn_date", dd_to.isoformat())                             .execute()
 
                         prod_ids = list({r["product_id"] for r in (sl_res.data or [])})
                         prod_map = {}
                         if prod_ids:
-                            p_res = supabase.table("products").select("id, name").in_("id", prod_ids).execute()
+                            p_res = admin_supabase.table("products").select("id, name").in_("id", prod_ids).execute()
                             prod_map = {p["id"]: p["name"] for p in (p_res.data or [])}
 
                         for r in (sl_res.data or []):
@@ -4011,15 +4011,15 @@ This action will:
                             })
 
                         # ── Source 2: ops_documents where stock_disposition = "damaged" ──
-                        od_res = supabase.table("ops_documents")                             .select("id, ops_no, ops_date, narration, from_entity_type, from_entity_id")                             .eq("stock_disposition", "damaged")                             .gte("ops_date", dd_from.isoformat())                             .lte("ops_date", dd_to.isoformat())                             .execute()
+                        od_res = admin_supabase.table("ops_documents")                             .select("id, ops_no, ops_date, narration, from_entity_type, from_entity_id")                             .eq("stock_disposition", "damaged")                             .gte("ops_date", dd_from.isoformat())                             .lte("ops_date", dd_to.isoformat())                             .execute()
 
                         od_ids = [r["id"] for r in (od_res.data or [])]
                         if od_ids:
-                            ol_res = supabase.table("ops_lines")                                 .select("ops_document_id, product_id, qty")                                 .in_("ops_document_id", od_ids)                                 .execute()
+                            ol_res = admin_supabase.table("ops_lines")                                 .select("ops_document_id, product_id, sale_qty, free_qty")                                 .in_("ops_document_id", od_ids)                                 .execute()
 
                             line_prod_ids = list({r["product_id"] for r in (ol_res.data or [])})
                             if line_prod_ids:
-                                lp_res = supabase.table("products").select("id, name").in_("id", line_prod_ids).execute()
+                                lp_res = admin_supabase.table("products").select("id, name").in_("id", line_prod_ids).execute()
                                 for p in (lp_res.data or []):
                                     prod_map[p["id"]] = p["name"]
 
@@ -4030,7 +4030,7 @@ This action will:
                                     "Date":    doc.get("ops_date", ""),
                                     "Type":    "Mark as Damaged",
                                     "Product": prod_map.get(line["product_id"], line["product_id"]),
-                                    "Qty":     int(line.get("qty") or 0),
+                                    "Qty":     int(line.get("sale_qty") or 0) + int(line.get("free_qty") or 0),
                                     "Source":  doc.get("narration", ""),
                                 })
 
@@ -7452,6 +7452,162 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 st.divider()
 
 
+
+    # =========================
+    # DOCUMENT BROWSER - FREIGHT
+    # =========================
+    elif section == "DOCUMENT_BROWSER_FREIGHT":
+        st.subheader("🚚 Freight Entries")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            fb_from = st.date_input("From Date", key="fb_from")
+        with col2:
+            fb_to = st.date_input("To Date", key="fb_to")
+
+        stockist_map_fb = {"All Stockists": None}
+        stockist_map_fb.update({s["name"]: s["id"] for s in st.session_state.stockists_master})
+        fb_stockist = st.selectbox("Filter by Stockist", list(stockist_map_fb.keys()), key="fb_stockist")
+        fb_stockist_id = stockist_map_fb[fb_stockist]
+
+        query = admin_supabase.table("ops_documents")            .select("id, ops_no, ops_date, reference_no, narration, created_by")            .eq("ops_type", "ADJUSTMENT")            .eq("stock_as", "adjustment")            .eq("is_deleted", False)            .gte("ops_date", fb_from.isoformat())            .lte("ops_date", fb_to.isoformat())            .order("ops_date", desc=True)
+
+        freight_docs = query.execute().data or []
+
+        # Enrich with financial_ledger amounts and filter by stockist
+        results = []
+        for doc in freight_docs:
+            ledger = admin_supabase.table("financial_ledger")                .select("credit, party_id")                .eq("ops_document_id", doc["id"])                .execute().data or []
+            if not ledger:
+                continue
+            party_id = ledger[0].get("party_id")
+            if fb_stockist_id and party_id != fb_stockist_id:
+                continue
+            stockist = next((s for s in st.session_state.stockists_master if s["id"] == party_id), None)
+            results.append({
+                "doc": doc,
+                "amount": sum(float(r.get("credit", 0)) for r in ledger),
+                "stockist_name": stockist["name"] if stockist else "Unknown",
+            })
+
+        if not results:
+            st.info("No freight entries found for the selected filters.")
+        else:
+            st.write(f"**{len(results)} freight entries found**")
+            st.divider()
+            for row in results:
+                doc = row["doc"]
+                col1, col2, col3 = st.columns([4, 2, 2])
+                with col1:
+                    st.write(f"**{doc['ops_no']}**")
+                    st.caption(f"📅 {doc['ops_date']} | Stockist: {row['stockist_name']}")
+                    if doc.get("reference_no"):
+                        st.caption(f"Ref: {doc['reference_no']}")
+                    if doc.get("narration"):
+                        st.caption(f"Note: {doc['narration']}")
+                with col2:
+                    st.write(f"**₹{row['amount']:,.2f}**")
+                with col3:
+                    if st.button("🗑 Delete", key=f"del_fb_{doc['id']}"):
+                        try:
+                            user_id = resolve_user_id()
+                            admin_supabase.table("audit_logs").insert({
+                                "action": "DELETE_FREIGHT",
+                                "target_type": "ops_documents",
+                                "target_id": doc["id"],
+                                "performed_by": user_id,
+                                "message": f"Freight entry deleted",
+                                "metadata": {"ops_document_id": doc["id"]}
+                            }).execute()
+                            admin_supabase.table("financial_ledger").delete().eq("ops_document_id", doc["id"]).execute()
+                            admin_supabase.table("ops_documents").update({"is_deleted": True}).eq("id", doc["id"]).execute()
+                            st.success("✅ Freight entry deleted")
+                            st.rerun()
+                        except Exception as e:
+                            st.error("❌ Failed to delete freight entry")
+                            st.exception(e)
+                st.divider()
+
+
+    # =========================
+    # RECALCULATE BALANCES
+    # =========================
+    elif section == "RECALC_BALANCES":
+        st.subheader("🔄 Recalculate Balances")
+
+        st.info("""
+        **Purpose:** Recalculates `outstanding_balance` and `payment_status` for all invoices
+        based on actual payments recorded in `payment_settlements`.
+        Use this if balances appear out of sync due to manual edits or data imports.
+        """)
+
+        st.warning("⚠️ This will update ALL invoice records. Proceed only if balances look incorrect.")
+
+        if "recalc_done" not in st.session_state:
+            st.session_state.recalc_done = False
+
+        if st.session_state.recalc_done:
+            st.success("✅ Balances recalculated successfully.")
+            if st.button("🔄 Run Again"):
+                st.session_state.recalc_done = False
+                st.rerun()
+            st.stop()
+
+        if st.button("▶️ Run Recalculation", type="primary"):
+            try:
+                with st.spinner("Fetching all invoices..."):
+                    invoices = admin_supabase.table("ops_documents")                        .select("id, invoice_total")                        .eq("ops_type", "STOCK_OUT")                        .eq("is_deleted", False)                        .execute().data or []
+
+                updated = 0
+                errors = 0
+                progress = st.progress(0)
+                total = len(invoices)
+
+                for i, inv in enumerate(invoices):
+                    try:
+                        settlements = admin_supabase.table("payment_settlements")                            .select("amount")                            .eq("invoice_id", inv["id"])                            .execute().data or []
+
+                        paid = sum(float(s.get("amount", 0)) for s in settlements)
+                        inv_total = float(inv.get("invoice_total") or 0)
+                        outstanding = max(0, inv_total - paid)
+
+                        if outstanding <= 0:
+                            status = "PAID"
+                        elif paid > 0:
+                            status = "PARTIAL"
+                        else:
+                            status = "UNPAID"
+
+                        admin_supabase.table("ops_documents").update({
+                            "paid_amount": paid,
+                            "outstanding_balance": outstanding,
+                            "payment_status": status
+                        }).eq("id", inv["id"]).execute()
+
+                        updated += 1
+                    except Exception:
+                        errors += 1
+
+                    progress.progress((i + 1) / total)
+
+                st.session_state.recalc_done = True
+                st.success(f"✅ Done. {updated} invoices updated. {errors} errors.")
+
+                user_id = resolve_user_id()
+                admin_supabase.table("audit_logs").insert({
+                    "action": "RECALC_BALANCES",
+                    "target_type": "ops_documents",
+                    "target_id": None,
+                    "performed_by": user_id,
+                    "message": f"Recalculated balances: {updated} updated, {errors} errors.",
+                    "metadata": {"updated": updated, "errors": errors}
+                }).execute()
+                st.rerun()
+
+            except Exception as e:
+                st.error("❌ Recalculation failed")
+                st.exception(e)
+
     # =========================
     # OPS INSIGHTS REPORT
     # =========================
@@ -7473,12 +7629,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
 
         # ── Filters ───────────────────────────────────────────────────────────
         today = date.today()
-        three_months_ago = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
-        three_months_ago = three_months_ago.replace(
-            month=three_months_ago.month - 2 if three_months_ago.month > 2
-            else three_months_ago.month + 10,
-            year=three_months_ago.year if three_months_ago.month > 2 else three_months_ago.year - 1
-        )
+        three_months_ago = today - timedelta(days=90)
 
         col1, col2 = st.columns(2)
         with col1:
