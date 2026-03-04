@@ -189,13 +189,36 @@ def _form_a_fill(user_id, role):
     st.write("---")
     st.write("#### Enter Gifts for Each Doctor")
 
-    # Current doctor index
-    idx = st.session_state.io_doctor_index
-    # Clamp
-    if idx >= len(doctors):
-        idx = len(doctors) - 1
-        st.session_state.io_doctor_index = idx
+    # ── Doctor search / jump ─────────────────────────────────────────────
+    doctor_names = [f"{i+1}. {d['name']} ({d.get('specialization','N/A')})"
+                    for i, d in enumerate(doctors)]
+    doctor_name_map = {label: i for i, label in enumerate(doctor_names)}
 
+    # Clamp index
+    if st.session_state.io_doctor_index >= len(doctors):
+        st.session_state.io_doctor_index = 0
+
+    search_col, jump_col = st.columns([3, 1])
+    with search_col:
+        selected_label = st.selectbox(
+            "🔍 Search / Jump to Doctor",
+            options=doctor_names,
+            index=st.session_state.io_doctor_index,
+            key="fa_doctor_search"
+        )
+    with jump_col:
+        st.write("")
+        st.write("")
+        if st.button("↩️ Jump", key="fa_jump_btn"):
+            st.session_state.io_doctor_index = doctor_name_map[selected_label]
+            st.rerun()
+
+    # Keep index in sync if selectbox changed
+    if doctor_name_map[selected_label] != st.session_state.io_doctor_index:
+        st.session_state.io_doctor_index = doctor_name_map[selected_label]
+        st.rerun()
+
+    idx = st.session_state.io_doctor_index
     doc = doctors[idx]
     st.info(f"Doctor **{idx + 1} / {len(doctors)}**: **{doc['name']}** "
             f"({doc.get('specialization', 'N/A')})")
@@ -414,11 +437,36 @@ def _form_b_fill(user_id, role):
         st.warning("No doctors found for this user's territories.")
         return
 
-    idx = st.session_state.io_doctor_index
-    if idx >= len(doctors):
-        idx = len(doctors) - 1
-        st.session_state.io_doctor_index = idx
+    # ── Doctor search / jump ─────────────────────────────────────────────
+    doctor_names = [f"{i+1}. {d['name']} ({d.get('specialization','N/A')})"
+                    for i, d in enumerate(doctors)]
+    doctor_name_map = {label: i for i, label in enumerate(doctor_names)}
 
+    # Clamp index
+    if st.session_state.io_doctor_index >= len(doctors):
+        st.session_state.io_doctor_index = 0
+
+    search_col, jump_col = st.columns([3, 1])
+    with search_col:
+        selected_label = st.selectbox(
+            "🔍 Search / Jump to Doctor",
+            options=doctor_names,
+            index=st.session_state.io_doctor_index,
+            key="fb_doctor_search"
+        )
+    with jump_col:
+        st.write("")
+        st.write("")
+        if st.button("↩️ Jump", key="fb_jump_btn"):
+            st.session_state.io_doctor_index = doctor_name_map[selected_label]
+            st.rerun()
+
+    # Keep index in sync if selectbox changed
+    if doctor_name_map[selected_label] != st.session_state.io_doctor_index:
+        st.session_state.io_doctor_index = doctor_name_map[selected_label]
+        st.rerun()
+
+    idx = st.session_state.io_doctor_index
     doc = doctors[idx]
     st.info(f"Doctor **{idx + 1} / {len(doctors)}**: **{doc['name']}** "
             f"({doc.get('specialization', 'N/A')})")
