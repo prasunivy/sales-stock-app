@@ -368,24 +368,37 @@ def run_ops():
             ["Company", "CNF", "User", "Stockist"]
         )
 
+        # Initialise to safe defaults before conditional assignment
+        entity_id = None
+        entity_name = "Company"
+
         if entity_type == "Company":
             entity_id = None
             entity_name = "Company"
 
         elif entity_type == "CNF":
             entity_map = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+            if not entity_map:
+                st.warning("No CNFs found. Please add CNFs in master data first.")
+                st.stop()
             entity_name = st.selectbox("Select CNF", list(entity_map.keys()))
-            entity_id = entity_map[entity_name]
+            entity_id = entity_map.get(entity_name)
 
         elif entity_type == "User":
             entity_map = {u["username"]: u["id"] for u in st.session_state.users_master}
+            if not entity_map:
+                st.warning("No Users found. Please add users first.")
+                st.stop()
             entity_name = st.selectbox("Select User", list(entity_map.keys()))
-            entity_id = entity_map[entity_name]
+            entity_id = entity_map.get(entity_name)
 
         else:  # Stockist
             entity_map = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+            if not entity_map:
+                st.warning("No Stockists found. Please add stockists in master data first.")
+                st.stop()
             entity_name = st.selectbox("Select Stockist", list(entity_map.keys()))
-            entity_id = entity_map[entity_name]
+            entity_id = entity_map.get(entity_name)
 
         # ---- Product selection ----
         product_map = {p["name"]: p["id"] for p in st.session_state.products_master}
