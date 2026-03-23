@@ -27,6 +27,114 @@ IVY_CSS = """
     --ivy-mono:         'DM Mono', monospace;
 }
 
+/* ── FORCE LIGHT MODE — fixes dark phone theme issue ─────── */
+:root {
+    color-scheme: light only !important;
+}
+
+html, body,
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+[data-testid="stBottom"],
+section[data-testid="stSidebar"],
+.main {
+    background-color: #f7f9f8 !important;
+    color: #1c2b27 !important;
+}
+
+/* Force all text elements to dark color */
+p, span, div, label, h1, h2, h3, h4, h5, h6,
+li, td, th, a, small, strong, em {
+    color: #1c2b27 !important;
+}
+
+/* Force all input fields to white background with dark text */
+input, textarea, select,
+.stTextInput input,
+.stNumberInput input,
+.stDateInput input,
+.stTextArea textarea {
+    background-color: #ffffff !important;
+    color: #1c2b27 !important;
+    color-scheme: light !important;
+    -webkit-text-fill-color: #1c2b27 !important;
+}
+
+/* Force selectbox and multiselect containers */
+.stSelectbox > div > div,
+.stMultiSelect > div > div,
+[data-baseweb="select"] > div,
+[data-baseweb="select"] div {
+    background-color: #ffffff !important;
+    color: #1c2b27 !important;
+}
+
+/* Force dropdown popup menus */
+[data-baseweb="popover"],
+[data-baseweb="popover"] div,
+[data-baseweb="menu"],
+[data-baseweb="menu"] ul,
+[data-baseweb="menu"] li,
+[role="listbox"],
+[role="listbox"] li,
+li[role="option"],
+[data-baseweb="option"] {
+    background-color: #ffffff !important;
+    color: #1c2b27 !important;
+}
+
+[data-baseweb="option"]:hover,
+li[role="option"]:hover {
+    background-color: #e8f5f1 !important;
+    color: #1a6b5a !important;
+}
+
+/* Force date picker calendar */
+[data-baseweb="datepicker"],
+[data-baseweb="datepicker"] *,
+[data-baseweb="calendar"],
+[data-baseweb="calendar"] * {
+    background-color: #ffffff !important;
+    color: #1c2b27 !important;
+}
+
+/* Force radio button labels visible */
+.stRadio > div > label,
+.stRadio span,
+.stCheckbox > label,
+.stCheckbox span {
+    color: #1c2b27 !important;
+}
+
+/* Force expander header */
+.streamlit-expanderHeader,
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary span,
+[data-testid="stExpander"] summary p {
+    background-color: #ffffff !important;
+    color: #1c2b27 !important;
+}
+
+/* Force multiselect tags */
+[data-baseweb="tag"],
+[data-baseweb="tag"] span {
+    background-color: #e8f5f1 !important;
+    color: #1a6b5a !important;
+}
+
+/* Exception: keep white text on green header bar */
+div[style*="background: #1a6b5a"] p,
+div[style*="background: #1a6b5a"] span,
+div[style*="background: #1a6b5a"] div,
+div[style*="background:#1a6b5a"] p,
+div[style*="background:#1a6b5a"] span,
+div[style*="background:#1a6b5a"] div {
+    color: white !important;
+}
+
+/* ── END FORCE LIGHT MODE ───────────────────── */
+
 html, body, [class*="css"] {
     font-family: var(--ivy-font) !important;
     color: var(--ivy-text) !important;
@@ -106,6 +214,7 @@ h3 { font-size: 1rem !important; font-weight: 600 !important; }
     background: var(--ivy-white) !important;
     font-family: var(--ivy-font) !important;
     font-size: 0.92rem !important;
+    color: var(--ivy-text) !important;
 }
 .stTextInput > div > div > input:focus,
 .stNumberInput > div > div > input:focus,
