@@ -210,33 +210,63 @@ def _render_user_statement_sidebar(user_id):
     else:
         total_products = len(load_products_cached())
 
+        drafts = []
+        submitted = []
+        locked_list = []
+
         for s in my_statements:
-            # Filter by selected stockist
             if selected_stockist_filter and s["stockist_id"] != selected_stockist_filter:
                 continue
-
+            stockist_name = s.get("stockists", {}).get("name", "Unknown") if s.get("stockists") else "Unknown"
             if s["locked"]:
-                status = "🔒 Locked"
-                action = "view"
+                locked_list.append((s, stockist_name))
             elif s["status"] == "final":
-                status = "✅ Submitted"
-                action = "view"
+                submitted.append((s, stockist_name))
             else:
+                drafts.append((s, stockist_name))
+
+        # DRAFTS — shown as buttons directly
+        if drafts:
+            st.write("**📝 Drafts**")
+            for s, stockist_name in drafts:
                 progress = s.get("current_product_index") or 0
-                status = f"📝 Draft ({progress}/{total_products})"
-                action = "edit"
+                label = f"{stockist_name} | {s['month']:02d}/{s['year']} — 📝 Draft ({progress}/{total_products})"
+                if st.button(f"👁 {label}", key=f"user_stmt_{s['id']}"):
+                    st.session_state.statement_id = s["id"]
+                    st.session_state.product_index = s.get("current_product_index") or 0
+                    st.session_state.statement_year = s["year"]
+                    st.session_state.statement_month = s["month"]
+                    st.session_state.selected_stockist_id = s["stockist_id"]
+                    st.session_state.engine_stage = "edit"
+                    st.rerun()
 
-            stockist_name = s.get('stockists', {}).get('name', 'Unknown') if s.get('stockists') else 'Unknown'
-            label = f"{stockist_name} | {s['month']:02d}/{s['year']} — {status}"
+        # SUBMITTED — inside a collapsible expander
+        if submitted:
+            with st.expander(f"✅ Submitted ({len(submitted)})", expanded=False):
+                for s, stockist_name in submitted:
+                    label = f"{stockist_name} | {s['month']:02d}/{s['year']}"
+                    if st.button(f"👁 {label}", key=f"user_stmt_{s['id']}"):
+                        st.session_state.statement_id = s["id"]
+                        st.session_state.product_index = s.get("current_product_index") or 0
+                        st.session_state.statement_year = s["year"]
+                        st.session_state.statement_month = s["month"]
+                        st.session_state.selected_stockist_id = s["stockist_id"]
+                        st.session_state.engine_stage = "view"
+                        st.rerun()
 
-            if st.button(f"👁 {label}", key=f"user_stmt_{s['id']}"):
-                st.session_state.statement_id = s["id"]
-                st.session_state.product_index = s.get("current_product_index") or 0
-                st.session_state.statement_year = s["year"]
-                st.session_state.statement_month = s["month"]
-                st.session_state.selected_stockist_id = s["stockist_id"]
-                st.session_state.engine_stage = action
-                st.rerun()
+        # LOCKED — inside a collapsible expander
+        if locked_list:
+            with st.expander(f"🔒 Locked ({len(locked_list)})", expanded=False):
+                for s, stockist_name in locked_list:
+                    label = f"{stockist_name} | {s['month']:02d}/{s['year']}"
+                    if st.button(f"👁 {label}", key=f"user_stmt_{s['id']}"):
+                        st.session_state.statement_id = s["id"]
+                        st.session_state.product_index = s.get("current_product_index") or 0
+                        st.session_state.statement_year = s["year"]
+                        st.session_state.statement_month = s["month"]
+                        st.session_state.selected_stockist_id = s["stockist_id"]
+                        st.session_state.engine_stage = "view"
+                        st.rerun()
 
     # Create / Resume new statement
     st.divider()
@@ -256,18 +286,39 @@ def _render_user_statement_sidebar(user_id):
         st.stop()
 
     selected = st.selectbox(
-        "Stockist", stockists,
-        format_func=lambda x: x["stockists"]["name"]
+        "Select Stockist",
+        options=[None] + stockists,
+        format_func=lambda x: "— Select a Stockist —" if x is None else x["stockists"]["name"]
     )
 
+    if selected is None:
+        st.info("Please select a stockist above to create a statement.")
+        return
+
     today = date.today()
-    year = st.selectbox("Year", [today.year - 1, today.year])
+    # Default to last month
+    if today.month == 1:
+        default_month = 12
+        default_year = today.year - 1
+    else:
+        default_month = today.month - 1
+        default_year = today.year
+
+    year = st.selectbox(
+        "Year",
+        options=[today.year - 1, today.year],
+        index=0 if default_year == today.year - 1 else 1
+    )
     month = st.selectbox(
         "Month",
-        list(range(1, today.month + 1)) if year == today.year else list(range(1, 13))
+        options=list(range(1, today.month + 1)) if year == today.year else list(range(1, 13)),
+        index=(default_month - 1) if (year == default_year and default_month <= (today.month if year == today.year else 12)) else 0
     )
 
     if st.button("➕ Create / Resume"):
+        if selected is None:
+            st.error("❌ Please select a stockist first.")
+            return
         res = admin_supabase.table("statements").upsert(
             {
                 "user_id": user_id,
@@ -529,6 +580,10 @@ def _run_preview(sid, user_id, role):
         "Stock Guidance": r["stock_guidance"],
         "Product ID": r["product_id"]
     } for r in rows])
+
+    # Sort products alphabetically (A to Z)
+    if not df.empty:
+        df = df.sort_values("Product", ascending=True).reset_index(drop=True)
 
     if "Product ID" in df.columns:
         st.dataframe(df.drop(columns=["Product ID"]), use_container_width=True)
