@@ -89,6 +89,8 @@ def run_doctor_io():
         _run_form_b(user_id, role)
     elif mode == "REPORT":
         _run_report(user_id, role)
+    elif mode == "VIEW_EDIT":
+        _run_view_edit(user_id, role)
     else:
         _home_screen(role)
 
@@ -121,6 +123,13 @@ def _home_screen(role):
     with col3:
         if st.button("📊 Input / Output Report", use_container_width=True):
             st.session_state.io_mode = "REPORT"
+            st.rerun()
+
+    st.write("---")
+    col4, col5 = st.columns(2)
+    with col4:
+        if st.button("📋 View / Edit Saved Records", use_container_width=True):
+            st.session_state.io_mode = "VIEW_EDIT"
             st.rerun()
 
     if st.button("⬅️ Back to DCR Home"):
@@ -715,6 +724,136 @@ def _run_report(user_id, role):
         _pdf_download_btn_report(report_data, months, sel_year)
     with col_wa:
         _whatsapp_btn_report(report_data, months, sel_year)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VIEW / EDIT SAVED RECORDS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_view_edit(user_id, role):
+    st.write("### 📋 View / Edit Saved Records")
+
+    if st.button("⬅️ Back to Home"):
+        st.session_state.io_mode = "HOME"
+        st.rerun()
+
+    st.write("---")
+
+    target_user = _select_target_user(user_id, role, "ve")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        sel_month = st.selectbox("Month", list(MONTHS.keys()),
+                                 index=st.session_state.io_month - 1,
+                                 format_func=lambda x: MONTHS[x],
+                                 key="ve_month")
+    with col2:
+        sel_year = st.number_input("Year", min_value=2020, max_value=2030,
+                                   value=st.session_state.io_year, key="ve_year")
+
+    st.session_state.io_month = sel_month
+    st.session_state.io_year  = sel_year
+
+    # ── SECTION A: Input Records ──────────────────────────────────
+    st.write("---")
+    st.write(f"#### 📥 Saved Input Records — {MONTHS[sel_month]} {sel_year}")
+
+    input_records = load_admin_input_session(target_user, sel_month, sel_year)
+
+    if not input_records:
+        st.info("No input records saved for this month.")
+    else:
+        total_input = sum(r["gift_amount"] for r in input_records)
+        st.write(f"**{len(input_records)} record(s) | Total: ₹{total_input:,.2f}**")
+
+        for i, rec in enumerate(input_records):
+            with st.expander(
+                f"#{i+1} — {rec['doctor_name']} | {rec['date']} | "
+                f"₹{rec['gift_amount']:.2f} ({rec['amount_kind'].upper()})"
+            ):
+                col_left, col_right = st.columns([4, 1])
+                with col_left:
+                    new_desc   = st.text_input("Description",
+                                               value=rec["gift_description"],
+                                               key=f"ve_desc_{rec['id']}")
+                    new_amount = st.number_input("Amount (₹)",
+                                                 value=rec["gift_amount"],
+                                                 min_value=0.0, step=50.0,
+                                                 format="%.2f",
+                                                 key=f"ve_amt_{rec['id']}")
+                    new_kind   = st.selectbox("Type", ["cash", "kind"],
+                                              index=0 if rec["amount_kind"] == "cash" else 1,
+                                              key=f"ve_kind_{rec['id']}")
+                    new_rem    = st.text_input("Remarks",
+                                               value=rec.get("remarks", ""),
+                                               key=f"ve_rem_{rec['id']}")
+                    if st.button("💾 Save Changes", key=f"ve_save_{rec['id']}"):
+                        update_admin_input(rec["id"], new_desc, new_amount, new_kind, new_rem)
+                        st.success("✅ Record updated!")
+                        st.rerun()
+                with col_right:
+                    st.write("")
+                    st.write("")
+                    if st.button("🗑️ Delete", key=f"ve_del_{rec['id']}"):
+                        if st.session_state.get(f"ve_del_confirm_{rec['id']}"):
+                            delete_admin_input(rec["id"])
+                            st.success("Record deleted.")
+                            st.session_state[f"ve_del_confirm_{rec['id']}"] = False
+                            st.rerun()
+                        else:
+                            st.session_state[f"ve_del_confirm_{rec['id']}"] = True
+                            st.warning("Click again to confirm")
+
+    # ── SECTION B: Output Records ─────────────────────────────────
+    st.write("---")
+    st.write(f"#### 📤 Saved Output Records — {MONTHS[sel_month]} {sel_year}")
+
+    output_records = load_output_session(target_user, sel_month, sel_year)
+
+    if not output_records:
+        st.info("No output records saved for this month.")
+    else:
+        total_output = sum(r["sales_amount"] for r in output_records)
+        st.write(f"**{len(output_records)} record(s) | Total: ₹{total_output:,.2f}**")
+
+        for i, rec in enumerate(output_records):
+            with st.expander(
+                f"#{i+1} — {rec['doctor_name']} | ₹{rec['sales_amount']:.2f}"
+            ):
+                col_left, col_right = st.columns([4, 1])
+                with col_left:
+                    new_amt = st.number_input("Sales Amount (₹)",
+                                              value=rec["sales_amount"],
+                                              min_value=0.0, step=100.0,
+                                              format="%.2f",
+                                              key=f"ve_oamt_{rec['id']}")
+                    new_rem = st.text_input("Remarks",
+                                            value=rec.get("remarks", ""),
+                                            key=f"ve_orem_{rec['id']}")
+                    if st.button("💾 Save Changes", key=f"ve_osave_{rec['id']}"):
+                        save_doctor_output(
+                            user_id=target_user,
+                            doctor_id=rec["doctor_id"],
+                            month=sel_month,
+                            year=sel_year,
+                            sales_amount=new_amt,
+                            remarks=new_rem,
+                            created_by=get_current_user_id()
+                        )
+                        st.success("✅ Record updated!")
+                        st.rerun()
+                with col_right:
+                    st.write("")
+                    st.write("")
+                    if st.button("🗑️ Delete", key=f"ve_odel_{rec['id']}"):
+                        if st.session_state.get(f"ve_odel_confirm_{rec['id']}"):
+                            delete_output_record(rec["id"])
+                            st.success("Record deleted.")
+                            st.session_state[f"ve_odel_confirm_{rec['id']}"] = False
+                            st.rerun()
+                        else:
+                            st.session_state[f"ve_odel_confirm_{rec['id']}"] = True
+                            st.warning("Click again to confirm")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
