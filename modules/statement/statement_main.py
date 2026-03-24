@@ -175,17 +175,38 @@ def log_audit(*, action, message, performed_by, target_type=None, target_id=None
 # ======================================================
 
 def _render_user_statement_sidebar(user_id):
-    """Render the statement selection sidebar for regular users.
-    Exact logic from original app.py."""
+    """Render the statement selection sidebar for users and admin."""
 
     st.divider()
     st.subheader("🗂 My Statements")
+
+    # Admin: pick which user's statements to view
+    role = st.session_state.get("role", "user")
+    view_user_id = user_id
+    if role == "admin":
+        all_users = safe_exec(
+            admin_supabase.table("users")
+            .select("id, username")
+            .eq("is_active", True)
+            .order("username")
+        )
+        user_map = {u["id"]: u["username"] for u in all_users}
+        stored = st.session_state.get("stmt_sidebar_user_id") or user_id
+        selected_uid = st.selectbox(
+            "👤 View statements for:",
+            options=list(user_map.keys()),
+            format_func=lambda x: user_map.get(x, x),
+            index=list(user_map.keys()).index(stored) if stored in user_map else 0,
+            key="stmt_sidebar_user_select"
+        )
+        st.session_state.stmt_sidebar_user_id = selected_uid
+        view_user_id = selected_uid
 
     # Stockist filter dropdown
     stockist_rows = safe_exec(
         admin_supabase.table("statements")
         .select("stockist_id, stockists(name)")
-        .eq("user_id", user_id)
+        .eq("user_id", view_user_id)
     )
     stockist_options = {
         r["stockist_id"]: r["stockists"]["name"]
@@ -200,7 +221,7 @@ def _render_user_statement_sidebar(user_id):
 
     my_statements = admin_supabase.table("statements") \
         .select("id, year, month, status, locked, current_product_index, stockist_id, stockists(name)") \
-        .eq("user_id", user_id) \
+        .eq("user_id", view_user_id) \
         .order("year", desc=True) \
         .order("month", desc=True) \
         .execute().data
@@ -275,7 +296,7 @@ def _render_user_statement_sidebar(user_id):
     stockists = safe_exec(
         supabase.table("user_stockists")
         .select("stockist_id, stockists(name)")
-        .eq("user_id", user_id)
+        .eq("user_id", view_user_id)
     )
 
     if not stockists:
@@ -376,8 +397,8 @@ def run_statement():
     user_id = st.session_state.auth_user.id
     role = st.session_state.get("role", "user")
 
-    # Render user sidebar
-    if role == "user":
+    # Render sidebar for both user and admin
+    if role in ("user", "admin"):
         _render_user_statement_sidebar(user_id)
 
     # ── Landing page (no statement loaded) ────────────────────────
