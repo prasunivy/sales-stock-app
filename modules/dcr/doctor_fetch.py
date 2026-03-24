@@ -199,89 +199,97 @@ def show_doctor_update_form():
 
         new_loc_name = st.text_input("Location Name", placeholder="e.g., City Hospital Main Gate")
 
-        # ── Read GPS coords from query params if already fetched ──────────
+        # ── GPS Location fetcher ──────────────────────────────────
         import streamlit.components.v1 as components
 
+        # Initialize GPS coords in session state if not present
+        if "gps_lat" not in st.session_state:
+            st.session_state.gps_lat = 0.0
+        if "gps_long" not in st.session_state:
+            st.session_state.gps_long = 0.0
+        if "gps_fetched" not in st.session_state:
+            st.session_state.gps_fetched = False
+
+        # Read coords from URL if GPS button triggered a reload
         params = st.query_params
-        fetched_lat  = float(params["lat"])  if "lat"  in params else 0.0
-        fetched_long = float(params["long"]) if "long" in params else 0.0
+        if "lat" in params and "long" in params:
+            try:
+                st.session_state.gps_lat = float(params["lat"])
+                st.session_state.gps_long = float(params["long"])
+                st.session_state.gps_fetched = True
+                st.query_params.clear()
+            except Exception:
+                pass
 
-        # GPS button — on success rewrites URL with ?lat=...&long=... and reloads
-        gps_status = ""
-        if fetched_lat != 0.0 or fetched_long != 0.0:
-            gps_status = f"✅ Location fetched automatically!"
+        if st.session_state.gps_fetched:
+            st.success(f"✅ Location fetched! Lat: {st.session_state.gps_lat:.6f}, Long: {st.session_state.gps_long:.6f}")
 
-        components.html(f"""
+        components.html("""
             <style>
-                #gps-btn {{
+                #gps-btn {
                     background-color: #1a6b5a;
                     color: white;
                     border: none;
-                    padding: 12px 24px;
-                    font-size: 16px;
+                    padding: 14px 20px;
+                    font-size: 15px;
                     border-radius: 8px;
                     cursor: pointer;
                     width: 100%;
-                }}
-                #gps-btn:hover {{ background-color: #145249; }}
-                #gps-btn:disabled {{ background-color: #888; cursor: not-allowed; }}
-                #gps-status {{ font-size: 14px; margin-top: 10px; color: #333; }}
+                    margin-top: 4px;
+                }
+                #gps-btn:hover { background-color: #145249; }
+                #gps-btn:disabled { background-color: #888; cursor: not-allowed; }
+                #gps-status { font-size: 13px; margin-top: 8px; color: #333; min-height: 20px; }
             </style>
 
             <button id="gps-btn" onclick="fetchGPS()">📍 Fetch My Current Location</button>
-            <div id="gps-status">{gps_status}</div>
+            <div id="gps-status"></div>
 
             <script>
-            function fetchGPS() {{
+            function fetchGPS() {
                 var btn    = document.getElementById('gps-btn');
                 var status = document.getElementById('gps-status');
 
                 btn.disabled  = true;
-                btn.innerText = '⏳ Fetching GPS...';
-                status.innerText = '';
+                btn.innerText = '⏳ Fetching GPS... (may take 10-20 sec)';
+                status.innerText = 'Waiting for GPS signal...';
 
-                if (!navigator.geolocation) {{
+                if (!navigator.geolocation) {
                     status.innerText = '❌ GPS not supported on this browser.';
                     btn.disabled  = false;
                     btn.innerText = '📍 Fetch My Current Location';
                     return;
-                }}
+                }
 
                 navigator.geolocation.getCurrentPosition(
-                    function(pos) {{
-                        var lat  = pos.coords.latitude.toFixed(8);
-                        var lon  = pos.coords.longitude.toFixed(8);
-                        // Write coords into the URL and reload — Streamlit picks them up
-                        var url  = window.parent.location.href.split('?')[0];
-                        window.parent.location.href = url + '?lat=' + lat + '&long=' + lon;
-                    }},
-                    function(err) {{
-                        var msgs = {{
-                            1: '❌ Permission denied. Please allow location access in your browser/phone settings.',
-                            2: '❌ GPS signal unavailable. Try again outdoors.',
+                    function(pos) {
+                        var lat = pos.coords.latitude.toFixed(8);
+                        var lon = pos.coords.longitude.toFixed(8);
+                        status.innerText = '✅ Got location! Reloading page to save...';
+                        var base = window.parent.location.href.split('?')[0];
+                        window.parent.location.href = base + '?lat=' + lat + '&long=' + lon;
+                    },
+                    function(err) {
+                        var msgs = {
+                            1: '❌ Permission denied. Go to phone Settings > Browser > Location and allow access, then try again.',
+                            2: '❌ GPS unavailable. Move to an open area and try again.',
                             3: '❌ Timed out. Please try again.'
-                        }};
-                        status.innerText = msgs[err.code] || '❌ Unknown GPS error.';
+                        };
+                        status.innerText = msgs[err.code] || '❌ GPS error: ' + err.message;
                         btn.disabled  = false;
                         btn.innerText = '📍 Fetch My Current Location';
-                    }},
-                    {{ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }}
+                    },
+                    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
                 );
-            }}
+            }
             </script>
-        """, height=100)
-
-        # Show fetched coordinates (autofilled — user just needs to click Save)
-        if fetched_lat != 0.0 or fetched_long != 0.0:
-            st.success(f"📍 Location autofilled — Lat: {fetched_lat}, Long: {fetched_long}")
+        """, height=110)
 
         col1, col2 = st.columns(2)
         with col1:
-            new_lat  = st.number_input("Latitude",  format="%.8f", value=fetched_lat)
+            new_lat  = st.number_input("Latitude",  format="%.8f", value=st.session_state.gps_lat)
         with col2:
-            new_long = st.number_input("Longitude", format="%.8f", value=fetched_long)
-
-        # Clear GPS params from URL after user saves (done after save button click below)
+            new_long = st.number_input("Longitude", format="%.8f", value=st.session_state.gps_long)
     
     
     st.write("---")
@@ -355,8 +363,11 @@ def show_doctor_update_form():
         
         st.success("✅ Doctor details updated successfully!")
         
-        # Clear GPS params from URL
+        # Clear GPS params and session state
         st.query_params.clear()
+        st.session_state.gps_lat = 0.0
+        st.session_state.gps_long = 0.0
+        st.session_state.gps_fetched = False
         
         # Clear state
         del st.session_state.doctor_fetch_territory
