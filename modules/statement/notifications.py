@@ -44,6 +44,11 @@ ACTION_CONFIG = {
     "POB_SUBMITTED":              ("📋", "POB Document Submitted",     "blue"),
     "POB_APPROVED":               ("✅", "POB Document Approved",      "green"),
     "POB_REJECTED":               ("❌", "POB Document Rejected",      "red"),
+    # Statement product entry
+    "statement_product_saved":    ("💾", "Product Data Saved",         "blue"),
+    # Order From Stockist
+    "OFS_SUBMITTED":          ("📦", "Order From Stockist Submitted", "green"),
+    "OFS_DELETED":            ("🗑️",  "Order From Stockist Deleted",   "red"),
     # Doctor Input / Output  ← NEW
     "DOCTOR_INPUT_SAVED":         ("📥", "Doctor Input Saved",         "green"),
     "DOCTOR_INPUT_UPDATED":       ("✏️",  "Doctor Input Updated",       "blue"),
@@ -115,7 +120,8 @@ def run_notifications():
             "All Modules": None,
             "📦 Statement": ["statement_submitted", "reset_statement", "admin_corrected_statement",
                              "delete_statement", "create_stockist", "update_user",
-                             "create_territory", "update_territory", "reset_user_password"],
+                             "create_territory", "update_territory", "reset_user_password",
+                             "statement_product_saved"],
             "📥 OPS":       ["CANCEL_INVOICE", "DELETE_INVOICE", "DELETE_OPS", "EDIT_INVOICE",
                              "DELETE_PAYMENT", "DELETE_FREIGHT", "DELETE_RETURN_REPLACE",
                              "CREATE_FREIGHT", "ALLOCATE_PAYMENT"],
@@ -123,6 +129,7 @@ def run_notifications():
             "🗓️ Tour":      ["TOUR_CREATED", "TOUR_UPDATED", "TOUR_DELETED", "TOUR_APPROVED", "TOUR_REJECTED"],
             "📋 POB":       ["POB_CREATED", "POB_SUBMITTED", "POB_APPROVED", "POB_REJECTED"],
             # NEW ↓
+            "📦 OFS":         ["OFS_SUBMITTED", "OFS_DELETED"],
             "💊 Doctor I/O": ["DOCTOR_INPUT_SAVED", "DOCTOR_INPUT_UPDATED", "DOCTOR_INPUT_DELETED",
                               "DOCTOR_OUTPUT_SAVED", "DOCTOR_OUTPUT_DELETED"],
         }
