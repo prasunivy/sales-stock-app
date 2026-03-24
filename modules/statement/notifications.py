@@ -44,6 +44,12 @@ ACTION_CONFIG = {
     "POB_SUBMITTED":              ("📋", "POB Document Submitted",     "blue"),
     "POB_APPROVED":               ("✅", "POB Document Approved",      "green"),
     "POB_REJECTED":               ("❌", "POB Document Rejected",      "red"),
+    # Doctor Input / Output  ← NEW
+    "DOCTOR_INPUT_SAVED":         ("📥", "Doctor Input Saved",         "green"),
+    "DOCTOR_INPUT_UPDATED":       ("✏️",  "Doctor Input Updated",       "blue"),
+    "DOCTOR_INPUT_DELETED":       ("🗑️",  "Doctor Input Deleted",       "red"),
+    "DOCTOR_OUTPUT_SAVED":        ("📤", "Doctor Output Saved",        "green"),
+    "DOCTOR_OUTPUT_DELETED":      ("🗑️",  "Doctor Output Deleted",      "red"),
 }
 
 COLOR_MAP = {
@@ -116,6 +122,9 @@ def run_notifications():
             "📞 DCR":       ["DCR_SUBMITTED", "DCR_DELETED"],
             "🗓️ Tour":      ["TOUR_CREATED", "TOUR_UPDATED", "TOUR_DELETED", "TOUR_APPROVED", "TOUR_REJECTED"],
             "📋 POB":       ["POB_CREATED", "POB_SUBMITTED", "POB_APPROVED", "POB_REJECTED"],
+            # NEW ↓
+            "💊 Doctor I/O": ["DOCTOR_INPUT_SAVED", "DOCTOR_INPUT_UPDATED", "DOCTOR_INPUT_DELETED",
+                              "DOCTOR_OUTPUT_SAVED", "DOCTOR_OUTPUT_DELETED"],
         }
         selected_module = st.selectbox("Filter by Module", list(module_options.keys()), key="notif_module_filter")
 
@@ -178,7 +187,6 @@ def run_notifications():
         created_at = log.get("created_at", "")
         metadata = log.get("metadata") or {}
 
-        # Get config for this action
         config = ACTION_CONFIG.get(action)
         if config:
             emoji, label, color_key = config
@@ -188,14 +196,12 @@ def run_notifications():
         color = COLOR_MAP.get(color_key, "#666666")
         username = get_username_cached(performed_by)
 
-        # Try to get username from metadata if available
         if metadata.get("performed_by_username"):
             username = metadata["performed_by_username"]
 
         time_str = _time_ago(created_at)
         date_str = created_at[:10] if created_at else ""
 
-        # Render notification card
         st.markdown(f"""
         <div style="
             background: white;
