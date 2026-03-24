@@ -71,6 +71,18 @@ def get_all_users_active():
     )
 
 
+def _get_doctor_name(doctor_id):
+    """Helper to get a doctor's name for audit log messages."""
+    try:
+        result = safe_exec(
+            admin_supabase.table("doctors").select("name").eq("id", doctor_id).limit(1),
+            "Error loading doctor name"
+        )
+        return result[0]["name"] if result else "Unknown Doctor"
+    except Exception:
+        return "Unknown Doctor"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # FORM A  –  INPUT (gifts given directly by company / admin)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -101,7 +113,23 @@ def save_admin_input(user_id, doctor_id, input_date, gift_description, gift_amou
         admin_supabase.table("admin_input").insert(data),
         "Error saving input record"
     )
-    return result[0]["id"] if result else None
+
+    if result:
+        record_id = result[0]["id"]
+        doctor_name = _get_doctor_name(doctor_id)
+        # Audit log
+        safe_exec(
+            admin_supabase.table("audit_logs").insert({
+                "action": "DOCTOR_INPUT_SAVED",
+                "target_type": "admin_input",
+                "target_id": record_id,
+                "performed_by": created_by,
+                "message": f"Doctor input saved — Dr. {doctor_name} | ₹{gift_amount} ({amount_kind.upper()}) | {gift_description}"
+            }),
+            "Error creating audit log"
+        )
+        return record_id
+    return None
 
 
 def update_admin_input(record_id, gift_description, gift_amount, amount_kind, remarks):
@@ -112,20 +140,71 @@ def update_admin_input(record_id, gift_description, gift_amount, amount_kind, re
             "gift_description": gift_description,
             "gift_amount": float(gift_amount),
             "remarks": f"[{amount_kind.upper()}] {remarks}" if remarks else f"[{amount_kind.upper()}]",
-            "updated_at": datetime.utcnow().isoformat() if False else None  # column may not exist
         })
         .eq("id", record_id),
         "Error updating input record"
+    )
+    # Audit log — use the session user if available
+    try:
+        user = st.session_state.get("auth_user")
+        performed_by = user.id if user and hasattr(user, "id") else None
+    except Exception:
+        performed_by = None
+
+    safe_exec(
+        admin_supabase.table("audit_logs").insert({
+            "action": "DOCTOR_INPUT_UPDATED",
+            "target_type": "admin_input",
+            "target_id": record_id,
+            "performed_by": performed_by,
+            "message": f"Doctor input updated — ₹{gift_amount} ({amount_kind.upper()}) | {gift_description}"
+        }),
+        "Error creating audit log"
     )
 
 
 def delete_admin_input(record_id):
     """Hard delete an admin_input row (no soft-delete column exists)."""
+    # Fetch record info before deleting for audit log
+    try:
+        rec = safe_exec(
+            admin_supabase.table("admin_input")
+            .select("doctor_id, gift_description, gift_amount")
+            .eq("id", record_id)
+            .limit(1),
+            "Error fetching record for audit"
+        )
+        if rec:
+            doctor_name = _get_doctor_name(rec[0]["doctor_id"])
+            msg = f"Doctor input deleted — Dr. {doctor_name} | ₹{rec[0]['gift_amount']} | {rec[0]['gift_description']}"
+        else:
+            msg = f"Doctor input deleted (record id: {record_id})"
+    except Exception:
+        msg = f"Doctor input deleted (record id: {record_id})"
+
     safe_exec(
         admin_supabase.table("admin_input")
         .delete()
         .eq("id", record_id),
         "Error deleting input record"
+    )
+
+    # Audit log
+    try:
+        user = st.session_state.get("auth_user")
+        performed_by = user.id if user and hasattr(user, "id") else None
+    except Exception:
+        performed_by = None
+
+    safe_exec(
+        admin_supabase.table("audit_logs").insert({
+            "action": "DOCTOR_INPUT_DELETED",
+            "target_type": "admin_input",
+            "target_id": record_id,
+            "performed_by": performed_by,
+            "message": msg
+        }),
+        "Error creating audit log"
     )
 
 
@@ -176,7 +255,6 @@ def load_dcr_gifts_for_user_month(user_id, month, year):
     Pull gifts already entered via the daily DCR for this user/month.
     Returns [{doctor_name, gift_description, gift_amount, report_date}]
     """
-    # Get all DCR report IDs for this user/month
     reports = safe_exec(
         admin_supabase.table("dcr_reports")
         .select("id, report_date")
@@ -219,10 +297,8 @@ def load_dcr_gifts_for_user_month(user_id, month, year):
 def save_doctor_output(user_id, doctor_id, month, year, sales_amount, remarks, created_by):
     """
     Upsert a row into input_output table.
-    Uses ON CONFLICT DO UPDATE via a manual check.
     Returns row id or None.
     """
-    # Check if record already exists
     existing = safe_exec(
         admin_supabase.table("input_output")
         .select("id")
@@ -243,6 +319,8 @@ def save_doctor_output(user_id, doctor_id, month, year, sales_amount, remarks, c
         "updated_at": datetime.utcnow().isoformat()
     }
 
+    doctor_name = _get_doctor_name(doctor_id)
+
     if existing:
         row_id = existing[0]["id"]
         safe_exec(
@@ -251,6 +329,17 @@ def save_doctor_output(user_id, doctor_id, month, year, sales_amount, remarks, c
             .eq("id", row_id),
             "Error updating output"
         )
+        # Audit log for update
+        safe_exec(
+            admin_supabase.table("audit_logs").insert({
+                "action": "DOCTOR_OUTPUT_SAVED",
+                "target_type": "input_output",
+                "target_id": row_id,
+                "performed_by": created_by,
+                "message": f"Doctor output saved — Dr. {doctor_name} | ₹{sales_amount} sales"
+            }),
+            "Error creating audit log"
+        )
         return row_id
     else:
         data["created_by"] = created_by
@@ -258,7 +347,21 @@ def save_doctor_output(user_id, doctor_id, month, year, sales_amount, remarks, c
             admin_supabase.table("input_output").insert(data),
             "Error saving output"
         )
-        return result[0]["id"] if result else None
+        if result:
+            row_id = result[0]["id"]
+            # Audit log for insert
+            safe_exec(
+                admin_supabase.table("audit_logs").insert({
+                    "action": "DOCTOR_OUTPUT_SAVED",
+                    "target_type": "input_output",
+                    "target_id": row_id,
+                    "performed_by": created_by,
+                    "message": f"Doctor output saved — Dr. {doctor_name} | ₹{sales_amount} sales"
+                }),
+                "Error creating audit log"
+            )
+            return row_id
+    return None
 
 
 def load_output_session(user_id, month, year):
@@ -289,11 +392,46 @@ def load_output_session(user_id, month, year):
 
 def delete_output_record(record_id):
     """Delete an output record."""
+    # Fetch info before deleting for audit log
+    try:
+        rec = safe_exec(
+            admin_supabase.table("input_output")
+            .select("doctor_id, sales_amount")
+            .eq("id", record_id)
+            .limit(1),
+            "Error fetching record for audit"
+        )
+        if rec:
+            doctor_name = _get_doctor_name(rec[0]["doctor_id"])
+            msg = f"Doctor output deleted — Dr. {doctor_name} | ₹{rec[0]['sales_amount']}"
+        else:
+            msg = f"Doctor output deleted (record id: {record_id})"
+    except Exception:
+        msg = f"Doctor output deleted (record id: {record_id})"
+
     safe_exec(
         admin_supabase.table("input_output")
         .delete()
         .eq("id", record_id),
         "Error deleting output record"
+    )
+
+    # Audit log
+    try:
+        user = st.session_state.get("auth_user")
+        performed_by = user.id if user and hasattr(user, "id") else None
+    except Exception:
+        performed_by = None
+
+    safe_exec(
+        admin_supabase.table("audit_logs").insert({
+            "action": "DOCTOR_OUTPUT_DELETED",
+            "target_type": "input_output",
+            "target_id": record_id,
+            "performed_by": performed_by,
+            "message": msg
+        }),
+        "Error creating audit log"
     )
 
 
@@ -305,17 +443,6 @@ def load_io_report(user_id, year, months=None):
     """
     Load combined Input/Output report for a user.
     months: list of int, or None for all 12.
-    Returns dict keyed by doctor_id:
-    {
-      doctor_id: {
-        "doctor_name": str,
-        "data": {
-          (month, year): {"input_cash": float, "input_kind": float,
-                          "dcr_gift": float, "total_input": float,
-                          "output": float}
-        }
-      }
-    }
     """
     if months is None:
         months = list(range(1, 13))
