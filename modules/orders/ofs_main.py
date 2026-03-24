@@ -525,8 +525,7 @@ def _archive_screen(user_id, role):
                     encoded = urllib.parse.quote(msg)
                     st.link_button(
                         "📱 WhatsApp",
-                        url=f"https://wa.me/?text={encoded}",
-                        key=f"wa_{order['id']}"
+                        url=f"https://wa.me/?text={encoded}"
                     )
 
 
