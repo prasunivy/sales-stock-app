@@ -41,6 +41,7 @@ def run_dcr():
     init_dcr_session_state()
     
     # Always show home screen on fresh entry
+    # Only skip home if user is actively mid-flow
     if (not st.session_state.get("dcr_masters_mode")
         and not st.session_state.get("dcr_report_id")
         and not st.session_state.get("dcr_submit_done")
@@ -78,76 +79,22 @@ def run_dcr():
         show_home_screen()
 
 
-def _get_all_users():
-    """Get all active users for admin dropdown."""
-    from anchors.supabase_client import admin_supabase, safe_exec
-    return safe_exec(
-        admin_supabase.table("users")
-        .select("id, username")
-        .eq("is_active", True)
-        .order("username"),
-        "Error loading users"
-    )
-
-
-def _get_user_draft(user_id):
-    """Check if a draft DCR exists for this user. Returns the draft or None."""
-    from anchors.supabase_client import admin_supabase, safe_exec
-    result = safe_exec(
-        admin_supabase.table("dcr_reports")
-        .select("id, report_date, area_type, current_step")
-        .eq("user_id", user_id)
-        .eq("status", "draft")
-        .eq("is_deleted", False)
-        .order("created_at", desc=True)
-        .limit(1),
-        "Error checking draft DCR"
-    )
-    return result[0] if result else None
-
-
 def show_home_screen():
     """Home screen with DCR options and Masters"""
     st.write("### What would you like to do?")
-    
-    user_id = get_current_user_id()
-    
-    # ── Check for existing draft and show resume button ──────────
-    existing_draft = _get_user_draft(user_id)
-    if existing_draft:
-        st.warning(
-            f"⚠️ You have an **unfinished DCR** for **{existing_draft['report_date']}** "
-            f"(Area: {existing_draft['area_type']}). Resume it below."
-        )
-        if st.button("▶️ Resume Unfinished DCR", type="primary", use_container_width=True):
-            st.session_state.dcr_report_id = existing_draft["id"]
-            # Resume from the step it was left at (minimum step 1)
-            resume_step = existing_draft.get("current_step") or 1
-            if resume_step < 1:
-                resume_step = 1
-            st.session_state.dcr_current_step = resume_step
-            st.session_state.dcr_new_report = False
-            st.rerun()
-        st.write("---")
     
     # DCR Actions
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("➕ New Daily Report", type="primary" if not existing_draft else "secondary", use_container_width=True):
+        if st.button("➕ New Daily Report", type="primary", use_container_width=True):
             st.session_state.dcr_current_step = 1
             st.session_state.dcr_new_report = True
             st.rerun()
     
     with col2:
         if st.button("📅 View My Reports", use_container_width=True):
-            st.session_state.dcr_show_history = True
-            st.rerun()
-    
-    # Show history inline if requested
-    if st.session_state.get("dcr_show_history"):
-        show_monthly_history()
-        return
+            show_monthly_history()
     
     # Masters Section
     st.write("---")
@@ -180,30 +127,13 @@ def show_home_screen():
         st.write("")   # placeholder for future buttons
 
 
+
 def show_monthly_history():
-    """Show monthly DCR history — works for both users and admins."""
+    """Show monthly DCR history"""
     st.write("---")
-    st.write("### 📅 DCR History")
+    st.write("### 📅 My DCR History")
     
-    current_user_id = get_current_user_id()
-    role = st.session_state.get("role", "user")
-    
-    # ── Admin: pick which user's reports to view ─────────────────
-    view_user_id = current_user_id
-    if role == "admin":
-        users = _get_all_users()
-        user_map = {u["id"]: u["username"] for u in users}
-        stored = st.session_state.get("dcr_history_user_id") or current_user_id
-        selected = st.selectbox(
-            "👤 View reports for user:",
-            options=list(user_map.keys()),
-            format_func=lambda x: user_map.get(x, x),
-            index=list(user_map.keys()).index(stored) if stored in user_map else 0,
-            key="dcr_history_user_select"
-        )
-        st.session_state.dcr_history_user_id = selected
-        view_user_id = selected
-        st.write("---")
+    user_id = get_current_user_id()
     
     col1, col2, col3 = st.columns([2, 2, 1])
     
@@ -212,76 +142,42 @@ def show_monthly_history():
             "Month",
             options=list(range(1, 13)),
             format_func=lambda x: datetime(2000, x, 1).strftime("%B"),
-            index=datetime.now().month - 1,
-            key="dcr_hist_month"
+            index=datetime.now().month - 1
         )
     
     with col2:
         selected_year = st.selectbox(
             "Year",
             options=list(range(2020, 2031)),
-            index=datetime.now().year - 2020,
-            key="dcr_hist_year"
+            index=datetime.now().year - 2020
         )
     
     with col3:
-        st.write("")
         if st.button("🔄 Refresh"):
             st.rerun()
     
-    reports = load_dcr_monthly_reports(view_user_id, selected_year, selected_month)
+    reports = load_dcr_monthly_reports(user_id, selected_year, selected_month)
     
     if not reports:
-        st.info(f"No reports found for {datetime(2000, selected_month, 1).strftime('%B')} {selected_year}.")
+        st.info(f"No reports found for {datetime(2000, selected_month, 1).strftime('%B')} {selected_year}")
         if st.button("⬅️ Back to Home"):
-            st.session_state.dcr_show_history = False
             st.session_state.dcr_current_step = 0
             st.rerun()
         return
     
-    # ── Split into submitted and drafts ──────────────────────────
-    submitted = [r for r in reports if r["status"] == "submitted"]
-    drafts    = [r for r in reports if r["status"] == "draft"]
+    submitted = [r for r in reports if r['status'] == 'submitted']
     
-    # Show submitted reports
     if submitted:
-        st.write(f"**✅ Submitted ({len(submitted)} day(s))**")
+        st.write(f"**✅ Submitted ({len(submitted)} days)**")
         for report in submitted:
-            with st.expander(f"📋 {report['report_date']} — {report['area_type']}"):
+            with st.expander(f"{report['report_date']} - {report['area_type']}"):
                 st.write(f"📍 Doctors: {report.get('doctor_count', 0)}")
                 st.write(f"🏪 Chemists: {report.get('chemist_count', 0)}")
                 st.write(f"🎁 Gifts: {report.get('gift_count', 0)}")
                 st.write(f"🚗 KM: {report.get('km_travelled', 0)}")
                 st.write(f"💰 Expenses: ₹{report.get('misc_expense', 0)}")
     
-    # Show draft reports with Resume button
-    if drafts:
-        st.write(f"**⏳ Drafts — Not Yet Submitted ({len(drafts)} day(s))**")
-        for report in drafts:
-            with st.expander(f"🟡 {report['report_date']} — {report['area_type']} (DRAFT)"):
-                st.write(f"📍 Doctors: {report.get('doctor_count', 0)}")
-                st.write(f"🏪 Chemists: {report.get('chemist_count', 0)}")
-                st.write(f"🚗 KM: {report.get('km_travelled', 0)}")
-                st.warning("This DCR has not been submitted yet.")
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    if st.button("▶️ Resume & Complete", key=f"resume_{report['id']}"):
-                        st.session_state.dcr_report_id = report["id"]
-                        resume_step = report.get("current_step") or 1
-                        if resume_step < 1:
-                            resume_step = 1
-                        st.session_state.dcr_current_step = resume_step
-                        st.session_state.dcr_new_report = False
-                        st.session_state.dcr_show_history = False
-                        st.rerun()
-                with col_b:
-                    if st.button("🗑️ Delete Draft", key=f"del_draft_{report['id']}"):
-                        delete_dcr_soft(report["id"], current_user_id)
-                        st.success("Draft deleted.")
-                        st.rerun()
-    
     if st.button("⬅️ Back to Home"):
-        st.session_state.dcr_show_history = False
         st.session_state.dcr_current_step = 0
         st.rerun()
 
@@ -332,16 +228,20 @@ def show_stage_1_header():
     
     # Check duplicate only if creating NEW DCR (not editing)
     if not st.session_state.get("dcr_report_id"):
+        # Creating new DCR - check for duplicates
         if check_duplicate_dcr(selected_user_id, report_date):
-            st.error("❌ A DCR already exists for this date. Please check View My Reports.")
+            st.error("❌ DCR already exists for this date")
             if st.button("⬅️ Back to Home"):
                 st.session_state.dcr_current_step = 0
                 st.session_state.active_module = None
                 st.rerun()
             return
     else:
+        # Editing existing DCR - allow it
+        # But prevent changing to a date that has another DCR
         existing_dcr = get_dcr_by_id(st.session_state.dcr_report_id)
         if existing_dcr and str(existing_dcr.get('report_date')) != str(report_date):
+            # User is trying to change the date
             if check_duplicate_dcr(selected_user_id, report_date):
                 st.error("❌ Another DCR already exists for this date. Cannot change to this date.")
                 return
@@ -423,11 +323,11 @@ def show_stage_1_header():
     
     with col2:
         if st.button("🏠 Back to Home", use_container_width=True):
+            # Clear ALL DCR state
             st.session_state.dcr_current_step = 0
             st.session_state.dcr_report_id = None
             st.session_state.dcr_new_report = False
-            st.session_state.dcr_show_history = False
-            st.session_state.engine_stage = None
+            st.session_state.engine_stage = None  
             st.session_state.active_module = None
             st.rerun()
 
@@ -439,7 +339,8 @@ def show_stage_2_visits():
     territory_ids = st.session_state.dcr_territory_ids
     
     dcr_data = get_dcr_by_id(dcr_id)
-    existing_visits = dcr_data.get('doctor_visits', [])
+    # Initialize variables at the top to avoid UnboundLocalError
+    existing_visits = dcr_data.get('doctor_visits', []) 
     existing_gifts = dcr_data.get('gifts', [])
     
     # ========================================
@@ -455,6 +356,7 @@ def show_stage_2_visits():
     if not doctors:
         st.warning("⚠️ No doctors found in selected territories")
     else:
+        # Show existing visits
         existing_visits = dcr_data.get('doctor_visits', [])
         if existing_visits:
             st.write(f"**Added: {len(existing_visits)} doctor(s)**")
@@ -466,15 +368,18 @@ def show_stage_2_visits():
                         remove_doctor_visit(visit['id'])
                         st.rerun()
         
+        # Get already added doctor IDs to prevent duplicates
         added_doctor_ids = [v['doctor_id'] for v in existing_visits]
         available_doctors = [d for d in doctors if d['id'] not in added_doctor_ids]
         
         if not available_doctors:
             st.info("✅ All doctors in this territory have been added")
         else:
+            # Add new doctor form
             with st.form("add_doctor_form"):
                 st.write("**Add Doctor Visit**")
                 
+                # Add placeholder option
                 doctor_options = [None] + [d['id'] for d in available_doctors]
                 
                 selected_doctor = st.selectbox(
@@ -491,6 +396,7 @@ def show_stage_2_visits():
                     help="Select one or more products"
                 )
                 
+                # Add "single" option + managers
                 visited_with_options = ["single"] + [m['id'] for m in managers]
                 visited_with = st.multiselect(
                     "Visited With * (Required)",
@@ -502,6 +408,7 @@ def show_stage_2_visits():
                 submit_doctor = st.form_submit_button("➕ Add Doctor")
                 
                 if submit_doctor:
+                    # Validation
                     if selected_doctor is None:
                         st.error("❌ Please select a doctor")
                     elif not selected_products:
@@ -509,6 +416,7 @@ def show_stage_2_visits():
                     elif not visited_with:
                         st.error("❌ Please select who you visited with (required)")
                     else:
+                        # All validations passed
                         save_doctor_visit(
                             dcr_id=dcr_id,
                             doctor_id=selected_doctor,
@@ -529,11 +437,14 @@ def show_stage_2_visits():
     if not chemists:
         st.warning("⚠️ No chemists found in selected territories")
     else:
+        # Get existing chemist IDs safely
         existing_chemist_ids = dcr_data.get('chemist_ids', [])
         
+        # Ensure it's a list
         if not isinstance(existing_chemist_ids, list):
             existing_chemist_ids = []
         
+        # Filter existing IDs to only include valid ones
         valid_chemist_ids = [c['id'] for c in chemists]
         safe_defaults = [cid for cid in existing_chemist_ids if cid in valid_chemist_ids]
         
@@ -558,9 +469,11 @@ def show_stage_2_visits():
     st.write("---")
     st.write("#### 🎁 Gifts (Optional)")
 
+    # Always reload fresh from dcr_data
     existing_gifts = dcr_data.get('gifts', [])
     existing_visits_fresh = dcr_data.get('doctor_visits', [])
 
+    # Show existing gifts
     if existing_gifts:
         st.write(f"**Added: {len(existing_gifts)} gift(s)**")
         for idx, gift in enumerate(existing_gifts):
@@ -570,12 +483,15 @@ def show_stage_2_visits():
                     remove_gift(gift['id'])
                     st.rerun()
 
+    # Add gift form — show if ANY doctor visits exist
     if not existing_visits_fresh:
         st.info("ℹ️ Add doctor visits above first to record gifts")
     else:
+        # Allow gifts for ANY visited doctor (allow multiple gifts per doctor)
         with st.form("add_gift_form"):
             st.write("**Add Gift**")
 
+            # All visited doctors available (allow multiple gifts per same doctor)
             gift_doctor_options = [None] + [v['doctor_id'] for v in existing_visits_fresh]
 
             gift_doctor = st.selectbox(
@@ -623,7 +539,6 @@ def show_stage_2_visits():
         if st.button("💾 Save & Next ➡️", type="primary"):
             st.session_state.dcr_current_step = 3
             st.rerun()
-
 def show_stage_3_expenses():
     """Stage 3: Expenses"""
     st.write("### Stage 3/4: Expenses")
@@ -631,6 +546,7 @@ def show_stage_3_expenses():
     dcr_id = st.session_state.dcr_report_id
     dcr_data = get_dcr_by_id(dcr_id)
     
+    # KM travelled
     km_travelled = st.number_input(
         "🚗 KM Travelled",
         min_value=0.0,
@@ -638,6 +554,7 @@ def show_stage_3_expenses():
         value=float(dcr_data.get('km_travelled', 0))
     )
     
+    # Misc expense
     misc_expense = st.number_input(
         "💰 Miscellaneous Expense (₹)",
         min_value=0.0,
@@ -645,12 +562,14 @@ def show_stage_3_expenses():
         value=float(dcr_data.get('misc_expense', 0))
     )
     
+    # Details
     misc_expense_details = st.text_area(
         "📝 Expense Details (Optional)",
         value=dcr_data.get('misc_expense_details', ''),
         placeholder="e.g., Parking, Toll, Food"
     )
     
+    # Preview
     st.write("---")
     st.write("**Preview:**")
     st.write(f"🚗 KM: {km_travelled}")
@@ -658,6 +577,7 @@ def show_stage_3_expenses():
     if misc_expense_details:
         st.write(f"📝 Details: {misc_expense_details}")
     
+    # Navigation
     st.write("---")
     col1, col2 = st.columns(2)
     with col1:
@@ -679,6 +599,7 @@ def show_stage_4_preview():
     
     dcr_id = st.session_state.get("dcr_report_id")
     
+    # Safety check
     if not dcr_id:
         st.error("❌ No DCR found. Please start over.")
         if st.button("🏠 Back to Home"):
@@ -698,6 +619,7 @@ def show_stage_4_preview():
             st.rerun()
         return
     
+    # Check if data is valid
     if not dcr_data or not dcr_data.get('report_date'):
         st.error("❌ DCR data is incomplete or corrupted")
         if st.button("🏠 Back to Home"):
@@ -707,24 +629,30 @@ def show_stage_4_preview():
             st.rerun()
         return
     
+    # Header
     st.write("---")
     st.write("#### 📋 DCR Summary")
     st.write(f"**Date:** {dcr_data['report_date']}")
     st.write(f"**Area:** {dcr_data['area_type']}")
     
+    # Territories
     if dcr_data.get('territory_names'):
         st.write(f"**Territories:** {', '.join(dcr_data['territory_names'])}")
     
+    # Doctor visits
     st.write("---")
     st.write("**👨‍⚕️ Doctor Visits:**")
     doctor_visits = dcr_data.get('doctor_visits', [])
     if doctor_visits:
         for visit in doctor_visits:
+            # Resolve visited_with to names
             visited_with_raw = visit.get('visited_with', 'single')
             if visited_with_raw == 'single' or not visited_with_raw:
                 visited_with_display = "Self (Alone)"
             else:
+                # It's a comma-separated list of IDs
                 ids = visited_with_raw.split(',')
+                # Resolve to names
                 managers = get_managers_list()
                 names = []
                 for id_val in ids:
@@ -741,6 +669,7 @@ def show_stage_4_preview():
     else:
         st.write("None")
     
+    # Chemist visits
     st.write("---")
     st.write("**🏪 Chemist Visits:**")
     chemist_names = dcr_data.get('chemist_names', [])
@@ -750,6 +679,7 @@ def show_stage_4_preview():
     else:
         st.write("None")
     
+    # Gifts
     st.write("---")
     st.write("**🎁 Gifts:**")
     gifts = dcr_data.get('gifts', [])
@@ -761,6 +691,7 @@ def show_stage_4_preview():
     else:
         st.write("None")
     
+    # Expenses
     st.write("---")
     st.write("**💰 Expenses:**")
     st.write(f"🚗 KM Travelled: {dcr_data.get('km_travelled', 0)}")
@@ -794,9 +725,11 @@ def show_stage_4_preview():
             st.session_state.dcr_submit_done = True
             st.rerun()
     with col2:
-        if st.button("❌ Cancel / Delete this DCR"):
+        if st.button("❌ Cancel"):
             if st.session_state.get("dcr_delete_confirm"):
+                # Actually delete
                 delete_dcr_soft(dcr_id, get_current_user_id())
+                # Clear state
                 st.session_state.dcr_report_id = None
                 st.session_state.dcr_current_step = 0
                 st.session_state.dcr_delete_confirm = False
@@ -804,8 +737,9 @@ def show_stage_4_preview():
                 st.success("DCR cancelled and deleted")
                 st.rerun()
             else:
+                # Show confirmation
                 st.session_state.dcr_delete_confirm = True
-                st.warning("⚠️ Click again to confirm deletion")
+                st.warning("⚠️ Click again to confirm cancellation")
 
 
 def show_post_submit_screen():
@@ -820,10 +754,14 @@ def show_post_submit_screen():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📱 Share on WhatsApp", use_container_width=True):
-            message = format_whatsapp_message(dcr_id)
-            st.code(message, language=None)
-            st.write("Copy the message above and share on WhatsApp")
+        import urllib.parse
+        message = format_whatsapp_message(dcr_id)
+        encoded = urllib.parse.quote(message)
+        st.link_button(
+            "📱 Share on WhatsApp",
+            url=f"https://wa.me/?text={encoded}",
+            use_container_width=True
+        )
     
     with col2:
         if st.button("➕ New DCR", type="primary", use_container_width=True):
@@ -845,6 +783,5 @@ def show_post_submit_screen():
         st.session_state.dcr_submit_done = False
         st.session_state.dcr_current_step = 0
         st.session_state.dcr_new_report = False
-        st.session_state.dcr_show_history = False
         st.session_state.active_module = None
         st.rerun()
