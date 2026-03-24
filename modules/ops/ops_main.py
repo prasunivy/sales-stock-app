@@ -330,8 +330,26 @@ def run_ops():
     }
 
     current_section = st.session_state.ops_section
+
+    # Sub-sections that are NOT in the menu (view/edit/delete flows).
+    # When in these, show the selectbox frozen on the parent section
+    # but do NOT let it override the current sub-section.
+    SUB_SECTIONS = {
+        "DOCUMENT_BROWSER_INVOICE_VIEW":         "DOCUMENT_BROWSER_INVOICES",
+        "DOCUMENT_BROWSER_INVOICE_EDIT":         "DOCUMENT_BROWSER_INVOICES",
+        "DOCUMENT_BROWSER_INVOICE_DELETE":       "DOCUMENT_BROWSER_INVOICES",
+        "DOCUMENT_BROWSER_INVOICE_DELETE_EXEC":  "DOCUMENT_BROWSER_INVOICES",
+        "DOCUMENT_BROWSER_INVOICE_CANCEL":       "DOCUMENT_BROWSER_INVOICES",
+        "DOCUMENT_BROWSER_ARCHIVE_VIEW":         "DOCUMENT_BROWSER_ARCHIVED",
+    }
+
+    # If in a sub-section, show the parent in the selectbox (so it looks
+    # natural) but do not allow the selectbox to change the section.
+    in_sub_section = current_section in SUB_SECTIONS
+    display_section = SUB_SECTIONS.get(current_section, current_section)
+
     current_label = next(
-        (lbl for lbl, val in OPS_OPTIONS.items() if val == current_section),
+        (lbl for lbl, val in OPS_OPTIONS.items() if val == display_section),
         "— Select OPS Function —"
     )
     labels = list(OPS_OPTIONS.keys())
@@ -345,7 +363,15 @@ def run_ops():
     )
     selected_section = OPS_OPTIONS[selected_label]
 
-    if selected_section != current_section:
+    # Only navigate if user deliberately picked a different menu item
+    # AND we are not mid-flow in a sub-section
+    if not in_sub_section and selected_section != current_section:
+        st.session_state.ops_section = selected_section
+        st.rerun()
+
+    # If user picks a different menu item while in a sub-section,
+    # treat it as a deliberate navigation away
+    if in_sub_section and selected_section is not None and selected_section != display_section:
         st.session_state.ops_section = selected_section
         st.rerun()
 
