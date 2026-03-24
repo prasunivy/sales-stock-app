@@ -226,9 +226,10 @@ def _render_user_statement_sidebar(user_id):
                 status = f"📝 Draft ({progress}/{total_products})"
                 action = "edit"
 
-            label = f"{s['month']:02d}/{s['year']} — {status}"
+            stockist_name = s.get('stockists', {}).get('name', 'Unknown') if s.get('stockists') else 'Unknown'
+            label = f"{stockist_name} | {s['month']:02d}/{s['year']} — {status}"
 
-            if st.button(f"👁 View • {label}", key=f"user_stmt_{s['id']}"):
+            if st.button(f"👁 {label}", key=f"user_stmt_{s['id']}"):
                 st.session_state.statement_id = s["id"]
                 st.session_state.product_index = s.get("current_product_index") or 0
                 st.session_state.statement_year = s["year"]
