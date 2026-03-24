@@ -62,6 +62,7 @@ def route_module():
         "🗓️ Tour",
         "📋 POB",
         "📈 Reports",
+        "📦 OFS",
     ]
     if role == "admin":
         nav_options.append("🔔 Notifications")
@@ -78,6 +79,7 @@ def route_module():
         "🗓️ Tour":          "TOUR",
         "📋 POB":           "POB",
         "📈 Reports":       "REPORTS",
+        "📦 OFS":            "OFS_ORDER",
         "🔔 Notifications": "NOTIFICATIONS",
         "🔧 Admin":         "ADMIN",
     }
@@ -178,6 +180,10 @@ def route_module():
     elif active == "REPORTS":
         from modules.statement.statement_main import run_reports
         run_reports()
+
+    elif active == "OFS_ORDER":
+        from modules.orders.ofs_main import run_ofs
+        run_ofs()
 
     elif active == "NOTIFICATIONS":
         from modules.statement.notifications import run_notifications
