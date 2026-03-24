@@ -243,7 +243,7 @@ def ofs_load_archive(user_id, role, stockist_filter=None,
     """Load order history. Admin sees all, user sees own."""
     query = (
         admin_supabase.table("ofs_orders")
-        .select("*, stockists(name), users(username)")
+        .select("*, stockists(name), users!ofs_orders_user_id_fkey(username)")
         .eq("is_deleted", False)
         .order("created_at", desc=True)
         .limit(limit)
@@ -258,7 +258,7 @@ def ofs_load_archive(user_id, role, stockist_filter=None,
     rows = _exec(query, "Error loading archive")
     for r in rows:
         r["stockist_name"] = r.get("stockists", {}).get("name", "Unknown") if r.get("stockists") else "Unknown"
-        r["username"]      = r.get("users", {}).get("username", "Unknown") if r.get("users") else "Unknown"
+        r["username"]      = r.get("users!ofs_orders_user_id_fkey", {}).get("username", "Unknown") if r.get("users!ofs_orders_user_id_fkey") else "Unknown"
     return rows
 
 
