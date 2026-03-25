@@ -68,6 +68,10 @@ def run_dcr():
     if st.session_state.get("dcr_masters_mode") == "DOCTOR_IO":
         run_doctor_io()
         return
+
+    if st.session_state.get("dcr_masters_mode") == "EXPENSE_REPORT":
+        show_expense_report()
+        return
     
     # Route based on state
     if st.session_state.get("dcr_submit_done"):
@@ -178,6 +182,15 @@ def show_home_screen():
 
     with col6:
         st.write("")   # placeholder for future buttons
+
+    # Admin-only section
+    role = st.session_state.get("role", "user")
+    if role == "admin":
+        st.write("---")
+        st.write("### 📊 Admin Reports")
+        if st.button("💰 Expense Calculation", use_container_width=True, type="primary"):
+            st.session_state.dcr_masters_mode = "EXPENSE_REPORT"
+            st.rerun()
 
 
 def show_monthly_history():
@@ -852,3 +865,276 @@ def show_post_submit_screen():
         st.session_state.dcr_show_history = False
         st.session_state.active_module = None
         st.rerun()
+
+# ======================================================
+# ADMIN EXPENSE REPORT
+# ======================================================
+
+def show_expense_report():
+    """Admin-only expense calculation report."""
+    import urllib.parse
+    import io
+    from anchors.supabase_client import admin_supabase, safe_exec
+
+    role = st.session_state.get("role", "user")
+    if role != "admin":
+        st.error("\U0001f512 Only admin can access this section.")
+        if st.button("\u2b05\ufe0f Back to Home"):
+            st.session_state.dcr_masters_mode = None
+            st.rerun()
+        return
+
+    st.write("### \U0001f4b0 Expense Calculation Report")
+
+    if st.button("\u2b05\ufe0f Back to Home"):
+        st.session_state.dcr_masters_mode = None
+        st.rerun()
+
+    st.write("---")
+
+    # ── Filters ──────────────────────────────────────────────
+    users = safe_exec(
+        admin_supabase.table("users")
+        .select("id, username")
+        .eq("is_active", True)
+        .order("username"),
+        "Error loading users"
+    )
+    if not users:
+        st.error("No users found.")
+        return
+
+    user_map = {u["id"]: u["username"] for u in users}
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        selected_user_id = st.selectbox(
+            "Select User *",
+            options=list(user_map.keys()),
+            format_func=lambda x: user_map.get(x, x),
+            key="exp_user"
+        )
+    with col2:
+        from_date = st.date_input(
+            "From Date *",
+            value=date.today().replace(day=1),
+            key="exp_from_date"
+        )
+    with col3:
+        to_date = st.date_input(
+            "To Date *",
+            value=date.today(),
+            key="exp_to_date"
+        )
+
+    if st.button("\U0001f4ca Generate Report", type="primary", use_container_width=True):
+        st.session_state.exp_generate    = True
+        st.session_state.exp_user_id     = selected_user_id
+        st.session_state.exp_from        = str(from_date)
+        st.session_state.exp_to          = str(to_date)
+        st.rerun()
+
+    if not st.session_state.get("exp_generate"):
+        return
+
+    # ── Fetch data ────────────────────────────────────────────
+    uid   = st.session_state.exp_user_id
+    f_dt  = st.session_state.exp_from
+    t_dt  = st.session_state.exp_to
+    uname = user_map.get(uid, "Unknown")
+
+    reports = safe_exec(
+        admin_supabase.table("dcr_reports")
+        .select(
+            "id, report_date, area_type, territory_ids, "
+            "km_travelled, misc_expense, misc_expense_details, status"
+        )
+        .eq("user_id", uid)
+        .eq("status", "submitted")
+        .eq("is_deleted", False)
+        .gte("report_date", f_dt)
+        .lte("report_date", t_dt)
+        .order("report_date"),
+        "Error loading reports"
+    )
+
+    if not reports:
+        st.warning(f"No submitted DCRs found for {uname} between {f_dt} and {t_dt}.")
+        return
+
+    # ── Enrich with territory names and visit counts ──────────
+    territories_all = safe_exec(
+        admin_supabase.table("territories").select("id, name"),
+        "Error loading territories"
+    )
+    terr_map = {t["id"]: t["name"] for t in territories_all}
+
+    rows = []
+    for r in reports:
+        # Territory names
+        t_ids = r.get("territory_ids") or []
+        if isinstance(t_ids, list):
+            terr_names = ", ".join(terr_map.get(tid, "?") for tid in t_ids) or "\u2014"
+        else:
+            terr_names = "\u2014"
+
+        # Doctor visits + visited_with
+        visits = safe_exec(
+            admin_supabase.table("dcr_doctor_visits")
+            .select("visited_with")
+            .eq("dcr_report_id", r["id"]),
+            "Error loading visits"
+        )
+        num_doctors = len(visits)
+
+        visited_with_set = set()
+        for v in visits:
+            vw = v.get("visited_with", "")
+            if vw and vw != "single":
+                for vid in vw.split(","):
+                    vid = vid.strip()
+                    if vid and vid != "single":
+                        visited_with_set.add(vid)
+
+        if visited_with_set:
+            mgr_rows = safe_exec(
+                admin_supabase.table("users")
+                .select("id, username")
+                .in_("id", list(visited_with_set)),
+                "Error loading managers"
+            )
+            name_map = {m["id"]: m["username"] for m in mgr_rows}
+            visited_with_str = ", ".join(name_map.get(vid, vid) for vid in visited_with_set) or "Self"
+        else:
+            visited_with_str = "Self"
+
+        rows.append({
+            "Date":             r["report_date"],
+            "Territories":      terr_names,
+            "Visited With":     visited_with_str,
+            "Doctors Visited":  num_doctors,
+            "KM Travelled":     float(r.get("km_travelled") or 0),
+            "Misc Expense (\u20b9)": float(r.get("misc_expense") or 0),
+        })
+
+    import pandas as pd
+    df = pd.DataFrame(rows)
+
+    # Totals row
+    totals = {
+        "Date":             "TOTAL",
+        "Territories":      "",
+        "Visited With":     "",
+        "Doctors Visited":  df["Doctors Visited"].sum(),
+        "KM Travelled":     df["KM Travelled"].sum(),
+        "Misc Expense (\u20b9)": df["Misc Expense (\u20b9)"].sum(),
+    }
+    df_display = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
+
+    # ── Display ───────────────────────────────────────────────
+    st.write(f"#### \U0001f4cb Expense Report \u2014 {uname} | {f_dt} to {t_dt}")
+    st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+    st.write("---")
+    st.write(
+        f"**Summary:** {len(rows)} working days | "
+        f"Total KM: {df['KM Travelled'].sum():.1f} | "
+        f"Total Expense: \u20b9{df['Misc Expense (\u20b9)'].sum():.2f} | "
+        f"Total Doctors: {int(df['Doctors Visited'].sum())}"
+    )
+
+    # ── Export buttons ────────────────────────────────────────
+    st.write("---")
+    col_a, col_b, col_c = st.columns(3)
+
+    # CSV
+    with col_a:
+        csv_data = df_display.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "\U0001f4e5 Download CSV",
+            data=csv_data,
+            file_name=f"expense_{uname}_{f_dt}_{t_dt}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    # PDF
+    with col_b:
+        try:
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.lib import colors
+
+            buf = io.BytesIO()
+            doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                                    leftMargin=30, rightMargin=30,
+                                    topMargin=30, bottomMargin=30)
+            styles   = getSampleStyleSheet()
+            elements = []
+
+            elements.append(Paragraph(
+                f"Expense Report \u2014 {uname} | {f_dt} to {t_dt}",
+                styles["Heading2"]
+            ))
+            elements.append(Spacer(1, 10))
+
+            headers = list(df_display.columns)
+            data    = [headers] + [list(row) for row in df_display.itertuples(index=False)]
+
+            t = Table(data, repeatRows=1)
+            t.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1a6b5a")),
+                ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+                ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+                ("FONTSIZE",      (0, 0), (-1, -1), 9),
+                ("ROWBACKGROUNDS",(0, 1), (-1, -2),  [colors.white, colors.HexColor("#f0f0f0")]),
+                ("BACKGROUND",    (0, -1),(-1, -1),  colors.HexColor("#d4edda")),
+                ("FONTNAME",      (0, -1),(-1, -1),  "Helvetica-Bold"),
+                ("GRID",          (0, 0), (-1, -1),  0.5, colors.grey),
+                ("ALIGN",         (3, 1), (-1, -1),  "RIGHT"),
+                ("VALIGN",        (0, 0), (-1, -1),  "MIDDLE"),
+                ("PADDING",       (0, 0), (-1, -1),  5),
+            ]))
+            elements.append(t)
+            doc.build(elements)
+            pdf_bytes = buf.getvalue()
+
+            st.download_button(
+                "\U0001f4c4 Download PDF",
+                data=pdf_bytes,
+                file_name=f"expense_{uname}_{f_dt}_{t_dt}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except ImportError:
+            st.warning("PDF export requires reportlab. Ask admin to install it.")
+
+    # WhatsApp
+    with col_c:
+        wa_lines = [
+            f"\U0001f4b0 *Expense Report*",
+            f"\U0001f464 User: *{uname}*",
+            f"\U0001f4c5 Period: {f_dt} to {t_dt}",
+            f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+        ]
+        for row in rows:
+            wa_lines.append(
+                f"\U0001f4c6 {row['Date']} | {row['Territories']} | "
+                f"Docs: {row['Doctors Visited']} | "
+                f"KM: {row['KM Travelled']} | "
+                f"Exp: \u20b9{row['Misc Expense (\u20b9)']}"
+            )
+        wa_lines += [
+            f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+            f"\U0001f4ca Days: {len(rows)} | KM: {df['KM Travelled'].sum():.1f} | "
+            f"Expense: \u20b9{df['Misc Expense (\u20b9)'].sum():.2f} | "
+            f"Doctors: {int(df['Doctors Visited'].sum())}"
+        ]
+        wa_msg  = "\n".join(wa_lines)
+        encoded = urllib.parse.quote(wa_msg)
+        st.link_button(
+            "\U0001f4f1 Share on WhatsApp",
+            url=f"https://wa.me/?text={encoded}",
+            use_container_width=True
+        )
