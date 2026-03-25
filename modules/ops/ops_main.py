@@ -4691,6 +4691,13 @@ This action will:
 
         st.subheader("🧾 Invoice Register")
 
+        # ── Search bar ────────────────────────────────────────────────
+        inv_search = st.text_input(
+            "🔍 Search by OPS No, Reference No, or Party Name",
+            placeholder="e.g. OPS-2024, INV-001, Sharma Medicals...",
+            key="inv_search"
+        ).strip().lower()
+
         invoices = admin_supabase.table("ops_documents") \
             .select("id, ops_no, ops_date, reference_no, created_at, from_entity_type, from_entity_id, to_entity_type, to_entity_id, narration") \
             .eq("ops_type", "STOCK_OUT") \
@@ -4702,6 +4709,27 @@ This action will:
         if not invoices:
             st.info("No invoices found")
             st.stop()
+
+        # Apply search filter
+        if inv_search:
+            def _inv_match(inv):
+                if inv_search in (inv.get("ops_no") or "").lower(): return True
+                if inv_search in (inv.get("reference_no") or "").lower(): return True
+                # Match party name from masters
+                for eid in [inv.get("from_entity_id"), inv.get("to_entity_id")]:
+                    if not eid: continue
+                    s = next((x for x in st.session_state.stockists_master if x["id"] == eid), None)
+                    if s and inv_search in s["name"].lower(): return True
+                    u = next((x for x in st.session_state.users_master if x["id"] == eid), None)
+                    if u and inv_search in u["username"].lower(): return True
+                    c = next((x for x in st.session_state.cnfs_master if x["id"] == eid), None)
+                    if c and inv_search in c["name"].lower(): return True
+                return False
+            invoices = [i for i in invoices if _inv_match(i)]
+            st.caption(f"📋 {len(invoices)} result(s) for \"{inv_search}\"")
+            if not invoices:
+                st.warning("No invoices match your search.")
+                st.stop()
 
         # Fetch invoice totals
         invoice_ids = [inv["id"] for inv in invoices]
@@ -4964,6 +4992,13 @@ This action will:
     elif section == "DOCUMENT_BROWSER_CREDIT_NOTES":
         st.subheader("📝 Credit Note Register")
 
+        # ── Search bar ────────────────────────────────────────────────
+        cn_search = st.text_input(
+            "🔍 Search by OPS No, Reference No, or Party Name",
+            placeholder="e.g. CRN-001, Sharma Medicals...",
+            key="cn_search"
+        ).strip().lower()
+
         docs = admin_supabase.table("ops_documents") \
             .select("id, ops_no, ops_date, reference_no, narration, from_entity_type, from_entity_id, to_entity_type, to_entity_id") \
             .eq("stock_as", "credit_note") \
@@ -4974,6 +5009,23 @@ This action will:
         if not docs:
             st.info("No credit notes found")
             st.stop()
+
+        if cn_search:
+            def _cn_match(d):
+                if cn_search in (d.get("ops_no") or "").lower(): return True
+                if cn_search in (d.get("reference_no") or "").lower(): return True
+                for eid in [d.get("from_entity_id"), d.get("to_entity_id")]:
+                    if not eid: continue
+                    s = next((x for x in st.session_state.stockists_master if x["id"] == eid), None)
+                    if s and cn_search in s["name"].lower(): return True
+                    u = next((x for x in st.session_state.users_master if x["id"] == eid), None)
+                    if u and cn_search in u["username"].lower(): return True
+                return False
+            docs = [d for d in docs if _cn_match(d)]
+            st.caption(f"📋 {len(docs)} result(s) for \"{cn_search}\"")
+            if not docs:
+                st.warning("No credit notes match your search.")
+                st.stop()
 
         doc_ids = [d["id"] for d in docs]
 
@@ -6830,26 +6882,172 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
     # ALLOCATE UNALLOCATED PAYMENTS
     # =========================
     elif section == "ALLOCATE_PAYMENTS":
-        st.subheader("🔗 Allocate Unallocated Payments")
-    
-        st.info("""
-        📌 This module allows you to allocate previously unallocated payments to invoices.
-        """)
-    
+        st.subheader("🔗 Payment Allocation Manager")
+
+        alloc_tab, reverse_tab = st.tabs([
+            "💰 Allocate Payments",
+            "🔄 Reverse / Fix Wrong Allocations"
+        ])
+
+        # ================================================================
+        # TAB 2 — REVERSE ALLOCATIONS
+        # ================================================================
+        with reverse_tab:
+            st.info("""
+            🛠️ **How to fix a wrong allocation or wrong party:**
+
+            **Wrong invoice allocated (e.g. ₹30,000 went to Gupta instead of Sharma):**
+            - **Step 1:** Select the payment below
+            - **Step 2:** Find the wrong line and click 🔄 Reverse
+            - **Step 3:** Invoice balance is restored and payment amount is freed
+            - **Step 4:** Go to Allocate tab and re-allocate correctly
+
+            **Whole payment under wrong party:**
+            - **Step 1:** Select the payment, reverse ALL allocation lines
+            - **Step 2:** Go to Payment Register → Edit Party
+            - **Step 3:** Come back here and allocate correctly
+            """)
+
+            rev_search = st.text_input(
+                "🔍 Search by Payment No or Party Name",
+                placeholder="e.g. PAY-2024, Sharma...",
+                key="rev_search"
+            ).strip().lower()
+
+            rev_payments_raw = admin_supabase.table("ops_documents")\
+                .select("id, ops_no, ops_date, from_entity_type, from_entity_id, payment_mode, allocation_status")\
+                .eq("ops_type", "ADJUSTMENT")\
+                .eq("is_deleted", False)\
+                .in_("allocation_status", ["FULLY_ALLOCATED", "PARTIALLY_ALLOCATED"])\
+                .order("ops_date", desc=True)\
+                .execute().data or []
+
+            if not rev_payments_raw:
+                st.info("No allocated payments found. Nothing to reverse.")
+            else:
+                rev_options = {}
+                for p in rev_payments_raw:
+                    if p.get("from_entity_type") == "Stockist" and p.get("from_entity_id"):
+                        s = next((x for x in st.session_state.stockists_master if x["id"] == p["from_entity_id"]), None)
+                        fname = s["name"] if s else "Unknown"
+                    elif p.get("from_entity_type") == "User" and p.get("from_entity_id"):
+                        u = next((x for x in st.session_state.users_master if x["id"] == p["from_entity_id"]), None)
+                        fname = u["username"] if u else "Unknown"
+                    elif p.get("from_entity_type") == "CNF" and p.get("from_entity_id"):
+                        c = next((x for x in st.session_state.cnfs_master if x["id"] == p["from_entity_id"]), None)
+                        fname = c["name"] if c else "Unknown"
+                    else:
+                        fname = p.get("from_entity_type", "Unknown")
+                    # Search filter
+                    if rev_search and rev_search not in p["ops_no"].lower() and rev_search not in fname.lower():
+                        continue
+                    status_icon = "🟢" if p["allocation_status"] == "FULLY_ALLOCATED" else "🟡"
+                    label = f"{status_icon} {p['ops_no']} | {p['ops_date']} | {fname} | {p.get('payment_mode') or 'N/A'}"
+                    rev_options[label] = p["id"]
+
+                if not rev_options:
+                    st.warning("No payments match your search.")
+                else:
+                    rev_selected_label = st.selectbox(
+                        "Select Payment to View/Reverse",
+                        list(rev_options.keys()),
+                        key="rev_payment_select"
+                    )
+                    rev_payment_id = rev_options[rev_selected_label]
+
+                    settlements = admin_supabase.table("payment_settlements")\
+                        .select("id, invoice_id, amount")\
+                        .eq("payment_ops_id", rev_payment_id)\
+                        .execute().data or []
+
+                    if not settlements:
+                        st.info("No allocation records found for this payment.")
+                    else:
+                        st.write(f"**{len(settlements)} allocation(s) found:**")
+                        st.divider()
+                        for sett in settlements:
+                            inv_id   = sett["invoice_id"]
+                            sett_amt = float(sett["amount"])
+                            inv_doc  = admin_supabase.table("ops_documents")\
+                                .select("ops_no, ops_date, narration, invoice_total, paid_amount")\
+                                .eq("id", inv_id).limit(1).execute().data
+                            inv_doc  = inv_doc[0] if inv_doc else {}
+                            is_ob    = inv_doc.get("narration") == "Opening Balance"
+                            label_type = "💰 Opening Balance" if is_ob else f"📄 {inv_doc.get('ops_no', 'Unknown')}"
+                            col_a, col_b, col_c = st.columns([3, 2, 2])
+                            with col_a:
+                                st.write(f"**{label_type}**")
+                                st.caption(f"Date: {inv_doc.get('ops_date', 'N/A')}")
+                            with col_b:
+                                st.write(f"**Allocated: ₹{sett_amt:,.2f}**")
+                            with col_c:
+                                if st.button("🔄 Reverse", key=f"rev_sett_{sett['id']}"):
+                                    try:
+                                        admin_supabase.table("payment_settlements").delete().eq("id", sett["id"]).execute()
+                                        if is_ob:
+                                            admin_supabase.table("financial_ledger").delete()\
+                                                .eq("ops_document_id", inv_id)\
+                                                .eq("parent_ops_id", rev_payment_id).execute()
+                                        else:
+                                            cur = admin_supabase.table("ops_documents")\
+                                                .select("paid_amount, invoice_total")\
+                                                .eq("id", inv_id).single().execute().data
+                                            if cur:
+                                                new_paid = max(0, float(cur.get("paid_amount") or 0) - sett_amt)
+                                                inv_total = float(cur.get("invoice_total") or 0)
+                                                new_out   = inv_total - new_paid
+                                                new_st    = "PAID" if new_out <= 0 else ("PARTIAL" if new_paid > 0 else "UNPAID")
+                                                admin_supabase.table("ops_documents").update({
+                                                    "paid_amount": new_paid,
+                                                    "outstanding_balance": max(0, new_out),
+                                                    "payment_status": new_st
+                                                }).eq("id", inv_id).execute()
+                                        rem = admin_supabase.table("payment_settlements")\
+                                            .select("amount").eq("payment_ops_id", rev_payment_id).execute().data or []
+                                        rem_total = sum(float(s["amount"]) for s in rem)
+                                        pay_led   = admin_supabase.table("financial_ledger")\
+                                            .select("credit").eq("ops_document_id", rev_payment_id).execute().data or []
+                                        pay_total = sum(float(x["credit"]) for x in pay_led)
+                                        new_alloc_st = "UNALLOCATED" if rem_total <= 0 else ("FULLY_ALLOCATED" if rem_total >= pay_total else "PARTIALLY_ALLOCATED")
+                                        admin_supabase.table("ops_documents").update({"allocation_status": new_alloc_st}).eq("id", rev_payment_id).execute()
+                                        admin_supabase.table("audit_logs").insert({
+                                            "action": "REVERSE_ALLOCATION",
+                                            "target_type": "payment_settlements",
+                                            "target_id": rev_payment_id,
+                                            "performed_by": resolve_user_id(),
+                                            "message": f"Reversed allocation of ₹{sett_amt:,.2f} from {label_type}"
+                                        }).execute()
+                                        st.success(f"✅ Reversed ₹{sett_amt:,.2f} from {label_type}")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"❌ Reversal failed: {e}")
+                            st.divider()
+
+        # ================================================================
+        # TAB 1 — ALLOCATE PAYMENTS
+        # ================================================================
+        with alloc_tab:
+            st.info("""
+            📌 **How to allocate a payment to invoices:**
+            - **Step 1:** Select the payment from the dropdown below
+            - **Step 2:** Enter amounts against Opening Balance (if any) and each invoice
+            - **Step 3:** Click Confirm Allocation
+            """)
+
         # Fetch ALL adjustment payments first
         all_payments = admin_supabase.table("ops_documents")\
             .select("id, ops_no, ops_date, reference_no, from_entity_type, from_entity_id, to_entity_type, to_entity_id, payment_mode, allocation_status")\
             .eq("ops_type", "ADJUSTMENT")\
             .order("ops_date", desc=True)\
             .execute().data
-        
+
         # Filter for unallocated (including NULL) AND with valid party info
         unallocated_payments = [
-            p for p in all_payments 
+            p for p in all_payments
             if p.get("allocation_status") in [None, "UNALLOCATED", "PARTIALLY_ALLOCATED"]
             and p.get("from_entity_id") is not None
         ]
-    
+
         if not unallocated_payments:
             st.warning("⚠️ No unallocated payments found!")
             st.info("Create a payment without allocating it first, then come back here.")
@@ -7138,31 +7336,21 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
         # ========================================================================
         # FETCH OPENING BALANCE FOR TARGET STOCKIST
         # ========================================================================
-        # Opening balance lives in financial_ledger with narration = "Opening Balance"
-        # and party_id = target_stockist_id. We need to find the unpaid portion.
         ob_ledger_rows = admin_supabase.table("financial_ledger")\
             .select("ops_document_id, debit, credit")\
             .eq("party_id", target_stockist_id)\
             .eq("narration", "Opening Balance")\
             .execute().data
-
-        # Sum all debit/credit against opening balance entries for this party
-        ob_original = sum(float(r["debit"]) for r in ob_ledger_rows)
-        ob_credited = sum(float(r["credit"]) for r in ob_ledger_rows)
-
-        # Also fetch any payments already allocated to opening balance
-        # Opening balance ops_document_ids
-        ob_doc_ids = list({r["ops_document_id"] for r in ob_ledger_rows})
+        ob_original   = sum(float(r["debit"]) for r in ob_ledger_rows)
+        ob_credited   = sum(float(r["credit"]) for r in ob_ledger_rows)
+        ob_doc_ids    = list({r["ops_document_id"] for r in ob_ledger_rows})
         ob_already_paid = 0.0
-        ob_doc_id = None
+        ob_doc_id     = None
         if ob_doc_ids:
-            ob_doc_id = ob_doc_ids[0]  # use first (there should only be one per party)
-            ob_settlements = admin_supabase.table("payment_settlements")\
-                .select("amount")\
-                .eq("invoice_id", ob_doc_id)\
-                .execute().data
-            ob_already_paid = sum(float(s["amount"]) for s in ob_settlements)
-
+            ob_doc_id = ob_doc_ids[0]
+            ob_setts  = admin_supabase.table("payment_settlements")\
+                .select("amount").eq("invoice_id", ob_doc_id).execute().data
+            ob_already_paid = sum(float(s["amount"]) for s in ob_setts)
         ob_outstanding = max(0.0, ob_original - ob_credited - ob_already_paid)
 
         # ========================================================================
@@ -7188,12 +7376,11 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
 
         st.subheader("📋 Outstanding Items to Allocate")
 
-        # Allocation inputs
-        allocations = {}       # invoice_id -> amount (for invoices)
-        ob_allocation = 0.0   # amount to allocate against opening balance
+        allocations    = {}
+        ob_allocation  = 0.0
         total_allocation = 0
 
-        # ── Opening Balance row (shown FIRST if it exists) ────────────
+        # Opening Balance row first
         if ob_outstanding > 0 and ob_doc_id:
             with st.container():
                 st.markdown("**💰 Opening Balance**")
@@ -7207,49 +7394,36 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 with col3:
                     max_ob = min(ob_outstanding, remaining_to_allocate - total_allocation)
                     ob_allocation = st.number_input(
-                        "Allocate ₹",
-                        min_value=0.0,
-                        max_value=float(max_ob),
-                        value=0.0,
-                        step=0.01,
-                        key="alloc_opening_balance"
+                        "Allocate ₹", min_value=0.0, max_value=float(max_ob),
+                        value=0.0, step=0.01, key="alloc_opening_balance"
                     )
                     if ob_allocation > 0:
                         total_allocation += ob_allocation
                 st.divider()
 
-        # ── Invoice rows ──────────────────────────────────────────────
         for inv in outstanding_invoices:
             with st.container():
                 col1, col2, col3 = st.columns([3, 2, 2])
-
                 with col1:
                     st.write(f"**{inv['ops_no']}**")
                     st.caption(f"Date: {inv['ops_date']}")
                     if inv.get('reference_no'):
                         st.caption(f"Ref: {inv['reference_no']}")
-
                 with col2:
                     st.write(f"**Total:** ₹{inv['invoice_total']:,.2f}")
                     st.write(f"**Due:** ₹{inv['outstanding_balance']:,.2f}")
-
                 with col3:
                     max_allocate = min(
                         float(inv['outstanding_balance']),
                         remaining_to_allocate - total_allocation
                     )
                     allocate_amt = st.number_input(
-                        "Allocate ₹",
-                        min_value=0.0,
-                        max_value=max_allocate,
-                        value=0.0,
-                        step=0.01,
-                        key=f"alloc_{inv['id']}"
+                        "Allocate ₹", min_value=0.0, max_value=max_allocate,
+                        value=0.0, step=0.01, key=f"alloc_{inv['id']}"
                     )
                     if allocate_amt > 0:
                         allocations[inv['id']] = allocate_amt
                         total_allocation += allocate_amt
-
                 st.divider()
     
         # Show allocation summary
@@ -7283,15 +7457,13 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 try:
                     user_id = resolve_user_id()
 
-                    # ── Allocate against Opening Balance (if any) ────────
+                    # Allocate against Opening Balance
                     if ob_allocation > 0 and ob_doc_id:
-                        # Record in payment_settlements using ob_doc_id as invoice_id
                         admin_supabase.table("payment_settlements").insert({
                             "payment_ops_id": selected_payment_id,
                             "invoice_id": ob_doc_id,
                             "amount": ob_allocation
                         }).execute()
-                        # Write a credit entry in financial_ledger to reduce the balance
                         admin_supabase.table("financial_ledger").insert({
                             "ops_document_id": ob_doc_id,
                             "party_id": target_stockist_id,
@@ -7303,33 +7475,25 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             "parent_ops_id": selected_payment_id
                         }).execute()
 
-                    # ── Allocate against Invoices ─────────────────────────
+                    # Allocate against Invoices
                     for inv_id, alloc_amt in allocations.items():
-                        # Insert into payment_settlements
                         admin_supabase.table("payment_settlements").insert({
                             "payment_ops_id": selected_payment_id,
                             "invoice_id": inv_id,
                             "amount": alloc_amt
                         }).execute()
-
-                        # Update invoice
                         invoice = admin_supabase.table("ops_documents")\
                             .select("paid_amount, outstanding_balance, invoice_total")\
-                            .eq("id", inv_id)\
-                            .single()\
-                            .execute().data
-
+                            .eq("id", inv_id).single().execute().data
                         if invoice:
                             new_paid = (invoice.get("paid_amount") or 0) + alloc_amt
                             new_outstanding = (invoice.get("invoice_total") or 0) - new_paid
-
                             if new_outstanding <= 0:
                                 status = "PAID"
                             elif new_paid > 0:
                                 status = "PARTIAL"
                             else:
                                 status = "UNPAID"
-
                             admin_supabase.table("ops_documents").update({
                                 "paid_amount": new_paid,
                                 "outstanding_balance": max(0, new_outstanding),
@@ -7372,7 +7536,14 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
     # =========================
     elif section == "PAYMENT_REGISTER":
         st.subheader("💰 Payment Register")
-        
+
+        # ── Search bar ────────────────────────────────────────────────
+        pay_search = st.text_input(
+            "🔍 Search by Payment No, Reference No, or Party Name",
+            placeholder="e.g. PAY-2024, Sharma Medicals, UTR123...",
+            key="pay_search"
+        ).strip().lower()
+
         # Filters
         st.markdown("### 🔍 Filters")
         
@@ -7447,11 +7618,32 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             query = query.gte("ops_date", from_date.isoformat()).lte("ops_date", to_date.isoformat())
         
         payments = query.execute().data
-        
+
         if not payments:
             st.info("No payments found matching the filters")
             st.stop()
-        
+
+        # Apply search filter
+        if pay_search:
+            def _pay_match(p):
+                if pay_search in (p.get("ops_no") or "").lower(): return True
+                if pay_search in (p.get("reference_no") or "").lower(): return True
+                if pay_search in (p.get("narration") or "").lower(): return True
+                for eid in [p.get("from_entity_id"), p.get("to_entity_id")]:
+                    if not eid: continue
+                    s = next((x for x in st.session_state.stockists_master if x["id"] == eid), None)
+                    if s and pay_search in s["name"].lower(): return True
+                    u = next((x for x in st.session_state.users_master if x["id"] == eid), None)
+                    if u and pay_search in u["username"].lower(): return True
+                    c = next((x for x in st.session_state.cnfs_master if x["id"] == eid), None)
+                    if c and pay_search in c["name"].lower(): return True
+                return False
+            payments = [p for p in payments if _pay_match(p)]
+            if not payments:
+                st.warning("No payments match your search.")
+                st.stop()
+            st.caption(f"📋 {len(payments)} result(s) for \"{pay_search}\"")
+
         payment_ids = [p["id"] for p in payments]
         ledger_data = admin_supabase.table("financial_ledger")\
             .select("ops_document_id, credit, gross_amount, discount_amount, net_amount")\
@@ -7551,11 +7743,97 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             """)
                     
                     with b2:
-                        if st.button("✏️ Edit", key=f"edit_pay_{payment['id']}"):
-                            st.session_state.edit_source_ops_id = payment["id"]
-                            st.session_state.ops_section = "PAYMENTS"
-                            st.session_state.edit_mode = True
+                        if st.button("✏️ Edit Party", key=f"edit_pay_{payment['id']}"):
+                            st.session_state.pay_edit_id   = payment["id"]
+                            st.session_state.pay_edit_open = True
                             st.rerun()
+
+                # ── Inline Edit Party Panel ───────────────────────────────
+                if st.session_state.get("pay_edit_open") and st.session_state.get("pay_edit_id") == payment["id"]:
+                    existing_setts = admin_supabase.table("payment_settlements")\
+                        .select("id, amount").eq("payment_ops_id", payment["id"]).execute().data or []
+                    if existing_setts:
+                        total_sett = sum(float(s["amount"]) for s in existing_setts)
+                        st.error(f"""
+                        ❌ **Cannot edit party — this payment has existing allocations.**
+
+                        ₹{total_sett:,.2f} is already allocated to {len(existing_setts)} invoice(s).
+
+                        **Follow these steps first:**
+                        - **Step 1:** Go to 🔗 Allocate Payments menu
+                        - **Step 2:** Click the 🔄 Reverse/Fix tab
+                        - **Step 3:** Select this payment and reverse ALL allocations
+                        - **Step 4:** Come back here and click Edit Party again
+                        """)
+                        if st.button("❌ Close", key=f"close_edit_pay_{payment['id']}"):
+                            st.session_state.pay_edit_open = False
+                            st.session_state.pay_edit_id   = None
+                            st.rerun()
+                    else:
+                        st.success("""
+                        ✅ No allocations found. You can safely edit the party.
+
+                        **Steps:**
+                        - **Step 1:** Select the correct FROM entity type and name below
+                        - **Step 2:** Click Save Party Change
+                        - **Step 3:** Go to Allocate Payments to re-allocate correctly
+                        """)
+                        entity_types  = ["Stockist", "User", "CNF", "Company"]
+                        cur_type      = payment.get("from_entity_type", "Stockist")
+                        cur_type_idx  = entity_types.index(cur_type) if cur_type in entity_types else 0
+                        new_from_type = st.selectbox("FROM Entity Type", entity_types,
+                            index=cur_type_idx, key=f"new_from_type_{payment['id']}")
+                        new_from_id   = None
+                        if new_from_type == "Stockist":
+                            smap     = {s["name"]: s["id"] for s in st.session_state.stockists_master}
+                            cur_name = next((s["name"] for s in st.session_state.stockists_master if s["id"] == payment.get("from_entity_id")), None)
+                            cur_idx  = list(smap.keys()).index(cur_name) if cur_name in smap else 0
+                            sel = st.selectbox("Select Stockist", list(smap.keys()), index=cur_idx, key=f"new_from_sel_{payment['id']}")
+                            new_from_id = smap[sel]
+                        elif new_from_type == "User":
+                            umap     = {u["username"]: u["id"] for u in st.session_state.users_master}
+                            cur_name = next((u["username"] for u in st.session_state.users_master if u["id"] == payment.get("from_entity_id")), None)
+                            cur_idx  = list(umap.keys()).index(cur_name) if cur_name in umap else 0
+                            sel = st.selectbox("Select User", list(umap.keys()), index=cur_idx, key=f"new_from_sel_{payment['id']}")
+                            new_from_id = umap[sel]
+                        elif new_from_type == "CNF":
+                            cmap     = {c["name"]: c["id"] for c in st.session_state.cnfs_master}
+                            cur_name = next((c["name"] for c in st.session_state.cnfs_master if c["id"] == payment.get("from_entity_id")), None)
+                            cur_idx  = list(cmap.keys()).index(cur_name) if cur_name in cmap else 0
+                            sel = st.selectbox("Select CNF", list(cmap.keys()), index=cur_idx, key=f"new_from_sel_{payment['id']}")
+                            new_from_id = cmap[sel]
+                        else:
+                            st.info("Company selected")
+                        col_s, col_c = st.columns(2)
+                        with col_s:
+                            if st.button("💾 Save Party Change", key=f"save_party_{payment['id']}", type="primary"):
+                                try:
+                                    admin_supabase.table("ops_documents").update({
+                                        "from_entity_type": new_from_type,
+                                        "from_entity_id":   new_from_id,
+                                        "updated_at":       datetime.utcnow().isoformat()
+                                    }).eq("id", payment["id"]).execute()
+                                    admin_supabase.table("financial_ledger").update({
+                                        "party_id": new_from_id
+                                    }).eq("ops_document_id", payment["id"]).execute()
+                                    admin_supabase.table("audit_logs").insert({
+                                        "action":      "EDIT_PAYMENT_PARTY",
+                                        "target_type": "ops_documents",
+                                        "target_id":   payment["id"],
+                                        "performed_by": resolve_user_id(),
+                                        "message":     f"Payment party changed from {payment.get('from_entity_type')} to {new_from_type}"
+                                    }).execute()
+                                    st.success("✅ Party updated! Go to Allocate Payments to allocate correctly.")
+                                    st.session_state.pay_edit_open = False
+                                    st.session_state.pay_edit_id   = None
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Failed: {e}")
+                        with col_c:
+                            if st.button("❌ Cancel", key=f"cancel_party_{payment['id']}"):
+                                st.session_state.pay_edit_open = False
+                                st.session_state.pay_edit_id   = None
+                                st.rerun()
                 
                 st.divider()
 
