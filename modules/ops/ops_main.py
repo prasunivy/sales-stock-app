@@ -7136,6 +7136,36 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             st.stop()
         
         # ========================================================================
+        # FETCH OPENING BALANCE FOR TARGET STOCKIST
+        # ========================================================================
+        # Opening balance lives in financial_ledger with narration = "Opening Balance"
+        # and party_id = target_stockist_id. We need to find the unpaid portion.
+        ob_ledger_rows = admin_supabase.table("financial_ledger")\
+            .select("ops_document_id, debit, credit")\
+            .eq("party_id", target_stockist_id)\
+            .eq("narration", "Opening Balance")\
+            .execute().data
+
+        # Sum all debit/credit against opening balance entries for this party
+        ob_original = sum(float(r["debit"]) for r in ob_ledger_rows)
+        ob_credited = sum(float(r["credit"]) for r in ob_ledger_rows)
+
+        # Also fetch any payments already allocated to opening balance
+        # Opening balance ops_document_ids
+        ob_doc_ids = list({r["ops_document_id"] for r in ob_ledger_rows})
+        ob_already_paid = 0.0
+        ob_doc_id = None
+        if ob_doc_ids:
+            ob_doc_id = ob_doc_ids[0]  # use first (there should only be one per party)
+            ob_settlements = admin_supabase.table("payment_settlements")\
+                .select("amount")\
+                .eq("invoice_id", ob_doc_id)\
+                .execute().data
+            ob_already_paid = sum(float(s["amount"]) for s in ob_settlements)
+
+        ob_outstanding = max(0.0, ob_original - ob_credited - ob_already_paid)
+
+        # ========================================================================
         # FETCH INVOICES FOR TARGET STOCKIST
         # ========================================================================
         outstanding_invoices = admin_supabase.table("ops_documents")\
@@ -7148,37 +7178,64 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             .eq("is_deleted", False)\
             .order("ops_date")\
             .execute().data
-    
-        if not outstanding_invoices:
-            st.warning("No outstanding invoices found for this Stockist")
+
+        if not outstanding_invoices and ob_outstanding <= 0:
+            st.warning("No outstanding invoices or opening balance found for this Stockist")
             if st.button("⬅ Back"):
                 st.session_state.ops_section = None
                 st.rerun()
             st.stop()
-    
-        st.subheader("📋 Outstanding Invoices")
-    
+
+        st.subheader("📋 Outstanding Items to Allocate")
+
         # Allocation inputs
-        allocations = {}
+        allocations = {}       # invoice_id -> amount (for invoices)
+        ob_allocation = 0.0   # amount to allocate against opening balance
         total_allocation = 0
-    
+
+        # ── Opening Balance row (shown FIRST if it exists) ────────────
+        if ob_outstanding > 0 and ob_doc_id:
+            with st.container():
+                st.markdown("**💰 Opening Balance**")
+                col1, col2, col3 = st.columns([3, 2, 2])
+                with col1:
+                    st.write("**Opening Balance**")
+                    st.caption("Legacy balance before system entry")
+                with col2:
+                    st.write(f"**Original:** ₹{ob_original:,.2f}")
+                    st.write(f"**Due:** ₹{ob_outstanding:,.2f}")
+                with col3:
+                    max_ob = min(ob_outstanding, remaining_to_allocate - total_allocation)
+                    ob_allocation = st.number_input(
+                        "Allocate ₹",
+                        min_value=0.0,
+                        max_value=float(max_ob),
+                        value=0.0,
+                        step=0.01,
+                        key="alloc_opening_balance"
+                    )
+                    if ob_allocation > 0:
+                        total_allocation += ob_allocation
+                st.divider()
+
+        # ── Invoice rows ──────────────────────────────────────────────
         for inv in outstanding_invoices:
             with st.container():
                 col1, col2, col3 = st.columns([3, 2, 2])
-            
+
                 with col1:
                     st.write(f"**{inv['ops_no']}**")
                     st.caption(f"Date: {inv['ops_date']}")
                     if inv.get('reference_no'):
                         st.caption(f"Ref: {inv['reference_no']}")
-            
+
                 with col2:
                     st.write(f"**Total:** ₹{inv['invoice_total']:,.2f}")
                     st.write(f"**Due:** ₹{inv['outstanding_balance']:,.2f}")
-            
+
                 with col3:
                     max_allocate = min(
-                        float(inv['outstanding_balance']), 
+                        float(inv['outstanding_balance']),
                         remaining_to_allocate - total_allocation
                     )
                     allocate_amt = st.number_input(
@@ -7192,7 +7249,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                     if allocate_amt > 0:
                         allocations[inv['id']] = allocate_amt
                         total_allocation += allocate_amt
-            
+
                 st.divider()
     
         # Show allocation summary
@@ -7225,8 +7282,28 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             
                 try:
                     user_id = resolve_user_id()
-                
-                    # Create allocation entries
+
+                    # ── Allocate against Opening Balance (if any) ────────
+                    if ob_allocation > 0 and ob_doc_id:
+                        # Record in payment_settlements using ob_doc_id as invoice_id
+                        admin_supabase.table("payment_settlements").insert({
+                            "payment_ops_id": selected_payment_id,
+                            "invoice_id": ob_doc_id,
+                            "amount": ob_allocation
+                        }).execute()
+                        # Write a credit entry in financial_ledger to reduce the balance
+                        admin_supabase.table("financial_ledger").insert({
+                            "ops_document_id": ob_doc_id,
+                            "party_id": target_stockist_id,
+                            "txn_date": payment.get("ops_date"),
+                            "debit": 0,
+                            "credit": ob_allocation,
+                            "closing_balance": 0,
+                            "narration": f"Payment allocated against Opening Balance — {payment.get('ops_no', '')}",
+                            "parent_ops_id": selected_payment_id
+                        }).execute()
+
+                    # ── Allocate against Invoices ─────────────────────────
                     for inv_id, alloc_amt in allocations.items():
                         # Insert into payment_settlements
                         admin_supabase.table("payment_settlements").insert({
@@ -7234,25 +7311,25 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             "invoice_id": inv_id,
                             "amount": alloc_amt
                         }).execute()
-                    
+
                         # Update invoice
                         invoice = admin_supabase.table("ops_documents")\
                             .select("paid_amount, outstanding_balance, invoice_total")\
                             .eq("id", inv_id)\
                             .single()\
                             .execute().data
-                    
+
                         if invoice:
                             new_paid = (invoice.get("paid_amount") or 0) + alloc_amt
                             new_outstanding = (invoice.get("invoice_total") or 0) - new_paid
-                        
+
                             if new_outstanding <= 0:
                                 status = "PAID"
                             elif new_paid > 0:
                                 status = "PARTIAL"
                             else:
                                 status = "UNPAID"
-                        
+
                             admin_supabase.table("ops_documents").update({
                                 "paid_amount": new_paid,
                                 "outstanding_balance": max(0, new_outstanding),
@@ -7276,7 +7353,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                         "target_type": "ops_documents",
                         "target_id": selected_payment_id,
                         "performed_by": user_id,
-                        "message": f"Allocated ₹{total_allocation:,.2f} to {len(allocations)} invoices",
+                        "message": f"Allocated ₹{total_allocation:,.2f} — {len(allocations)} invoice(s)" + (f" + Opening Balance ₹{ob_allocation:,.2f}" if ob_allocation > 0 else ""),
                         "metadata": {"allocations": allocations}
                     }).execute()
                 
