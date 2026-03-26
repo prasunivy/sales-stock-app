@@ -1,5 +1,6 @@
 import streamlit as st
 from datetime import datetime, date, timedelta
+from anchors.supabase_client import admin_supabase, safe_exec
 
 
 def route_module():
