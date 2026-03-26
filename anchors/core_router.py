@@ -266,7 +266,7 @@ def _dash_admin(admin_id):
     )
 
     st.divider()
-    _render_dashboard(selected_id)
+    _dash_render(selected_id)
 
 
 # ──────────────────────────────────────────────────────────────────
