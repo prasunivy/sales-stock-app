@@ -865,7 +865,6 @@ def show_post_submit_screen():
         st.session_state.dcr_show_history = False
         st.session_state.active_module = None
         st.rerun()
-
 # ======================================================
 # ADMIN EXPENSE REPORT
 # ======================================================
@@ -878,15 +877,15 @@ def show_expense_report():
 
     role = st.session_state.get("role", "user")
     if role != "admin":
-        st.error("\U0001f512 Only admin can access this section.")
-        if st.button("\u2b05\ufe0f Back to Home"):
+        st.error("🔒 Only admin can access this section.")
+        if st.button("⬅️ Back to Home"):
             st.session_state.dcr_masters_mode = None
             st.rerun()
         return
 
-    st.write("### \U0001f4b0 Expense Calculation Report")
+    st.write("### 💰 Expense Calculation Report")
 
-    if st.button("\u2b05\ufe0f Back to Home"):
+    if st.button("⬅️ Back to Home"):
         st.session_state.dcr_masters_mode = None
         st.rerun()
 
@@ -927,11 +926,11 @@ def show_expense_report():
             key="exp_to_date"
         )
 
-    if st.button("\U0001f4ca Generate Report", type="primary", use_container_width=True):
-        st.session_state.exp_generate    = True
-        st.session_state.exp_user_id     = selected_user_id
-        st.session_state.exp_from        = str(from_date)
-        st.session_state.exp_to          = str(to_date)
+    if st.button("📊 Generate Report", type="primary", use_container_width=True):
+        st.session_state.exp_generate = True
+        st.session_state.exp_user_id = selected_user_id
+        st.session_state.exp_from = str(from_date)
+        st.session_state.exp_to = str(to_date)
         st.rerun()
 
     if not st.session_state.get("exp_generate"):
@@ -967,16 +966,22 @@ def show_expense_report():
         admin_supabase.table("territories").select("id, name"),
         "Error loading territories"
     )
-    terr_map = {t["id"]: t["name"] for t in territories_all}
+    # Build map with string keys — Supabase returns jsonb UUIDs as strings
+    terr_map = {str(t["id"]): t["name"] for t in territories_all}
 
     rows = []
     for r in reports:
-        # Territory names
+        # Territory names — territory_ids is jsonb, may be list or None
         t_ids = r.get("territory_ids") or []
-        if isinstance(t_ids, list):
-            terr_names = ", ".join(terr_map.get(tid, "?") for tid in t_ids) or "\u2014"
+        if isinstance(t_ids, list) and t_ids:
+            terr_names = ", ".join(
+                terr_map.get(str(tid), str(tid)[:8])
+                for tid in t_ids
+            ) or "—"
+        elif r.get("area_type") == "MEETING":
+            terr_names = "Meeting"
         else:
-            terr_names = "\u2014"
+            terr_names = "—"
 
         # Doctor visits + visited_with
         visits = safe_exec(
@@ -987,6 +992,16 @@ def show_expense_report():
         )
         num_doctors = len(visits)
 
+        # Gifts given on this date
+        gifts = safe_exec(
+            admin_supabase.table("dcr_gifts")
+            .select("gift_amount")
+            .eq("dcr_report_id", r["id"]),
+            "Error loading gifts"
+        )
+        total_gift = sum(float(g.get("gift_amount") or 0) for g in gifts)
+
+        # Collect unique "visited with" names
         visited_with_set = set()
         for v in visits:
             vw = v.get("visited_with", "")
@@ -996,6 +1011,7 @@ def show_expense_report():
                     if vid and vid != "single":
                         visited_with_set.add(vid)
 
+        # Resolve IDs to names
         if visited_with_set:
             mgr_rows = safe_exec(
                 admin_supabase.table("users")
@@ -1014,7 +1030,8 @@ def show_expense_report():
             "Visited With":     visited_with_str,
             "Doctors Visited":  num_doctors,
             "KM Travelled":     float(r.get("km_travelled") or 0),
-            "Misc Expense (\u20b9)": float(r.get("misc_expense") or 0),
+            "Misc Expense (₹)": float(r.get("misc_expense") or 0),
+            "Gifts Given (₹)":  total_gift,
         })
 
     import pandas as pd
@@ -1027,21 +1044,21 @@ def show_expense_report():
         "Visited With":     "",
         "Doctors Visited":  df["Doctors Visited"].sum(),
         "KM Travelled":     df["KM Travelled"].sum(),
-        "Misc Expense (\u20b9)": df["Misc Expense (\u20b9)"].sum(),
+        "Misc Expense (₹)": df["Misc Expense (₹)"].sum(),
+        "Gifts Given (₹)":  df["Gifts Given (₹)"].sum(),
     }
     df_display = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
 
     # ── Display ───────────────────────────────────────────────
-    st.write(f"#### \U0001f4cb Expense Report \u2014 {uname} | {f_dt} to {t_dt}")
+    st.write(f"#### 📋 Expense Report — {uname} | {f_dt} to {t_dt}")
     st.dataframe(df_display, use_container_width=True, hide_index=True)
 
     st.write("---")
-    st.write(
-        f"**Summary:** {len(rows)} working days | "
-        f"Total KM: {df['KM Travelled'].sum():.1f} | "
-        f"Total Expense: \u20b9{df['Misc Expense (\u20b9)'].sum():.2f} | "
-        f"Total Doctors: {int(df['Doctors Visited'].sum())}"
-    )
+    st.write(f"**Summary:** {len(rows)} working days | "
+             f"Total KM: {df['KM Travelled'].sum():.1f} | "
+             f"Total Expense: ₹{df['Misc Expense (₹)'].sum():.2f} | "
+             f"Total Gifts: ₹{df['Gifts Given (₹)'].sum():.2f} | "
+             f"Total Doctors: {int(df['Doctors Visited'].sum())}")
 
     # ── Export buttons ────────────────────────────────────────
     st.write("---")
@@ -1051,7 +1068,7 @@ def show_expense_report():
     with col_a:
         csv_data = df_display.to_csv(index=False).encode("utf-8")
         st.download_button(
-            "\U0001f4e5 Download CSV",
+            "📥 Download CSV",
             data=csv_data,
             file_name=f"expense_{uname}_{f_dt}_{t_dt}.csv",
             mime="text/csv",
@@ -1070,38 +1087,40 @@ def show_expense_report():
             doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
                                     leftMargin=30, rightMargin=30,
                                     topMargin=30, bottomMargin=30)
-            styles   = getSampleStyleSheet()
+            styles = getSampleStyleSheet()
             elements = []
 
+            # Title
             elements.append(Paragraph(
-                f"Expense Report \u2014 {uname} | {f_dt} to {t_dt}",
+                f"Expense Report — {uname} | {f_dt} to {t_dt}",
                 styles["Heading2"]
             ))
             elements.append(Spacer(1, 10))
 
+            # Table data
             headers = list(df_display.columns)
-            data    = [headers] + [list(row) for row in df_display.itertuples(index=False)]
+            data = [headers] + [list(row) for row in df_display.itertuples(index=False)]
 
             t = Table(data, repeatRows=1)
             t.setStyle(TableStyle([
-                ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1a6b5a")),
-                ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
-                ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-                ("FONTSIZE",      (0, 0), (-1, -1), 9),
-                ("ROWBACKGROUNDS",(0, 1), (-1, -2),  [colors.white, colors.HexColor("#f0f0f0")]),
-                ("BACKGROUND",    (0, -1),(-1, -1),  colors.HexColor("#d4edda")),
-                ("FONTNAME",      (0, -1),(-1, -1),  "Helvetica-Bold"),
-                ("GRID",          (0, 0), (-1, -1),  0.5, colors.grey),
-                ("ALIGN",         (3, 1), (-1, -1),  "RIGHT"),
-                ("VALIGN",        (0, 0), (-1, -1),  "MIDDLE"),
-                ("PADDING",       (0, 0), (-1, -1),  5),
+                ("BACKGROUND",  (0, 0), (-1, 0),  colors.HexColor("#1a6b5a")),
+                ("TEXTCOLOR",   (0, 0), (-1, 0),  colors.white),
+                ("FONTNAME",    (0, 0), (-1, 0),  "Helvetica-Bold"),
+                ("FONTSIZE",    (0, 0), (-1, -1), 9),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f0f0f0")]),
+                ("BACKGROUND",  (0, -1), (-1, -1), colors.HexColor("#d4edda")),
+                ("FONTNAME",    (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("GRID",        (0, 0), (-1, -1), 0.5, colors.grey),
+                ("ALIGN",       (3, 1), (-1, -1), "RIGHT"),
+                ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
+                ("PADDING",     (0, 0), (-1, -1), 5),
             ]))
             elements.append(t)
             doc.build(elements)
             pdf_bytes = buf.getvalue()
 
             st.download_button(
-                "\U0001f4c4 Download PDF",
+                "📄 Download PDF",
                 data=pdf_bytes,
                 file_name=f"expense_{uname}_{f_dt}_{t_dt}.pdf",
                 mime="application/pdf",
@@ -1113,28 +1132,30 @@ def show_expense_report():
     # WhatsApp
     with col_c:
         wa_lines = [
-            f"\U0001f4b0 *Expense Report*",
-            f"\U0001f464 User: *{uname}*",
-            f"\U0001f4c5 Period: {f_dt} to {t_dt}",
-            f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+            f"💰 *Expense Report*",
+            f"👤 User: *{uname}*",
+            f"📅 Period: {f_dt} to {t_dt}",
+            f"─────────────────",
         ]
         for row in rows:
             wa_lines.append(
-                f"\U0001f4c6 {row['Date']} | {row['Territories']} | "
+                f"📆 {row['Date']} | {row['Territories']} | "
                 f"Docs: {row['Doctors Visited']} | "
                 f"KM: {row['KM Travelled']} | "
-                f"Exp: \u20b9{row['Misc Expense (\u20b9)']}"
+                f"Exp: ₹{row['Misc Expense (₹)']} | "
+                f"Gifts: ₹{row['Gifts Given (₹)']}"
             )
         wa_lines += [
-            f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-            f"\U0001f4ca Days: {len(rows)} | KM: {df['KM Travelled'].sum():.1f} | "
-            f"Expense: \u20b9{df['Misc Expense (\u20b9)'].sum():.2f} | "
+            f"─────────────────",
+            f"📊 Days: {len(rows)} | KM: {df['KM Travelled'].sum():.1f} | "
+            f"Expense: ₹{df['Misc Expense (₹)'].sum():.2f} | "
+            f"Gifts: ₹{df['Gifts Given (₹)'].sum():.2f} | "
             f"Doctors: {int(df['Doctors Visited'].sum())}"
         ]
-        wa_msg  = "\n".join(wa_lines)
+        wa_msg = "\n".join(wa_lines)
         encoded = urllib.parse.quote(wa_msg)
         st.link_button(
-            "\U0001f4f1 Share on WhatsApp",
+            "📱 Share on WhatsApp",
             url=f"https://wa.me/?text={encoded}",
             use_container_width=True
         )
