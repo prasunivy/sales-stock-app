@@ -110,6 +110,32 @@ def _get_user_draft(user_id):
     return result[0] if result else None
 
 
+def _restore_dcr_session(dcr_id):
+    """Restore DCR session state from Supabase.
+    Called after mobile reconnect or any session state loss.
+    """
+    import json as _json
+    data = get_dcr_by_id(dcr_id)
+    if not data:
+        return
+    st.session_state.dcr_area_type   = data.get("area_type", "HQ")
+    st.session_state.dcr_report_date = data.get("report_date")
+    try:
+        raw = data.get("territory_ids")
+        if isinstance(raw, list):
+            st.session_state.dcr_territory_ids = raw
+        elif isinstance(raw, str):
+            st.session_state.dcr_territory_ids = _json.loads(raw)
+        else:
+            st.session_state.dcr_territory_ids = []
+    except Exception:
+        st.session_state.dcr_territory_ids = []
+    db_step = data.get("current_step") or 1
+    cur_step = st.session_state.get("dcr_current_step") or 0
+    if cur_step < 1:
+        st.session_state.dcr_current_step = max(1, db_step)
+
+
 def show_home_screen():
     """Home screen with DCR options and Masters"""
     st.write("### What would you like to do?")
@@ -125,12 +151,12 @@ def show_home_screen():
         )
         if st.button("▶️ Resume Unfinished DCR", type="primary", use_container_width=True):
             st.session_state.dcr_report_id = existing_draft["id"]
-            # Resume from the step it was left at (minimum step 1)
             resume_step = existing_draft.get("current_step") or 1
             if resume_step < 1:
                 resume_step = 1
             st.session_state.dcr_current_step = resume_step
             st.session_state.dcr_new_report = False
+            _restore_dcr_session(existing_draft["id"])
             st.rerun()
         st.write("---")
     
@@ -286,6 +312,7 @@ def show_monthly_history():
                         st.session_state.dcr_current_step = resume_step
                         st.session_state.dcr_new_report = False
                         st.session_state.dcr_show_history = False
+                        _restore_dcr_session(report["id"])
                         st.rerun()
                 with col_b:
                     if st.button("🗑️ Delete Draft", key=f"del_draft_{report['id']}"):
@@ -300,9 +327,19 @@ def show_monthly_history():
 
 
 def show_dcr_flow():
-    """Route to appropriate stage"""
-    step = st.session_state.get("dcr_current_step", 1)
-    
+    """Route to appropriate stage.
+    Restores session state from Supabase if mobile connection was lost.
+    """
+    step   = st.session_state.get("dcr_current_step", 1)
+    dcr_id = st.session_state.get("dcr_report_id")
+
+    # ── RECONNECT GUARD ──────────────────────────────────────
+    # Session state wiped by mobile connection drop — restore from DB
+    if dcr_id and not st.session_state.get("dcr_area_type"):
+        _restore_dcr_session(dcr_id)
+        step = st.session_state.get("dcr_current_step", 1)
+    # ── END RECONNECT GUARD ──────────────────────────────────
+
     if step == 1:
         show_stage_1_header()
     elif step == 2:
@@ -512,7 +549,7 @@ def show_stage_2_visits():
                     help="Select 'Self' if alone, or select who accompanied you"
                 )
                 
-                submit_doctor = st.form_submit_button("➕ Add Doctor")
+                submit_doctor = st.form_submit_button("✅ Submit Doctor", type="primary")
                 
                 if submit_doctor:
                     if selected_doctor is None:
@@ -611,7 +648,7 @@ def show_stage_2_visits():
                 step=10.0
             )
 
-            submit_gift = st.form_submit_button("➕ Add Gift")
+            submit_gift = st.form_submit_button("✅ Submit Gift", type="primary")
 
             if submit_gift:
                 if gift_doctor is None:
@@ -865,6 +902,7 @@ def show_post_submit_screen():
         st.session_state.dcr_show_history = False
         st.session_state.active_module = None
         st.rerun()
+
 # ======================================================
 # ADMIN EXPENSE REPORT
 # ======================================================
@@ -877,21 +915,20 @@ def show_expense_report():
 
     role = st.session_state.get("role", "user")
     if role != "admin":
-        st.error("🔒 Only admin can access this section.")
-        if st.button("⬅️ Back to Home"):
+        st.error("\U0001f512 Only admin can access this section.")
+        if st.button("\u2b05\ufe0f Back to Home"):
             st.session_state.dcr_masters_mode = None
             st.rerun()
         return
 
-    st.write("### 💰 Expense Calculation Report")
+    st.write("### \U0001f4b0 Expense Calculation Report")
 
-    if st.button("⬅️ Back to Home"):
+    if st.button("\u2b05\ufe0f Back to Home"):
         st.session_state.dcr_masters_mode = None
         st.rerun()
 
     st.write("---")
 
-    # ── Filters ──────────────────────────────────────────────
     users = safe_exec(
         admin_supabase.table("users")
         .select("id, username")
@@ -926,17 +963,16 @@ def show_expense_report():
             key="exp_to_date"
         )
 
-    if st.button("📊 Generate Report", type="primary", use_container_width=True):
-        st.session_state.exp_generate = True
-        st.session_state.exp_user_id = selected_user_id
-        st.session_state.exp_from = str(from_date)
-        st.session_state.exp_to = str(to_date)
+    if st.button("\U0001f4ca Generate Report", type="primary", use_container_width=True):
+        st.session_state.exp_generate    = True
+        st.session_state.exp_user_id     = selected_user_id
+        st.session_state.exp_from        = str(from_date)
+        st.session_state.exp_to          = str(to_date)
         st.rerun()
 
     if not st.session_state.get("exp_generate"):
         return
 
-    # ── Fetch data ────────────────────────────────────────────
     uid   = st.session_state.exp_user_id
     f_dt  = st.session_state.exp_from
     t_dt  = st.session_state.exp_to
@@ -961,7 +997,6 @@ def show_expense_report():
         st.warning(f"No submitted DCRs found for {uname} between {f_dt} and {t_dt}.")
         return
 
-    # ── Enrich with territory names and visit counts ──────────
     territories_all = safe_exec(
         admin_supabase.table("territories").select("id, name"),
         "Error loading territories"
@@ -971,19 +1006,17 @@ def show_expense_report():
 
     rows = []
     for r in reports:
-        # Territory names — territory_ids is jsonb, may be list or None
         t_ids = r.get("territory_ids") or []
         if isinstance(t_ids, list) and t_ids:
             terr_names = ", ".join(
                 terr_map.get(str(tid), str(tid)[:8])
                 for tid in t_ids
-            ) or "—"
+            ) or "\u2014"
         elif r.get("area_type") == "MEETING":
             terr_names = "Meeting"
         else:
-            terr_names = "—"
+            terr_names = "\u2014"
 
-        # Doctor visits + visited_with
         visits = safe_exec(
             admin_supabase.table("dcr_doctor_visits")
             .select("visited_with")
@@ -992,7 +1025,6 @@ def show_expense_report():
         )
         num_doctors = len(visits)
 
-        # Gifts given on this date
         gifts = safe_exec(
             admin_supabase.table("dcr_gifts")
             .select("gift_amount")
@@ -1001,7 +1033,6 @@ def show_expense_report():
         )
         total_gift = sum(float(g.get("gift_amount") or 0) for g in gifts)
 
-        # Collect unique "visited with" names
         visited_with_set = set()
         for v in visits:
             vw = v.get("visited_with", "")
@@ -1011,7 +1042,6 @@ def show_expense_report():
                     if vid and vid != "single":
                         visited_with_set.add(vid)
 
-        # Resolve IDs to names
         if visited_with_set:
             mgr_rows = safe_exec(
                 admin_supabase.table("users")
@@ -1030,52 +1060,49 @@ def show_expense_report():
             "Visited With":     visited_with_str,
             "Doctors Visited":  num_doctors,
             "KM Travelled":     float(r.get("km_travelled") or 0),
-            "Misc Expense (₹)": float(r.get("misc_expense") or 0),
-            "Gifts Given (₹)":  total_gift,
+            "Misc Expense (\u20b9)": float(r.get("misc_expense") or 0),
+            "Gifts Given (\u20b9)":  total_gift,
         })
 
     import pandas as pd
     df = pd.DataFrame(rows)
 
-    # Totals row
     totals = {
         "Date":             "TOTAL",
         "Territories":      "",
         "Visited With":     "",
         "Doctors Visited":  df["Doctors Visited"].sum(),
         "KM Travelled":     df["KM Travelled"].sum(),
-        "Misc Expense (₹)": df["Misc Expense (₹)"].sum(),
-        "Gifts Given (₹)":  df["Gifts Given (₹)"].sum(),
+        "Misc Expense (\u20b9)": df["Misc Expense (\u20b9)"].sum(),
+        "Gifts Given (\u20b9)":  df["Gifts Given (\u20b9)"].sum(),
     }
     df_display = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
 
-    # ── Display ───────────────────────────────────────────────
-    st.write(f"#### 📋 Expense Report — {uname} | {f_dt} to {t_dt}")
+    st.write(f"#### \U0001f4cb Expense Report \u2014 {uname} | {f_dt} to {t_dt}")
     st.dataframe(df_display, use_container_width=True, hide_index=True)
 
     st.write("---")
-    st.write(f"**Summary:** {len(rows)} working days | "
-             f"Total KM: {df['KM Travelled'].sum():.1f} | "
-             f"Total Expense: ₹{df['Misc Expense (₹)'].sum():.2f} | "
-             f"Total Gifts: ₹{df['Gifts Given (₹)'].sum():.2f} | "
-             f"Total Doctors: {int(df['Doctors Visited'].sum())}")
+    st.write(
+        f"**Summary:** {len(rows)} working days | "
+        f"Total KM: {df['KM Travelled'].sum():.1f} | "
+        f"Total Expense: \u20b9{df['Misc Expense (\u20b9)'].sum():.2f} | "
+        f"Total Gifts: \u20b9{df['Gifts Given (\u20b9)'].sum():.2f} | "
+        f"Total Doctors: {int(df['Doctors Visited'].sum())}"
+    )
 
-    # ── Export buttons ────────────────────────────────────────
     st.write("---")
     col_a, col_b, col_c = st.columns(3)
 
-    # CSV
     with col_a:
         csv_data = df_display.to_csv(index=False).encode("utf-8")
         st.download_button(
-            "📥 Download CSV",
+            "\U0001f4e5 Download CSV",
             data=csv_data,
             file_name=f"expense_{uname}_{f_dt}_{t_dt}.csv",
             mime="text/csv",
             use_container_width=True
         )
 
-    # PDF
     with col_b:
         try:
             from reportlab.lib.pagesizes import A4, landscape
@@ -1087,40 +1114,34 @@ def show_expense_report():
             doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
                                     leftMargin=30, rightMargin=30,
                                     topMargin=30, bottomMargin=30)
-            styles = getSampleStyleSheet()
+            styles   = getSampleStyleSheet()
             elements = []
-
-            # Title
             elements.append(Paragraph(
-                f"Expense Report — {uname} | {f_dt} to {t_dt}",
+                f"Expense Report \u2014 {uname} | {f_dt} to {t_dt}",
                 styles["Heading2"]
             ))
             elements.append(Spacer(1, 10))
-
-            # Table data
             headers = list(df_display.columns)
-            data = [headers] + [list(row) for row in df_display.itertuples(index=False)]
-
+            data    = [headers] + [list(row) for row in df_display.itertuples(index=False)]
             t = Table(data, repeatRows=1)
             t.setStyle(TableStyle([
-                ("BACKGROUND",  (0, 0), (-1, 0),  colors.HexColor("#1a6b5a")),
-                ("TEXTCOLOR",   (0, 0), (-1, 0),  colors.white),
-                ("FONTNAME",    (0, 0), (-1, 0),  "Helvetica-Bold"),
-                ("FONTSIZE",    (0, 0), (-1, -1), 9),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f0f0f0")]),
-                ("BACKGROUND",  (0, -1), (-1, -1), colors.HexColor("#d4edda")),
-                ("FONTNAME",    (0, -1), (-1, -1), "Helvetica-Bold"),
-                ("GRID",        (0, 0), (-1, -1), 0.5, colors.grey),
-                ("ALIGN",       (3, 1), (-1, -1), "RIGHT"),
-                ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
-                ("PADDING",     (0, 0), (-1, -1), 5),
+                ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1a6b5a")),
+                ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+                ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+                ("FONTSIZE",      (0, 0), (-1, -1), 9),
+                ("ROWBACKGROUNDS",(0, 1), (-1, -2),  [colors.white, colors.HexColor("#f0f0f0")]),
+                ("BACKGROUND",    (0, -1),(-1, -1),  colors.HexColor("#d4edda")),
+                ("FONTNAME",      (0, -1),(-1, -1),  "Helvetica-Bold"),
+                ("GRID",          (0, 0), (-1, -1),  0.5, colors.grey),
+                ("ALIGN",         (3, 1), (-1, -1),  "RIGHT"),
+                ("VALIGN",        (0, 0), (-1, -1),  "MIDDLE"),
+                ("PADDING",       (0, 0), (-1, -1),  5),
             ]))
             elements.append(t)
             doc.build(elements)
             pdf_bytes = buf.getvalue()
-
             st.download_button(
-                "📄 Download PDF",
+                "\U0001f4c4 Download PDF",
                 data=pdf_bytes,
                 file_name=f"expense_{uname}_{f_dt}_{t_dt}.pdf",
                 mime="application/pdf",
@@ -1129,33 +1150,32 @@ def show_expense_report():
         except ImportError:
             st.warning("PDF export requires reportlab. Ask admin to install it.")
 
-    # WhatsApp
     with col_c:
         wa_lines = [
-            f"💰 *Expense Report*",
-            f"👤 User: *{uname}*",
-            f"📅 Period: {f_dt} to {t_dt}",
-            f"─────────────────",
+            f"\U0001f4b0 *Expense Report*",
+            f"\U0001f464 User: *{uname}*",
+            f"\U0001f4c5 Period: {f_dt} to {t_dt}",
+            f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
         ]
         for row in rows:
             wa_lines.append(
-                f"📆 {row['Date']} | {row['Territories']} | "
+                f"\U0001f4c6 {row['Date']} | {row['Territories']} | "
                 f"Docs: {row['Doctors Visited']} | "
                 f"KM: {row['KM Travelled']} | "
-                f"Exp: ₹{row['Misc Expense (₹)']} | "
-                f"Gifts: ₹{row['Gifts Given (₹)']}"
+                f"Exp: \u20b9{row['Misc Expense (\u20b9)']} | "
+                f"Gifts: \u20b9{row['Gifts Given (\u20b9)']}"
             )
         wa_lines += [
-            f"─────────────────",
-            f"📊 Days: {len(rows)} | KM: {df['KM Travelled'].sum():.1f} | "
-            f"Expense: ₹{df['Misc Expense (₹)'].sum():.2f} | "
-            f"Gifts: ₹{df['Gifts Given (₹)'].sum():.2f} | "
+            f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+            f"\U0001f4ca Days: {len(rows)} | KM: {df['KM Travelled'].sum():.1f} | "
+            f"Expense: \u20b9{df['Misc Expense (\u20b9)'].sum():.2f} | "
+            f"Gifts: \u20b9{df['Gifts Given (\u20b9)'].sum():.2f} | "
             f"Doctors: {int(df['Doctors Visited'].sum())}"
         ]
-        wa_msg = "\n".join(wa_lines)
+        wa_msg  = "\n".join(wa_lines)
         encoded = urllib.parse.quote(wa_msg)
         st.link_button(
-            "📱 Share on WhatsApp",
+            "\U0001f4f1 Share on WhatsApp",
             url=f"https://wa.me/?text={encoded}",
             use_container_width=True
         )
