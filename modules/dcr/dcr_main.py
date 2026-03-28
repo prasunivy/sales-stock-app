@@ -111,9 +111,7 @@ def _get_user_draft(user_id):
 
 
 def _restore_dcr_session(dcr_id):
-    """Restore DCR session state from Supabase.
-    Called after mobile reconnect or any session state loss.
-    """
+    """Restore DCR session state from Supabase after mobile reconnect."""
     import json as _json
     data = get_dcr_by_id(dcr_id)
     if not data:
@@ -334,7 +332,6 @@ def show_dcr_flow():
     dcr_id = st.session_state.get("dcr_report_id")
 
     # ── RECONNECT GUARD ──────────────────────────────────────
-    # Session state wiped by mobile connection drop — restore from DB
     if dcr_id and not st.session_state.get("dcr_area_type"):
         _restore_dcr_session(dcr_id)
         step = st.session_state.get("dcr_current_step", 1)
@@ -351,11 +348,63 @@ def show_dcr_flow():
 
 def show_stage_1_header():
     """Stage 1: Basic Information"""
+
+    # ── Back button at the very top ─────────────────────────
+    if st.button("⬅️ Back", key="stage1_back_top"):
+        st.session_state.dcr_current_step = 0
+        st.session_state.dcr_report_id = None
+        st.session_state.dcr_new_report = False
+        st.rerun()
+
     st.write("### Stage 1/4: Basic Information")
     
     if st.session_state.get("dcr_report_id"):
         st.info("ℹ️ **Editing existing DCR** - You can modify the details below")
-    
+
+    # ── DCR status summary for current month ─────────────────
+    try:
+        from anchors.supabase_client import admin_supabase, safe_exec
+        _uid = get_current_user_id()
+        from datetime import date as _date
+        _today = _date.today()
+        _month_start = _today.replace(day=1).isoformat()
+        _month_end   = _today.isoformat()
+        _recent = safe_exec(
+            admin_supabase.table("dcr_reports")
+            .select("report_date, status, area_type")
+            .eq("user_id", _uid)
+            .eq("is_deleted", False)
+            .gte("report_date", _month_start)
+            .lte("report_date", _month_end)
+            .order("report_date", desc=True),
+            ""
+        ) or []
+        if _recent:
+            with st.expander(
+                f"📅 This Month's DCR Status ({len(_recent)} day(s))", expanded=False
+            ):
+                for _r in _recent:
+                    _st = _r.get("status", "")
+                    if _st == "submitted":
+                        _icon = "✅ Submitted"
+                        _color = "#d4edda"
+                        _border = "#1a6b5a"
+                    else:
+                        _icon = "⏳ Draft"
+                        _color = "#fff8e1"
+                        _border = "#e67e22"
+                    st.markdown(
+                        f"<div style='background:{_color};border-left:4px solid {_border};"
+                        f"padding:0.4rem 0.7rem;border-radius:5px;margin-bottom:4px;"
+                        f"font-size:0.85rem;'>"
+                        f"<b>{_r['report_date']}</b> &nbsp;|&nbsp; "
+                        f"{_r.get('area_type','')} &nbsp;|&nbsp; {_icon}"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+    except Exception:
+        pass  # Status summary is non-critical, fail silently
+
     try:
         current_user_id = get_current_user_id()
     except:
@@ -1001,7 +1050,6 @@ def show_expense_report():
         admin_supabase.table("territories").select("id, name"),
         "Error loading territories"
     )
-    # Build map with string keys — Supabase returns jsonb UUIDs as strings
     terr_map = {str(t["id"]): t["name"] for t in territories_all}
 
     rows = []
