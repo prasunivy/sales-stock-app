@@ -382,70 +382,36 @@ def show_create_tour_form():
     
     # Form counter for unique keys
     form_suffix = st.session_state.tour_form_counter
-    
-    # TEMPORARY TEST: Use DCR functions directly
-    st.write("🧪 TESTING DCR FUNCTIONS DIRECTLY:")
-    try:
-        from modules.dcr.dcr_database import get_doctors_by_territories as dcr_get_docs
-        from modules.dcr.dcr_database import get_chemists_by_territories as dcr_get_chems
-        
-        test_docs = dcr_get_docs(selected_territories)
-        test_chems = dcr_get_chems(selected_territories)
-        
-        st.success(f"✅ DCR functions work! Docs: {len(test_docs)}, Chems: {len(test_chems)}")
-        
-        if test_docs:
-            st.write("Sample doctor:", test_docs[0])
-        if test_chems:
-            st.write("Sample chemist:", test_chems[0])
-            
-    except Exception as e:
-        st.error(f"❌ DCR functions also fail: {str(e)}")
-    # Get doctors and chemists based on selected territories
-    st.write("🔍 DEBUG: About to load doctors...")
-    st.write(f"Selected territories: {selected_territories}")
-    st.write(f"Territory IDs type: {type(selected_territories)}")
-    
-    try:
-        doctors = get_doctors_by_territories(selected_territories)
-        st.write(f"✅ Doctors loaded: {len(doctors)}")
-    except Exception as e:
-        st.error(f"❌ Error loading doctors: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
-        doctors = []
-    
-    try:
-        chemists = get_chemists_by_territories(selected_territories)
-        st.write(f"✅ Chemists loaded: {len(chemists)}")
-    except Exception as e:
-        st.error(f"❌ Error loading chemists: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
-        chemists = []
-    # DEBUG OUTPUT
-    st.write("🔍 **DEBUG INFO:**")
-    st.write(f"Selected territory IDs: {selected_territories}")
-    st.write(f"Doctors found: {len(doctors) if doctors else 0}")
-    st.write(f"Chemists found: {len(chemists) if chemists else 0}")
-    if doctors:
-        st.write("Doctor names:", [d['name'] for d in doctors])
-    if chemists:
-        st.write("Chemist names:", [c['name'] for c in chemists])
-    st.write("---")
-    
+
+    # ── Load doctors and chemists for selected territories ────
+    doctors  = get_doctors_by_territories(selected_territories)  if selected_territories else []
+    chemists = get_chemists_by_territories(selected_territories) if selected_territories else []
+
+    # ── Fetch existing tour dates to block duplicates ─────────
+    from anchors.supabase_client import admin_supabase, safe_exec
+    _existing = safe_exec(
+        admin_supabase.table("tour_programmes")
+        .select("tour_date")
+        .eq("user_id", st.session_state.tour_create_selected_user)
+        .in_("status", ["pending", "approved"])
+        .is_("deleted_at", None),
+        ""
+    ) or []
+    _blocked_dates = {r["tour_date"] for r in _existing}
+
     # THE FORM STARTS HERE
     with st.form(f"tour_create_{form_suffix}", clear_on_submit=False):
-        # Tour date
+        # ── Tour date ─────────────────────────────────────────
+        st.write("#### 📅 Tour Date *")
         tour_date = st.date_input(
-            "Tour Date *",
-            value=date.today() + timedelta(days=1),
-            min_value=date.today()
+            "Select Date",
+            value=date.today(),
+            min_value=date.today() - timedelta(days=10)
         )
-        
+
         st.write("---")
         st.write("#### 👥 Worked With *")
-        
+
         worked_with_type = st.radio(
             "Select one:",
             options=["alone", "with_manager", "with_senior", "with_admin"],
@@ -457,43 +423,38 @@ def show_create_tour_form():
             }[x],
             horizontal=True
         )
-        
+
         st.write("---")
         st.write("#### 👨‍⚕️ Doctors to Visit (Optional)")
-        
-        selected_doctor_ids = []
-        if doctors:
-            for idx, doctor in enumerate(doctors):
-                if st.checkbox(
-                    f"{doctor['name']} ({doctor.get('specialization', 'N/A')})",
-                    value=False,
-                    key=f"d_{idx}_{form_suffix}"
-                ):
-                    selected_doctor_ids.append(doctor['id'])
-        else:
+        selected_doctor_ids = st.multiselect(
+            "Select doctors",
+            options=[d["id"] for d in doctors],
+            format_func=lambda x: next(
+                (f"{d['name']} ({d.get('specialization', 'N/A')})" for d in doctors if d["id"] == x), x
+            ),
+            default=[],
+            key=f"doc_multi_{form_suffix}",
+            placeholder="Tap to select doctors..."
+        ) if doctors else []
+        if not doctors:
             st.info("No doctors available in selected territories")
-        
-        st.info(f"✓ Selected: {len(selected_doctor_ids)} doctors")
-        
+
         st.write("---")
         st.write("#### 🏪 Chemists to Visit (Optional)")
-        
-        selected_chemist_ids = []
-        if chemists:
-            for idx, chemist in enumerate(chemists):
-                if st.checkbox(
-                    f"{chemist['name']} ({chemist.get('shop_name', 'N/A')})",
-                    value=False,
-                    key=f"c_{idx}_{form_suffix}"
-                ):
-                    selected_chemist_ids.append(chemist['id'])
-        else:
+        selected_chemist_ids = st.multiselect(
+            "Select chemists",
+            options=[c["id"] for c in chemists],
+            format_func=lambda x: next(
+                (f"{c['name']} ({c.get('shop_name', 'N/A')})" for c in chemists if c["id"] == x), x
+            ),
+            default=[],
+            key=f"chem_multi_{form_suffix}",
+            placeholder="Tap to select chemists..."
+        ) if chemists else []
+        if not chemists:
             st.info("No chemists available in selected territories")
-        
-        st.info(f"✓ Selected: {len(selected_chemist_ids)} chemists")
-        
+
         st.write("---")
-        
         notes = st.text_area("📝 Notes (Optional)", placeholder="Instructions...")
         
         st.write("---")
@@ -514,6 +475,11 @@ def show_create_tour_form():
     if submit_draft or submit_pending or submit_next:
         if not selected_territories:
             st.error("❌ Please select at least one territory")
+        elif tour_date.isoformat() in _blocked_dates:
+            st.error(
+                f"❌ A tour programme already exists for {tour_date} "
+                f"(pending or approved). Please choose a different date."
+            )
         else:
             try:
                 status = "draft" if submit_draft else "pending"
@@ -593,7 +559,7 @@ def show_edit_tour_form():
         tour_date = st.date_input(
             "Tour Date *",
             value=datetime.strptime(tour['tour_date'], '%Y-%m-%d').date(),
-            min_value=date.today()
+            min_value=date.today() - timedelta(days=10)
         )
         
         st.write("---")
@@ -635,41 +601,37 @@ def show_edit_tour_form():
         
         # Doctors
         st.write("#### 👨‍⚕️ Doctors to Visit (Optional)")
-        
-        selected_doctor_ids = []
-        if selected_territories:
-            doctors = get_doctors_by_territories(selected_territories)
-            if doctors:
-                for doctor in doctors:
-                    default = doctor['id'] in existing_doctor_ids
-                    if st.checkbox(
-                        f"{doctor['name']} ({doctor.get('specialization', 'N/A')})",
-                        value=default,
-                        key=f"doc_edit_{doctor['id']}"
-                    ):
-                        selected_doctor_ids.append(doctor['id'])
-        
-        st.info(f"✓ Selected: {len(selected_doctor_ids)} doctors")
-        
+        _edit_docs = get_doctors_by_territories(selected_territories) if selected_territories else []
+        selected_doctor_ids = st.multiselect(
+            "Select doctors",
+            options=[d["id"] for d in _edit_docs],
+            default=[d["id"] for d in _edit_docs if d["id"] in existing_doctor_ids],
+            format_func=lambda x: next(
+                (f"{d['name']} ({d.get('specialization', 'N/A')})" for d in _edit_docs if d["id"] == x), x
+            ),
+            key="doc_edit_multi",
+            placeholder="Tap to select doctors..."
+        ) if _edit_docs else []
+        if not _edit_docs:
+            st.info("No doctors available in selected territories")
+
         st.write("---")
-        
+
         # Chemists
         st.write("#### 🏪 Chemists to Visit (Optional)")
-        
-        selected_chemist_ids = []
-        if selected_territories:
-            chemists = get_chemists_by_territories(selected_territories)
-            if chemists:
-                for chemist in chemists:
-                    default = chemist['id'] in existing_chemist_ids
-                    if st.checkbox(
-                        f"{chemist['name']} ({chemist.get('shop_name', 'N/A')})",
-                        value=default,
-                        key=f"chem_edit_{chemist['id']}"
-                    ):
-                        selected_chemist_ids.append(chemist['id'])
-        
-        st.info(f"✓ Selected: {len(selected_chemist_ids)} chemists")
+        _edit_chems = get_chemists_by_territories(selected_territories) if selected_territories else []
+        selected_chemist_ids = st.multiselect(
+            "Select chemists",
+            options=[c["id"] for c in _edit_chems],
+            default=[c["id"] for c in _edit_chems if c["id"] in existing_chemist_ids],
+            format_func=lambda x: next(
+                (f"{c['name']} ({c.get('shop_name', 'N/A')})" for c in _edit_chems if c["id"] == x), x
+            ),
+            key="chem_edit_multi",
+            placeholder="Tap to select chemists..."
+        ) if _edit_chems else []
+        if not _edit_chems:
+            st.info("No chemists available in selected territories")
         
         st.write("---")
         
