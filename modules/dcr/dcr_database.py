@@ -418,28 +418,59 @@ def get_dcr_by_id(dcr_id):
 
 def get_user_territories(user_id):
     """
-    Get territories assigned to user
-    Returns list of {id, name}
+    Get territories assigned to user.
+    If the user is a manager or senior_manager, also includes
+    territories of all direct reports (users where report_to = user_id).
+    Returns list of {id, name} — deduplicated.
     """
     try:
-        result = safe_exec(
-            admin_supabase.table("user_territories")
-            .select("territory_id, territories(id, name)")
-            .eq("user_id", user_id),
-            "Error loading user territories"
+        # ── Helper: fetch territories for one user_id ────────
+        def _fetch_territories(uid):
+            rows = safe_exec(
+                admin_supabase.table("user_territories")
+                .select("territory_id, territories(id, name)")
+                .eq("user_id", uid),
+                "Error loading user territories"
+            )
+            result = []
+            for r in rows:
+                if r.get("territories"):
+                    result.append({
+                        "id":   r["territories"]["id"],
+                        "name": r["territories"]["name"]
+                    })
+            return result
+
+        # ── Fetch this user's own territories first ──────────
+        territories_map = {}  # id -> territory dict (dedup)
+        for t in _fetch_territories(user_id):
+            territories_map[t["id"]] = t
+
+        # ── Check if user is a manager ────────────────────────
+        user_row = safe_exec(
+            admin_supabase.table("users")
+            .select("designation")
+            .eq("id", user_id)
+            .limit(1),
+            "Error loading user designation"
         )
-        
-        # Extract territories from nested structure
-        territories = []
-        for r in result:
-            if r.get("territories"):
-                territories.append({
-                    "id": r["territories"]["id"],
-                    "name": r["territories"]["name"]
-                })
-        
-        return territories
-    
+        designation = user_row[0]["designation"] if user_row else ""
+
+        if designation in ("manager", "senior_manager"):
+            # ── Fetch all direct reports ──────────────────────
+            reps = safe_exec(
+                admin_supabase.table("users")
+                .select("id")
+                .eq("report_to", user_id)
+                .eq("is_active", True),
+                "Error loading direct reports"
+            )
+            for rep in reps:
+                for t in _fetch_territories(rep["id"]):
+                    territories_map[t["id"]] = t
+
+        return list(territories_map.values())
+
     except Exception as e:
         st.error(f"Error in get_user_territories: {str(e)}")
         return []
