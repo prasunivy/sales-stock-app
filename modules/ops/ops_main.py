@@ -345,6 +345,7 @@ def run_ops():
         "DOCUMENT_BROWSER_CN_EDIT":              "DOCUMENT_BROWSER_CREDIT_NOTES",
         "DOCUMENT_BROWSER_CN_DELETE":            "DOCUMENT_BROWSER_CREDIT_NOTES",
         "DOCUMENT_BROWSER_CN_DELETE_EXEC":       "DOCUMENT_BROWSER_CREDIT_NOTES",
+        "DOCUMENT_BROWSER_CN_ARCHIVE_VIEW":      "DOCUMENT_BROWSER_ARCHIVED_CN",
     }
 
     # If in a sub-section, show the parent in the selectbox (so it looks
@@ -5328,6 +5329,99 @@ This action:
         st.rerun()
 
     # =========================
+    # DOCUMENT BROWSER — ARCHIVED CN VIEW
+    # =========================
+    elif section == "DOCUMENT_BROWSER_CN_ARCHIVE_VIEW":
+
+        ops_id = st.session_state.get("selected_ops_id")
+        if not ops_id:
+            st.error("Credit note not found")
+            st.stop()
+
+        doc = admin_supabase.table("ops_documents") \
+            .select("*") \
+            .eq("id", ops_id) \
+            .eq("is_deleted", True) \
+            .single() \
+            .execute().data
+
+        if not doc:
+            st.error("Archived credit note does not exist")
+            st.stop()
+
+        st.subheader(f"🗄️ Archived Credit Note — {doc['ops_no']}")
+        st.warning("⚠️ This credit note has been deleted (archived for audit)")
+
+        from_type, from_name = resolve_entity_display_name(
+            doc.get('from_entity_type'), doc.get('from_entity_id'), doc.get('narration')
+        )
+        to_type = doc.get('to_entity_type')
+        to_id   = doc.get('to_entity_id')
+        if to_type:
+            _, to_name = resolve_entity_display_name(to_type, to_id, None)
+        else:
+            to_name = "Unknown"
+
+        st.markdown(f"""
+**Date:** {doc['ops_date']}
+**Reference:** {doc.get('reference_no') or '-'}
+**Archived On:** {(doc.get('updated_at') or 'N/A')[:10]}
+**From:** {from_type} — {from_name}
+**To:** {to_type if to_type else 'Unknown'} — {to_name}
+""")
+        st.divider()
+
+        lines = admin_supabase.table("ops_lines") \
+            .select("*") \
+            .eq("ops_document_id", ops_id) \
+            .execute().data or []
+
+        if lines:
+            first_line = lines[0]
+            total_gross    = first_line["gross_amount"]
+            total_tax      = first_line["tax_amount"]
+            total_discount = first_line["discount_amount"]
+            total_net      = first_line["net_amount"]
+        else:
+            total_gross = total_tax = total_discount = total_net = 0
+
+        for line in lines:
+            with st.container():
+                c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
+                with c1:
+                    product = next(
+                        (p["name"] for p in st.session_state.products_master
+                         if p["id"] == line["product_id"]),
+                        "Unknown Product"
+                    )
+                    st.write(product)
+                with c2:
+                    st.write(f"Sale: {line['sale_qty']}")
+                with c3:
+                    st.write(f"Free: {line['free_qty']}")
+                with c4:
+                    st.write(f"Gross: ₹{line['gross_amount']:,.2f}")
+                with c5:
+                    st.write(f"Net: ₹{line['net_amount']:,.2f}")
+
+        st.divider()
+        st.markdown(f"""
+### 💰 Credit Note Breakdown
+- **Gross Amount:** ₹ {total_gross:,.2f}
+- **Less: Discount:** ₹ {total_discount:,.2f}
+- **Taxable Amount:** ₹ {total_gross - total_discount:,.2f}
+- **Add: GST/Tax:** ₹ {total_tax:,.2f}
+
+---
+### 📌 FINAL CREDIT NOTE TOTAL: ₹ {total_net:,.2f}
+""")
+        st.divider()
+
+        if st.button("⬅ Back to Archived Credit Notes"):
+            st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_CN"
+            st.rerun()
+
+    # =========================
     # DOCUMENT BROWSER — ARCHIVED CREDIT NOTES
     # =========================
     elif section == "DOCUMENT_BROWSER_ARCHIVED_CN":
@@ -5389,7 +5483,7 @@ This action:
                     st.write(f"**💰 ₹{doc_total:,.2f}**")
                     if st.button("👁 View", key=f"view_arch_cn_{doc['id']}"):
                         st.session_state.selected_ops_id = doc["id"]
-                        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_CN_ARCHIVE_VIEW"
                         st.rerun()
                 st.divider()
     # =========================
