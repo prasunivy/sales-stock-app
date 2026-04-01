@@ -7781,16 +7781,10 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             "invoice_id": ob_doc_id,
                             "amount": ob_allocation
                         }).execute()
-                        admin_supabase.table("financial_ledger").insert({
-                            "ops_document_id": ob_doc_id,
-                            "party_id": target_stockist_id,
-                            "txn_date": payment.get("ops_date"),
-                            "debit": 0,
-                            "credit": ob_allocation,
-                            "closing_balance": 0,
-                            "narration": f"Payment allocated against Opening Balance — {payment.get('ops_no', '')}",
-                            "parent_ops_id": selected_payment_id
-                        }).execute()
+                        # NOTE: No financial_ledger insert here.
+                        # The payment itself already created a credit entry for the party.
+                        # Inserting another credit here would cause a double ledger effect.
+                        # We only track the settlement in payment_settlements (same as invoices).
 
                     # Allocate against Invoices
                     for inv_id, alloc_amt in allocations.items():
