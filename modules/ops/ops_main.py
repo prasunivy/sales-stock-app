@@ -7946,30 +7946,161 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                     st.write(f"{status_color} {status}")
                 
                 with col4:
-                    b1, b2 = st.columns(2)
-                    
+                    b1, b2, b3 = st.columns(3)
+
                     with b1:
                         if st.button("👁 View", key=f"view_pay_{payment['id']}"):
-                            st.info(f"""
-                            **Payment Details:**
-                            
-                            📝 **Number:** {payment['ops_no']}
-                            📅 **Date:** {payment['ops_date']}
-                            💳 **Mode:** {payment.get('payment_mode', 'N/A')}
-                            📤 **FROM:** {from_name}
-                            📥 **TO:** {to_name}
-                            💰 **Gross:** ₹{amounts['gross']:,.2f}
-                            💸 **Discount:** ₹{amounts['discount']:,.2f}
-                            💵 **Net:** ₹{amounts['net']:,.2f}
-                            🎯 **Status:** {status}
-                            📋 **Ref:** {payment.get('reference_no', '-')}
-                            """)
-                    
+                            st.session_state.pay_view_id   = payment["id"]
+                            st.session_state.pay_view_open = True
+                            st.session_state.pay_edit_amounts_id   = None
+                            st.session_state.pay_edit_amounts_open = False
+                            st.rerun()
+
                     with b2:
-                        if st.button("✏️ Edit Party", key=f"edit_pay_{payment['id']}"):
+                        if st.button("✏️ Edit Amounts", key=f"edit_amt_{payment['id']}"):
+                            st.session_state.pay_edit_amounts_id   = payment["id"]
+                            st.session_state.pay_edit_amounts_open = True
+                            st.session_state.pay_view_id   = None
+                            st.session_state.pay_view_open = False
+                            st.rerun()
+
+                    with b3:
+                        if st.button("👤 Edit Party", key=f"edit_pay_{payment['id']}"):
                             st.session_state.pay_edit_id   = payment["id"]
                             st.session_state.pay_edit_open = True
+                            st.session_state.pay_view_id   = None
+                            st.session_state.pay_view_open = False
                             st.rerun()
+
+                # ── VIEW PANEL ────────────────────────────────────────────
+                if st.session_state.get("pay_view_open") and st.session_state.get("pay_view_id") == payment["id"]:
+                    with st.expander("📋 Payment Details", expanded=True):
+                        v1, v2, v3 = st.columns(3)
+                        with v1:
+                            st.metric("Payment No", payment['ops_no'])
+                            st.metric("Date", payment['ops_date'])
+                            st.metric("Mode", payment.get('payment_mode') or 'N/A')
+                        with v2:
+                            st.metric("FROM", from_name)
+                            st.metric("TO", to_name)
+                            st.metric("Reference", payment.get('reference_no') or '-')
+                        with v3:
+                            st.metric("Gross Amount", f"₹{amounts['gross']:,.2f}")
+                            st.metric("Discount", f"₹{amounts['discount']:,.2f}")
+                            st.metric("Net Amount", f"₹{amounts['net']:,.2f}")
+                        st.divider()
+                        st.write(f"**Allocation Status:** {status_color} {status}")
+                        if st.button("✖️ Close", key=f"close_view_pay_{payment['id']}"):
+                            st.session_state.pay_view_open = False
+                            st.session_state.pay_view_id   = None
+                            st.rerun()
+
+                # ── EDIT AMOUNTS PANEL ────────────────────────────────────
+                if st.session_state.get("pay_edit_amounts_open") and st.session_state.get("pay_edit_amounts_id") == payment["id"]:
+                    with st.expander("✏️ Edit Payment Amounts", expanded=True):
+                        st.info("""
+**What this does:**
+- Updates Gross, Discount and Net amounts on this payment
+- Updates the financial ledger entry (debit/credit) to match the new amounts
+- Recalculates allocation status based on new gross amount
+- Does NOT change invoice allocations already made
+""")
+                        ea1, ea2, ea3 = st.columns(3)
+                        with ea1:
+                            new_gross = st.number_input(
+                                "Gross Amount (₹)",
+                                min_value=0.0, step=0.01,
+                                value=float(amounts['gross']),
+                                key=f"new_gross_{payment['id']}"
+                            )
+                        with ea2:
+                            new_discount = st.number_input(
+                                "Discount (₹)",
+                                min_value=0.0, step=0.01,
+                                value=float(amounts['discount']),
+                                key=f"new_disc_{payment['id']}"
+                            )
+                        with ea3:
+                            new_net = st.number_input(
+                                "Net Amount (₹)",
+                                min_value=0.0, step=0.01,
+                                value=float(amounts['net']),
+                                key=f"new_net_{payment['id']}"
+                            )
+
+                        st.caption(f"Current: Gross ₹{amounts['gross']:,.2f} | Discount ₹{amounts['discount']:,.2f} | Net ₹{amounts['net']:,.2f}")
+
+                        sc1, sc2 = st.columns(2)
+                        with sc1:
+                            if st.button("💾 Save Amount Changes", key=f"save_amt_{payment['id']}", type="primary"):
+                                try:
+                                    # Determine debit/credit direction from original ledger
+                                    orig_led = admin_supabase.table("financial_ledger")                                        .select("id, debit, credit, party_id")                                        .eq("ops_document_id", payment["id"])                                        .execute().data or []
+
+                                    if not orig_led:
+                                        st.error("❌ No financial ledger entry found for this payment")
+                                        st.stop()
+
+                                    led = orig_led[0]
+                                    # Preserve debit/credit direction — only update amounts
+                                    was_credit = float(led.get("credit") or 0) > 0
+                                    new_debit  = 0.0        if was_credit else new_gross
+                                    new_credit = new_gross  if was_credit else 0.0
+
+                                    # Update financial ledger
+                                    admin_supabase.table("financial_ledger").update({
+                                        "debit":           new_debit,
+                                        "credit":          new_credit,
+                                        "gross_amount":    new_gross,
+                                        "discount_amount": new_discount,
+                                        "net_amount":      new_net,
+                                        "narration":       f"Payment (edited) — Gross: ₹{new_gross:,.2f}, Discount: ₹{new_discount:,.2f}, Net: ₹{new_net:,.2f}"
+                                    }).eq("id", led["id"]).execute()
+
+                                    # Recalculate allocation status
+                                    alloc_recs = admin_supabase.table("payment_settlements")                                        .select("amount")                                        .eq("payment_ops_id", payment["id"])                                        .execute().data or []
+                                    total_alloc = sum(float(r["amount"]) for r in alloc_recs)
+
+                                    if total_alloc <= 0:
+                                        new_alloc_st = "UNALLOCATED"
+                                    elif total_alloc >= new_gross:
+                                        new_alloc_st = "FULLY_ALLOCATED"
+                                    else:
+                                        new_alloc_st = "PARTIALLY_ALLOCATED"
+
+                                    admin_supabase.table("ops_documents").update({
+                                        "allocation_status": new_alloc_st
+                                    }).eq("id", payment["id"]).execute()
+
+                                    # Audit log
+                                    admin_supabase.table("audit_logs").insert({
+                                        "action":       "EDIT_PAYMENT_AMOUNTS",
+                                        "target_type":  "ops_documents",
+                                        "target_id":    payment["id"],
+                                        "performed_by": resolve_user_id(),
+                                        "message":      f"Payment amounts edited — Gross: ₹{new_gross:,.2f}, Discount: ₹{new_discount:,.2f}, Net: ₹{new_net:,.2f}",
+                                        "metadata":     {
+                                            "old_gross": amounts['gross'],
+                                            "new_gross": new_gross,
+                                            "old_net":   amounts['net'],
+                                            "new_net":   new_net
+                                        }
+                                    }).execute()
+
+                                    st.success(f"✅ Payment amounts updated. Ledger entry corrected. Allocation status: {new_alloc_st}")
+                                    st.session_state.pay_edit_amounts_open = False
+                                    st.session_state.pay_edit_amounts_id   = None
+                                    st.rerun()
+
+                                except Exception as e:
+                                    st.error("❌ Failed to update payment amounts")
+                                    st.exception(e)
+
+                        with sc2:
+                            if st.button("❌ Cancel", key=f"cancel_amt_{payment['id']}"):
+                                st.session_state.pay_edit_amounts_open = False
+                                st.session_state.pay_edit_amounts_id   = None
+                                st.rerun()
 
                 # ── Inline Edit Party Panel ───────────────────────────────
                 if st.session_state.get("pay_edit_open") and st.session_state.get("pay_edit_id") == payment["id"]:
