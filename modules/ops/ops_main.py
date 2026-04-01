@@ -8042,10 +8042,14 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                         st.stop()
 
                                     led = orig_led[0]
-                                    # Preserve debit/credit direction — only update amounts
-                                    was_credit = float(led.get("credit") or 0) > 0
-                                    new_debit  = 0.0        if was_credit else new_gross
-                                    new_credit = new_gross  if was_credit else 0.0
+                                    # Determine correct direction from the ops_document direction field
+                                    # (NOT from the current ledger row — it may be wrong if gross was 0)
+                                    pay_doc = admin_supabase.table("ops_documents")                                        .select("direction")                                        .eq("id", payment["id"])                                        .single()                                        .execute().data
+                                    # direction="IN" = Money Received = CREDIT
+                                    # direction="OUT" = Money Paid = DEBIT
+                                    is_money_received = (pay_doc or {}).get("direction", "IN") == "IN"
+                                    new_debit  = 0.0       if is_money_received else new_gross
+                                    new_credit = new_gross if is_money_received else 0.0
 
                                     # Update financial ledger
                                     admin_supabase.table("financial_ledger").update({
