@@ -341,6 +341,10 @@ def run_ops():
         "DOCUMENT_BROWSER_INVOICE_DELETE_EXEC":  "DOCUMENT_BROWSER_INVOICES",
         "DOCUMENT_BROWSER_INVOICE_CANCEL":       "DOCUMENT_BROWSER_INVOICES",
         "DOCUMENT_BROWSER_ARCHIVE_VIEW":         "DOCUMENT_BROWSER_ARCHIVED",
+        "DOCUMENT_BROWSER_CN_VIEW":              "DOCUMENT_BROWSER_CREDIT_NOTES",
+        "DOCUMENT_BROWSER_CN_EDIT":              "DOCUMENT_BROWSER_CREDIT_NOTES",
+        "DOCUMENT_BROWSER_CN_DELETE":            "DOCUMENT_BROWSER_CREDIT_NOTES",
+        "DOCUMENT_BROWSER_CN_DELETE_EXEC":       "DOCUMENT_BROWSER_CREDIT_NOTES",
     }
 
     # If in a sub-section, show the parent in the selectbox (so it looks
@@ -1877,12 +1881,11 @@ This action will:
                         create_stock_entries = True
                 
                         if stock_as_val == "credit_note":
-                            if hasattr(st.session_state, 'credit_note_stock_handling'):
-                                if st.session_state.credit_note_stock_handling == "Financial Adjustment Only (no stock movement)":
-                                    create_stock_entries = False
-                                elif st.session_state.credit_note_stock_handling == "Stock is Damaged (transfer to Destroyed)":
-                                    # Will create entries but to Destroyed entity
-                                    pass
+                            _cn_handling = st.session_state.get("credit_note_stock_handling", "")
+                            if _cn_handling == "Financial Adjustment Only (no stock movement)":
+                                create_stock_entries = False
+                            elif _cn_handling == "Stock is Damaged (transfer to Destroyed)":
+                                create_stock_entries = False
                         
                         # Rule: Every transaction creates TWO entries (sender OUT + receiver IN)
                         # Exception: Sample/Lot - only sender OUT, receiver gets NOTHING
@@ -5087,23 +5090,243 @@ This action will:
                     with b1:
                         if st.button("👁 View", key=f"view_cn_{doc['id']}"):
                             st.session_state.selected_ops_id = doc["id"]
-                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_CN_VIEW"
                             st.rerun()
 
                     with b2:
                         if st.button("✏️ Edit", key=f"edit_cn_{doc['id']}"):
                             st.session_state.edit_source_ops_id = doc["id"]
                             st.session_state.edit_mode = True
-                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_EDIT"
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_CN_EDIT"
                             st.rerun()
 
                     with b3:
                         if st.button("🗑 Delete", key=f"del_cn_{doc['id']}"):
                             st.session_state.selected_ops_id = doc["id"]
-                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_CN_DELETE"
                             st.rerun()
 
                 st.divider()
+    # =========================
+    # DOCUMENT BROWSER — CN VIEW
+    # =========================
+    elif section == "DOCUMENT_BROWSER_CN_VIEW":
+
+        ops_id = st.session_state.get("selected_ops_id")
+        if not ops_id:
+            st.error("Credit note not found")
+            st.stop()
+
+        doc = admin_supabase.table("ops_documents") \
+            .select("*") \
+            .eq("id", ops_id) \
+            .eq("is_deleted", False) \
+            .single() \
+            .execute().data
+
+        if not doc:
+            st.error("Credit note does not exist or was deleted")
+            st.stop()
+
+        st.subheader(f"📝 Credit Note View — {doc['ops_no']}")
+
+        from_type, from_name = resolve_entity_display_name(
+            doc.get('from_entity_type'), doc.get('from_entity_id'), doc.get('narration')
+        )
+        to_type = doc.get('to_entity_type')
+        to_id   = doc.get('to_entity_id')
+        if to_type:
+            _, to_name = resolve_entity_display_name(to_type, to_id, None)
+        else:
+            to_name = "Unknown"
+
+        st.markdown(f"""
+**Date:** {doc['ops_date']}
+**Reference:** {doc.get('reference_no') or '-'}
+**From:** {from_type} — {from_name}
+**To:** {to_type if to_type else 'Unknown'} — {to_name}
+""")
+        st.divider()
+
+        lines = admin_supabase.table("ops_lines") \
+            .select("*") \
+            .eq("ops_document_id", ops_id) \
+            .execute().data or []
+
+        if lines:
+            first_line = lines[0]
+            total_gross    = first_line["gross_amount"]
+            total_tax      = first_line["tax_amount"]
+            total_discount = first_line["discount_amount"]
+            total_net      = first_line["net_amount"]
+        else:
+            total_gross = total_tax = total_discount = total_net = 0
+
+        for line in lines:
+            with st.container():
+                c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
+                with c1:
+                    product = next(
+                        (p["name"] for p in st.session_state.products_master if p["id"] == line["product_id"]),
+                        "Unknown Product"
+                    )
+                    st.write(product)
+                with c2:
+                    st.write(f"Sale: {line['sale_qty']}")
+                with c3:
+                    st.write(f"Free: {line['free_qty']}")
+                with c4:
+                    st.write(f"Gross: ₹{line['gross_amount']:,.2f}")
+                with c5:
+                    st.write(f"Net: ₹{line['net_amount']:,.2f}")
+
+        st.divider()
+        st.markdown(f"""
+### 💰 Credit Note Breakdown
+- **Gross Amount:** ₹ {total_gross:,.2f}
+- **Less: Discount:** ₹ {total_discount:,.2f}
+- **Taxable Amount:** ₹ {total_gross - total_discount:,.2f}
+- **Add: GST/Tax:** ₹ {total_tax:,.2f}
+
+---
+### 📌 FINAL CREDIT NOTE TOTAL: ₹ {total_net:,.2f}
+""")
+        st.divider()
+
+        if st.button("⬅ Back to Credit Notes"):
+            st.session_state.ops_section = "DOCUMENT_BROWSER_CREDIT_NOTES"
+            st.rerun()
+
+    # =========================
+    # DOCUMENT BROWSER — CN EDIT
+    # =========================
+    elif section == "DOCUMENT_BROWSER_CN_EDIT":
+        st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_EDIT"
+        st.rerun()
+
+    # =========================
+    # DOCUMENT BROWSER — CN DELETE (CONFIRM)
+    # =========================
+    elif section == "DOCUMENT_BROWSER_CN_DELETE":
+
+        ops_id = st.session_state.get("selected_ops_id")
+        if not ops_id:
+            st.error("Credit note not selected")
+            st.stop()
+
+        doc = admin_supabase.table("ops_documents") \
+            .select("ops_no, ops_date, narration, is_deleted") \
+            .eq("id", ops_id) \
+            .single() \
+            .execute().data
+
+        if not doc or doc["is_deleted"]:
+            st.error("Credit note already deleted or not found")
+            st.stop()
+
+        st.subheader("⚠️ Confirm Credit Note Deletion")
+
+        st.warning(f"""
+You are about to delete:
+
+**Credit Note:** {doc['ops_no']}
+**Date:** {doc['ops_date']}
+
+This action:
+- Cannot be undone
+- Will reverse stock & financial ledger entries
+- Will be recorded in audit logs
+""")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("❌ Cancel"):
+                st.session_state.ops_section = "DOCUMENT_BROWSER_CREDIT_NOTES"
+                st.rerun()
+        with col2:
+            if st.button("🗑 Confirm Delete"):
+                st.session_state.ops_section = "DOCUMENT_BROWSER_CN_DELETE_EXEC"
+                st.rerun()
+
+    # =========================
+    # DOCUMENT BROWSER — CN DELETE (EXECUTE)
+    # =========================
+    elif section == "DOCUMENT_BROWSER_CN_DELETE_EXEC":
+
+        ops_id   = st.session_state.get("selected_ops_id")
+        admin_id = resolve_user_id()
+
+        if not ops_id:
+            st.error("Credit note not selected")
+            st.stop()
+
+        stock_rows = admin_supabase.table("stock_ledger") \
+            .select("*") \
+            .eq("ops_document_id", ops_id) \
+            .execute().data or []
+
+        reversal_ops = admin_supabase.table("ops_documents").insert({
+            "ops_no":     f"REV-CN-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
+            "ops_date":   datetime.utcnow().date().isoformat(),
+            "ops_type":   "ADJUSTMENT",
+            "stock_as":   "adjustment",
+            "direction":  "ADJUST",
+            "narration":  f"Reversal due to deletion of CN {ops_id}",
+            "created_by": admin_id
+        }).execute()
+
+        reversal_ops_id = reversal_ops.data[0]["id"]
+
+        for s in stock_rows:
+            admin_supabase.table("stock_ledger").insert({
+                "ops_document_id": reversal_ops_id,
+                "product_id":  s["product_id"],
+                "entity_type": s["entity_type"],
+                "entity_id":   s["entity_id"],
+                "txn_date":    datetime.utcnow().date().isoformat(),
+                "qty_in":      s["qty_out"],
+                "qty_out":     s["qty_in"],
+                "closing_qty": 0,
+                "direction":   "ADJUST",
+                "narration":   "Reversal of deleted credit note"
+            }).execute()
+
+        ledger_rows = admin_supabase.table("financial_ledger") \
+            .select("*") \
+            .eq("ops_document_id", ops_id) \
+            .execute().data or []
+
+        for l in ledger_rows:
+            admin_supabase.table("financial_ledger").insert({
+                "ops_document_id": reversal_ops_id,
+                "party_id":        l["party_id"],
+                "txn_date":        datetime.utcnow().date().isoformat(),
+                "debit":           l["credit"],
+                "credit":          l["debit"],
+                "closing_balance": 0,
+                "narration":       "Reversal of deleted credit note"
+            }).execute()
+
+        admin_supabase.table("ops_documents").update({
+            "is_deleted": True,
+            "updated_at": datetime.utcnow().isoformat(),
+            "updated_by": admin_id
+        }).eq("id", ops_id).execute()
+
+        admin_supabase.table("audit_logs").insert({
+            "action":       "DELETE_CREDIT_NOTE",
+            "target_type":  "ops_documents",
+            "target_id":    ops_id,
+            "performed_by": admin_id,
+            "message":      "Credit note deleted via Document Browser",
+            "metadata":     {"module": "DOCUMENT_BROWSER", "reason": "Manual delete by admin"}
+        }).execute()
+
+        st.success("✅ Credit note deleted successfully")
+        st.session_state.selected_ops_id = None
+        st.session_state.ops_section = "DOCUMENT_BROWSER_CREDIT_NOTES"
+        st.rerun()
+
     # =========================
     # DOCUMENT BROWSER — ARCHIVED CREDIT NOTES
     # =========================
