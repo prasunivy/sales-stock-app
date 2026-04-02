@@ -6,6 +6,21 @@ Extracted from the original monolithic app.py
 
 import streamlit as st
 import pandas as pd
+
+
+
+def _mobile_table(df, compact_cols, detail_title_col, uid_prefix='tbl'):
+    import json, uuid
+    import streamlit.components.v1 as components
+    table_id = uid_prefix + '_' + uuid.uuid4().hex[:6]
+    rows = df.fillna('').astype(str).to_dict(orient='records')
+    all_cols = list(df.columns)
+    rj = json.dumps(rows); cj = json.dumps(compact_cols); aj = json.dumps(all_cols); dtc = detail_title_col
+    css = ('<style>#{t} .ivy-desk {{width:100%;border-collapse:collapse;font-size:.83rem;border:1px solid #e2ece9;overflow:hidden;}}#{t} .ivy-desk th {{background:#1a6b5a;color:white;font-weight:600;font-size:.78rem;text-transform:uppercase;padding:.65rem 1rem;text-align:left;}}#{t} .ivy-desk td {{padding:.5rem 1rem;border-bottom:1px solid #e2ece9;color:#1c2b27;font-size:.83rem;white-space:nowrap;}}#{t} .ivy-desk tr:nth-child(even) td {{background:#f0faf7;}}#{t} .ivy-mob {{display:none;}}#{t} .ivy-ctbl {{width:100%;border-collapse:collapse;table-layout:fixed;}}#{t} .ivy-ctbl th {{background:#1a6b5a;color:white;font-size:.7rem;font-weight:600;padding:5px 4px;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}#{t} .ivy-ctbl td {{padding:5px 4px;border-bottom:1px solid #e2ece9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1c2b27;font-size:.78rem;}}#{t} .ivy-ctbl tr:nth-child(even) td {{background:#f0faf7;}}#{t} .ivy-ctbl tr {{cursor:pointer;}}#{t} .ivy-ctbl tr:active td {{background:#e8f5f1;}}#{t} .ivy-hint {{text-align:center;font-size:.7rem;color:#9ab4ad;padding:4px 0;}}#{t} .ivy-tip {{color:#9ab4ad;font-size:.7rem;}}#{t} .ivy-dtl {{display:none;}}#{t} .ivy-bk {{display:flex;align-items:center;gap:6px;background:#1a6b5a;color:white;border:none;padding:8px 12px;font-size:.8rem;font-weight:600;cursor:pointer;width:100%;}}#{t} .ivy-db {{padding:10px 10px 16px;background:#f7f9f8;}}#{t} .ivy-dt {{font-size:.85rem;font-weight:700;color:#1c2b27;margin-bottom:8px;word-break:break-word;}}#{t} .ivy-dr {{display:flex;justify-content:space-between;align-items:flex-start;padding:5px 0;border-bottom:1px solid #e2ece9;}}#{t} .ivy-dl {{font-size:.7rem;color:#5a7268;font-weight:600;text-transform:uppercase;min-width:40%;padding-right:8px;}}#{t} .ivy-dv {{font-size:.78rem;color:#1c2b27;font-weight:500;text-align:right;word-break:break-word;}}@media (max-width:768px) {{#{t} .ivy-desk {{display:none;}} #{t} .ivy-mob {{display:block;}} }}</style>').replace('{t}', table_id)
+    body = ('<div id="{t}"><div class="ivy-desk"><table><thead><tr id="{t}_dh"></tr></thead><tbody id="{t}_db"></tbody></table></div><div class="ivy-mob"><div class="ivy-list" id="{t}_ls"><div class="ivy-hint">Tap any row for full details</div><table class="ivy-ctbl"><thead><tr id="{t}_mh"></tr></thead><tbody id="{t}_mb"></tbody></table></div><div class="ivy-dtl" id="{t}_dtl"><button class="ivy-bk" onclick="ivy_bk_{t}()">&#8592; Back</button><div class="ivy-db"><div class="ivy-dt" id="{t}_dtt"></div><div id="{t}_dr"></div></div></div></div></div>').replace('{t}', table_id)
+    js = ('<script>(function(){var R={rj},C={cj},A={aj},T="{t}",D="{d}",W=window;var dh=document.getElementById(T+"_dh");A.forEach(function(c){var e=document.createElement("th");e.textContent=c;dh.appendChild(e);});var db=document.getElementById(T+"_db");R.forEach(function(r,i){var tr=document.createElement("tr");tr.style.cursor="pointer";A.forEach(function(c){var td=document.createElement("td");td.textContent=r[c]||"";tr.appendChild(td);});tr.onclick=function(){W["ivs_"+T](i);};db.appendChild(tr);});var mh=document.getElementById(T+"_mh");C.forEach(function(c){var e=document.createElement("th");e.textContent=c;mh.appendChild(e);});var te=document.createElement("th");te.style.width="14px";mh.appendChild(te);var mb=document.getElementById(T+"_mb");R.forEach(function(r,i){var tr=document.createElement("tr");C.forEach(function(c){var td=document.createElement("td");td.textContent=r[c]||"";tr.appendChild(td);});var ti=document.createElement("td");ti.innerHTML="<span class=\\"ivy-tip\\">&#8250;</span>";tr.appendChild(ti);tr.onclick=function(){W["ivs_"+T](i);};mb.appendChild(tr);});W["ivs_"+T]=function(i){var r=R[i];document.getElementById(T+"_dtt").textContent=r[D]||("Row "+(i+1));var dr=document.getElementById(T+"_dr");dr.innerHTML="";A.forEach(function(c){if(r[c]===""||r[c]==null)return;var d=document.createElement("div");d.className="ivy-dr";d.innerHTML="<span class=\\"ivy-dl\\">"+ c +"</span><span class=\\"ivy-dv\\">"+(r[c]||"\u2014")+"</span>";dr.appendChild(d);});document.getElementById(T+"_ls").style.display="none";document.getElementById(T+"_dtl").style.display="block";};W["ivy_bk_"+T]=function(){document.getElementById(T+"_dtl").style.display="none";document.getElementById(T+"_ls").style.display="block";};})();</script>').replace('{rj}', rj).replace('{cj}', cj).replace('{aj}', aj).replace('{t}', table_id).replace('{d}', dtc)
+    return components.html(css + body + js, height=max(250, len(rows)*34+120), scrolling=True)
+
 from datetime import datetime, date, timedelta
 from anchors.supabase_client import supabase, admin_supabase, safe_exec
 
@@ -607,9 +622,10 @@ def _run_preview(sid, user_id, role):
         df = df.sort_values("Product", ascending=True).reset_index(drop=True)
 
     if "Product ID" in df.columns:
-        st.dataframe(df.drop(columns=["Product ID"]), use_container_width=True)
-    else:
-        st.dataframe(df, use_container_width=True)
+        df = df.drop(columns=["Product ID"])
+    _mobile_table(df,
+        compact_cols=["Product", "Opening", "Issue", "Closing", "Order"],
+        detail_title_col="Product", uid_prefix="stmt_prod")
 
     # Timeline
     st.divider()
@@ -860,23 +876,26 @@ def run_reports():
                         "Order": r["order_qty"],
                         "Difference": r["difference"]
                     })
-                st.dataframe(pd.DataFrame(matrix).sort_values("Product"), use_container_width=True, hide_index=True)
+                _df_mx=pd.DataFrame(matrix).sort_values("Product")
+        _mobile_table(_df_mx, compact_cols=["Product","Issue","Closing","Order","Difference"], detail_title_col="Product", uid_prefix="mat_sum")
 
         st.subheader("📦 Matrix 1 — Product-wise Sales (Issue)")
-        st.dataframe(df.pivot_table(index="Product", columns="Year-Month", values="Issue", aggfunc="sum", fill_value=0), use_container_width=True)
+        _pv=df.pivot_table(index="Product", columns="Year-Month", values="Issue", aggfunc="sum", fill_value=0).reset_index()
+        _mobile_table(_pv, compact_cols=[_pv.columns[0]]+list(_pv.columns[1:4]), detail_title_col=_pv.columns[0], uid_prefix="pv_issue")
 
         st.subheader("🧾 Matrix 2 — Product-wise Order")
-        st.dataframe(df.pivot_table(index="Product", columns="Year-Month", values="Order", aggfunc="sum", fill_value=0), use_container_width=True)
+        _pv=df.pivot_table(index="Product", columns="Year-Month", values="Order", aggfunc="sum", fill_value=0).reset_index()
+        _mobile_table(_pv, compact_cols=[_pv.columns[0]]+list(_pv.columns[1:4]), detail_title_col=_pv.columns[0], uid_prefix="pv_order")
 
         st.subheader("📊 Matrix 3 — Product-wise Closing")
-        st.dataframe(df.pivot_table(index="Product", columns="Year-Month", values="Closing", aggfunc="sum", fill_value=0), use_container_width=True)
+        _pv=df.pivot_table(index="Product", columns="Year-Month", values="Closing", aggfunc="sum", fill_value=0).reset_index()
+        _mobile_table(_pv, compact_cols=[_pv.columns[0]]+list(_pv.columns[1:4]), detail_title_col=_pv.columns[0], uid_prefix="pv_closing")
 
         st.subheader("📦📊 Matrix 4 — Issue & Closing")
-        st.dataframe(
-            df.melt(id_vars=["Product", "Year-Month"], value_vars=["Issue", "Closing"])
-            .pivot_table(index="Product", columns=["Year-Month", "variable"], values="value", aggfunc="sum", fill_value=0),
-            use_container_width=True
-        )
+        _pv4=(df.melt(id_vars=["Product", "Year-Month"], value_vars=["Issue", "Closing"]).pivot_table(index="Product", columns=["Year-Month", "variable"], values="value", aggfunc="sum", fill_value=0))
+        _pv4.columns=[" ".join(str(c) for c in col).strip() for col in _pv4.columns]
+        _pv4=_pv4.reset_index()
+        _mobile_table(_pv4, compact_cols=[_pv4.columns[0]]+list(_pv4.columns[1:4]), detail_title_col=_pv4.columns[0], uid_prefix="pv_mix")
 
         # Trend charts
         st.subheader("📈 Trend Charts — Last 6 Months")
@@ -935,10 +954,8 @@ def run_reports():
                     fy += 1
 
         if forecast_rows:
-            st.dataframe(
-                pd.DataFrame(forecast_rows).pivot_table(index="Product", columns="Forecast Month", values="Forecast Issue", fill_value=0),
-                use_container_width=True
-            )
+            _fc=pd.DataFrame(forecast_rows).pivot_table(index="Product", columns="Forecast Month", values="Forecast Issue", fill_value=0).reset_index()
+            _mobile_table(_fc, compact_cols=[_fc.columns[0]]+list(_fc.columns[1:4]), detail_title_col=_fc.columns[0], uid_prefix="fc_pivot")
         else:
             st.info("Forecast not available for selected filters")
 
@@ -1062,7 +1079,8 @@ def run_reports():
                     "Order": r["order_qty"],
                     "Difference": r["difference"]
                 })
-            st.dataframe(pd.DataFrame(matrix).sort_values("Product"), use_container_width=True, hide_index=True)
+            _df_mx=pd.DataFrame(matrix).sort_values("Product")
+        _mobile_table(_df_mx, compact_cols=["Product","Issue","Closing","Order","Difference"], detail_title_col="Product", uid_prefix="mat_sum")
 
 
 # ======================================================
@@ -1469,6 +1487,11 @@ def run_admin_panel():
             .execute().data
         if rows:
             df = pd.DataFrame([{"Product": r["products"]["name"], "Issue": r["total_issue"], "Closing": r["total_closing"], "Order": r["total_order"]} for r in rows])
-            st.dataframe(df, use_container_width=True)
+            _mobile_table(
+                df,
+                compact_cols=["Product", "Issue", "Closing", "Order"],
+                detail_title_col="Product",
+                uid_prefix="stock_ctrl"
+            )
         else:
             st.warning("No data for selected period")
