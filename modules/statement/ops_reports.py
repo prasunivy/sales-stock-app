@@ -160,8 +160,13 @@ def _build_pdf(report_title, subtitle, df):
         Spacer(1, 0.2 * cm),
     ]
 
-    # Build table data
+    # Build table data — flatten MultiIndex columns if present (e.g. pivot_table)
     df_out = df.reset_index()
+    if isinstance(df_out.columns, pd.MultiIndex):
+        df_out.columns = [
+            " ".join(str(c) for c in col).strip() if isinstance(col, tuple) else str(col)
+            for col in df_out.columns
+        ]
     headers = list(df_out.columns)
     rows_data = [headers]
     for _, row in df_out.iterrows():
@@ -259,8 +264,37 @@ def _user_and_stockist_selectors(key, role, current_user_id):
         )
         sel_user_ids = [u["id"] for u in sel_users]
     else:
-        sel_user_ids = [current_user_id]
-        st.caption("Showing stockists assigned to you.")
+        # Check if this user is a manager or senior_manager
+        user_info = safe_exec(
+            admin_supabase.table("users")
+            .select("id, username, designation")
+            .eq("id", current_user_id)
+            .single()
+        )
+        designation = (user_info or {}).get("designation", "")
+        is_manager = designation in ("manager", "senior_manager")
+
+        if is_manager:
+            reports = safe_exec(
+                admin_supabase.table("users")
+                .select("id, username")
+                .eq("report_to", current_user_id)
+                .eq("is_active", True)
+            ) or []
+            team = [{"id": current_user_id,
+                     "username": (user_info or {}).get("username", "Me") + " (You)"}]
+            team += reports
+            sel_users = st.multiselect(
+                "Select Team Member(s)", team,
+                default=team,
+                format_func=lambda x: x["username"],
+                key=f"{key}_users",
+            )
+            sel_user_ids = [u["id"] for u in sel_users]
+            st.caption(f"Manager view — {len(reports)} direct report(s) shown.")
+        else:
+            sel_user_ids = [current_user_id]
+            st.caption("Showing stockists assigned to you.")
 
     if not sel_user_ids:
         st.info("Select at least one user to see stockists.")
@@ -327,9 +361,35 @@ def _report1(role, user_id):
             entity_ids   = [u["id"] for u in sel]
             entity_label = ", ".join(u["username"] for u in sel) or "-"
         else:
-            entity_ids   = [user_id]
-            entity_label = st.session_state.get("username", "Me")
-            st.caption("Showing your own transactions.")
+            # Check if manager — if so show team selector
+            user_info_r1 = safe_exec(
+                admin_supabase.table("users")
+                .select("id, username, designation")
+                .eq("id", user_id)
+                .single()
+            )
+            designation_r1 = (user_info_r1 or {}).get("designation", "")
+            if designation_r1 in ("manager", "senior_manager"):
+                reports_r1 = safe_exec(
+                    admin_supabase.table("users")
+                    .select("id, username")
+                    .eq("report_to", user_id)
+                    .eq("is_active", True)
+                ) or []
+                team_r1 = [{"id": user_id,
+                             "username": (user_info_r1 or {}).get("username", "Me") + " (You)"}]
+                team_r1 += reports_r1
+                sel = st.multiselect(
+                    "Select Team Member(s)", team_r1, default=team_r1,
+                    format_func=lambda x: x["username"], key="r1_users"
+                )
+                entity_ids   = [u["id"] for u in sel]
+                entity_label = ", ".join(u["username"] for u in sel) or "-"
+                st.caption(f"Manager view — {len(reports_r1)} direct report(s) shown.")
+            else:
+                entity_ids   = [user_id]
+                entity_label = st.session_state.get("username", "Me")
+                st.caption("Showing your own transactions.")
 
     if not entity_ids:
         st.info("Select at least one entity to generate the report.")
