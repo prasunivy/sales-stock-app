@@ -48,10 +48,17 @@ _RETRY_SIGNALS = (
     "readtimeout",
     "remotedisconnected",
     "ssl",
+    "connectionterminated",
+    "remoteprotocol",
+    "protocol error",
+    "stream",
+    "h2",
+    "http2",
+    "network",
 )
 
 _MAX_RETRIES  = 3
-_RETRY_DELAYS = [0.5, 1.5, 3.0]   # seconds between retries
+_RETRY_DELAYS = [1.0, 2.5, 5.0]   # seconds between retries
 
 
 def safe_exec(q, msg="Database error"):
