@@ -24,6 +24,21 @@ Access control:
 
 import streamlit as st
 import pandas as pd
+
+
+def _mobile_table(df, compact_cols, detail_title_col, uid_prefix='tbl'):
+    import json, uuid
+    import streamlit.components.v1 as components
+    table_id = uid_prefix + '_' + uuid.uuid4().hex[:6]
+    rows = df.fillna('').astype(str).to_dict(orient='records')
+    all_cols = list(df.columns)
+    rj = json.dumps(rows); cj = json.dumps(compact_cols); aj = json.dumps(all_cols); dtc = detail_title_col
+    css = ('<style>#{t} .ivy-desk {{width:100%;border-collapse:collapse;font-size:.83rem;border:1px solid #e2ece9;overflow:hidden;}}#{t} .ivy-desk th {{background:#1a6b5a;color:white;font-weight:600;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;padding:.65rem 1rem;text-align:left;}}#{t} .ivy-desk td {{padding:.5rem 1rem;border-bottom:1px solid #e2ece9;color:#1c2b27;font-size:.83rem;white-space:nowrap;}}#{t} .ivy-desk tr:nth-child(even) td {{background:#f0faf7;}}#{t} .ivy-desk tr:hover td {{background:#e8f5f1;cursor:pointer;}}#{t} .ivy-mob {{display:none;}}#{t} .ivy-ctbl {{width:100%;border-collapse:collapse;table-layout:fixed;}}#{t} .ivy-ctbl th {{background:#1a6b5a;color:white;font-size:.7rem;font-weight:600;padding:5px 4px;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}#{t} .ivy-ctbl td {{padding:5px 4px;border-bottom:1px solid #e2ece9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1c2b27;font-size:.78rem;}}#{t} .ivy-ctbl tr:nth-child(even) td {{background:#f0faf7;}}#{t} .ivy-ctbl tr {{cursor:pointer;}}#{t} .ivy-ctbl tr:active td {{background:#e8f5f1;}}#{t} .ivy-hint {{text-align:center;font-size:.7rem;color:#9ab4ad;padding:4px 0 2px;}}#{t} .ivy-tip {{color:#9ab4ad;font-size:.7rem;}}#{t} .ivy-dtl {{display:none;}}#{t} .ivy-bk {{display:flex;align-items:center;gap:6px;background:#1a6b5a;color:white;border:none;padding:8px 12px;font-size:.8rem;font-weight:600;cursor:pointer;width:100%;}}#{t} .ivy-db {{padding:10px 10px 16px;background:#f7f9f8;}}#{t} .ivy-dt {{font-size:.85rem;font-weight:700;color:#1c2b27;margin-bottom:8px;word-break:break-word;}}#{t} .ivy-dr {{display:flex;justify-content:space-between;align-items:flex-start;padding:5px 0;border-bottom:1px solid #e2ece9;}}#{t} .ivy-dl {{font-size:.7rem;color:#5a7268;font-weight:600;text-transform:uppercase;letter-spacing:.04em;min-width:40%;padding-right:8px;}}#{t} .ivy-dv {{font-size:.78rem;color:#1c2b27;font-weight:500;text-align:right;word-break:break-word;}}@media (max-width:768px) {{#{t} .ivy-desk {{display:none;}} #{t} .ivy-mob {{display:block;}} }}</style>').replace('{t}', table_id)
+    body = ('<div id="{t}"><div class="ivy-desk"><table><thead><tr id="{t}_dh"></tr></thead><tbody id="{t}_db"></tbody></table></div><div class="ivy-mob"><div class="ivy-list" id="{t}_ls"><div class="ivy-hint">Tap any row for full details</div><table class="ivy-ctbl"><thead><tr id="{t}_mh"></tr></thead><tbody id="{t}_mb"></tbody></table></div><div class="ivy-dtl" id="{t}_dtl"><button class="ivy-bk" onclick="ivy_bk_{t}()">&#8592; Back</button><div class="ivy-db"><div class="ivy-dt" id="{t}_dtt"></div><div id="{t}_dr"></div></div></div></div></div>').replace('{t}', table_id)
+    js = ('<script>(function(){var R={rj},C={cj},A={aj},T="{t}",D="{d}",W=window;var dh=document.getElementById(T+"_dh");A.forEach(function(c){var e=document.createElement("th");e.textContent=c;dh.appendChild(e);});var db=document.getElementById(T+"_db");R.forEach(function(r,i){var tr=document.createElement("tr");tr.style.cursor="pointer";A.forEach(function(c){var td=document.createElement("td");td.textContent=r[c]||"";tr.appendChild(td);});tr.onclick=function(){W["ivs_"+T](i);};db.appendChild(tr);});var mh=document.getElementById(T+"_mh");C.forEach(function(c){var e=document.createElement("th");e.textContent=c;mh.appendChild(e);});var te=document.createElement("th");te.style.width="14px";mh.appendChild(te);var mb=document.getElementById(T+"_mb");R.forEach(function(r,i){var tr=document.createElement("tr");C.forEach(function(c){var td=document.createElement("td");td.textContent=r[c]||"";tr.appendChild(td);});var ti=document.createElement("td");ti.innerHTML="<span class=\\"ivy-tip\\">&#8250;</span>";tr.appendChild(ti);tr.onclick=function(){W["ivs_"+T](i);};mb.appendChild(tr);});W["ivs_"+T]=function(i){var r=R[i];document.getElementById(T+"_dtt").textContent=r[D]||("Row "+(i+1));var dr=document.getElementById(T+"_dr");dr.innerHTML="";A.forEach(function(c){if(r[c]===""||r[c]==null)return;var d=document.createElement("div");d.className="ivy-dr";d.innerHTML="<span class=\\"ivy-dl\\">"+ c +"</span><span class=\\"ivy-dv\\">"+(r[c]||"\u2014")+"</span>";dr.appendChild(d);});document.getElementById(T+"_ls").style.display="none";document.getElementById(T+"_dtl").style.display="block";};W["ivy_bk_"+T]=function(){document.getElementById(T+"_dtl").style.display="none";document.getElementById(T+"_ls").style.display="block";};})();</script>').replace('{rj}', rj).replace('{cj}', cj).replace('{aj}', aj).replace('{t}', table_id).replace('{d}', dtc)
+    return components.html(css + body + js, height=max(250, len(rows)*34+120), scrolling=True)
+
+
 from datetime import date
 from io import BytesIO
 from anchors.supabase_client import admin_supabase, safe_exec
@@ -502,7 +517,17 @@ def _report1(role, user_id):
     ]
     pivot = pivot.reindex(columns=ordered_cols, fill_value=0).astype(int)
 
-    st.dataframe(pivot, use_container_width=True)
+    # Flatten MultiIndex for mobile table
+    pivot_flat = pivot.copy()
+    pivot_flat.columns = [' '.join(str(c) for c in col).strip() if isinstance(col, tuple) else str(col) for col in pivot_flat.columns]
+    pivot_flat = pivot_flat.reset_index()
+    first_col = pivot_flat.columns[0]
+    _mobile_table(
+        pivot_flat,
+        compact_cols=[first_col] + list(pivot_flat.columns[1:4]),
+        detail_title_col=first_col,
+        uid_prefix="r1_pivot"
+    )
 
     subtitle  = (f"Entity: {entity_label}  |  "
                  f"Period: {_mlabel(yf, mf)} - {_mlabel(yt, mt)}")
@@ -633,7 +658,14 @@ def _stockist_financial_matrix(key, role, user_id, col_specs, report_title):
     df = pd.DataFrame(table_rows).set_index("Month")
     df.loc["TOTAL"] = df.sum()
 
-    st.dataframe(df, use_container_width=True)
+    df_display = df.reset_index()
+    first_col = df_display.columns[0]
+    _mobile_table(
+        df_display,
+        compact_cols=[first_col] + list(df_display.columns[1:4]),
+        detail_title_col=first_col,
+        uid_prefix=key + '_mat'
+    )
 
     subtitle  = (f"Stockists: {stockist_label}  |  "
                  f"Period: {_mlabel(yf, mf)} - {_mlabel(yt, mt)}")
