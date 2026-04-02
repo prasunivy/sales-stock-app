@@ -221,11 +221,22 @@ def _do_logout():
 
 
 def _show_home(username="", role=""):
-    """Live dashboard — 7-section personal dashboard."""
+    """Live dashboard — 7-section personal dashboard + AI assistant."""
     user = st.session_state.get("auth_user")
     if not user:
         st.error("Not logged in.")
         return
+
+    # ── AI Business Assistant ─────────────────────────────────────
+    try:
+        from modules.ai.ai_assistant import run_ai_assistant
+        run_ai_assistant()
+    except Exception as _ai_err:
+        st.caption(f"AI assistant unavailable: {_ai_err}")
+
+    st.divider()
+
+    # ── Live Dashboard ────────────────────────────────────────────
     if role == "admin":
         _dash_admin(user.id)
     else:
