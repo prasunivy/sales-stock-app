@@ -158,11 +158,29 @@ def _increment_usage(user_id: str):
 # SMART DATA FETCHER
 # Analyses the question and fetches only the relevant rows
 # ─────────────────────────────────────────────────────────────────
+def _safe_query(query_fn):
+    """Execute a Supabase query with retry on connection errors."""
+    import time
+    for attempt in range(3):
+        try:
+            return query_fn()
+        except Exception as e:
+            err = str(e).lower()
+            if any(x in err for x in ["connectionterminated", "remoteerror",
+                                        "connection", "timeout", "protocol"]):
+                if attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+            return None
+    return None
+
+
 def _fetch_context(question: str, role: str, user_id: str) -> str:
     """
     Smart context builder — fetches relevant DB rows based on keywords
     in the question. Returns a formatted string injected into the prompt.
     """
+    import time
     q = question.lower()
     context_parts = []
 
@@ -228,11 +246,11 @@ def _fetch_context(question: str, role: str, user_id: str) -> str:
     # ── Scope filter for non-admin users ─────────────────────────
     user_stockist_ids = None
     if role != "admin":
-        us = safe_exec(
+        us = _safe_query(lambda: safe_exec(
             admin_supabase.table("user_stockists")
             .select("stockist_id")
             .eq("user_id", user_id)
-        ) or []
+        )) or []
         user_stockist_ids = [r["stockist_id"] for r in us]
         # Also include team if manager
         user_info = safe_exec(
@@ -273,6 +291,7 @@ def _fetch_context(question: str, role: str, user_id: str) -> str:
     # ── PAYMENT data ──────────────────────────────────────────────
     if any(w in q for w in ["payment", "paid", "receipt", "received", "collection"]):
         try:
+            time.sleep(0.3)
             query = (
                 admin_supabase.table("ops_documents")
                 .select("ops_no, ops_date, ops_type, from_entity_type, from_entity_id, "
@@ -285,7 +304,7 @@ def _fetch_context(question: str, role: str, user_id: str) -> str:
                 .order("ops_date", desc=True)
                 .limit(50)
             )
-            payments = safe_exec(query) or []
+            payments = _safe_query(lambda: safe_exec(query)) or []
 
             # Filter by scope
             if user_stockist_ids is not None:
@@ -334,6 +353,7 @@ def _fetch_context(question: str, role: str, user_id: str) -> str:
     # ── INVOICE data ──────────────────────────────────────────────
     if any(w in q for w in ["invoice", "sale", "billing", "outstanding", "due", "unpaid", "invoice total"]):
         try:
+            time.sleep(0.3)
             query = (
                 admin_supabase.table("ops_documents")
                 .select("ops_no, ops_date, stock_as, from_entity_type, from_entity_id, "
@@ -346,7 +366,7 @@ def _fetch_context(question: str, role: str, user_id: str) -> str:
                 .order("ops_date", desc=True)
                 .limit(50)
             )
-            invoices = safe_exec(query) or []
+            invoices = _safe_query(lambda: safe_exec(query)) or []
 
             if user_stockist_ids is not None:
                 invoices = [
