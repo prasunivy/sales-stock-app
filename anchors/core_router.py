@@ -630,13 +630,18 @@ def _dash_birthdays(territory_ids, today):
         st.info("No doctors found in your territories.")
         return
 
-    doctors = safe_exec(
-        admin_supabase.table("doctors")
-        .select("id, name, date_of_birth, date_of_anniversary, specialization")
-        .in_("id", doctor_ids)
-        .eq("is_active", True),
-        "Error loading doctors"
-    ) or []
+    # Supabase .in_() breaks with large lists — chunk into batches of 100
+    doctors = []
+    for i in range(0, len(doctor_ids), 100):
+        batch = doctor_ids[i:i+100]
+        chunk = safe_exec(
+            admin_supabase.table("doctors")
+            .select("id, name, date_of_birth, date_of_anniversary, specialization")
+            .in_("id", batch)
+            .eq("is_active", True),
+            "Error loading doctors"
+        ) or []
+        doctors.extend(chunk)
 
     window_start = today - timedelta(days=7)
     window_end   = today + timedelta(days=7)
