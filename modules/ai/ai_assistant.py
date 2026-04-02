@@ -16,7 +16,7 @@ from anchors.supabase_client import admin_supabase, safe_exec
 # ─────────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────────
-MODEL          = "claude-sonnet-4-20250514"
+MODEL          = "claude-sonnet-4-5"
 MAX_TOKENS     = 1000
 MONTHLY_LIMIT_ADMIN = 300
 MONTHLY_LIMIT_USER  = 200
@@ -543,11 +543,14 @@ USER QUESTION: {question}"""
     messages.append({"role": "user", "content": user_content})
 
     try:
-        api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+        api_key = ""
+        try:
+            api_key = st.secrets["ANTHROPIC_API_KEY"]
+        except Exception:
+            pass
         if not api_key:
             import os
             api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-
         if not api_key:
             return "⚠️ Claude API key not configured. Please add ANTHROPIC_API_KEY to your Streamlit secrets."
 
