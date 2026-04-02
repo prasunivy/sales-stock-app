@@ -592,13 +592,21 @@ USER QUESTION: {question}"""
 
         if response.status_code == 200:
             data = response.json()
-            return data["content"][0]["text"]
+            blocks = data.get("content", [])
+            if not blocks:
+                return "⚠️ Claude returned an empty response."
+            text = blocks[0].get("text", "").strip()
+            if not text:
+                return "⚠️ Claude returned blank text."
+            return text
         elif response.status_code == 429:
             return "⚠️ Rate limit reached. Please wait a moment and try again."
         elif response.status_code == 401:
             return "⚠️ Invalid API key. Please check your ANTHROPIC_API_KEY in Streamlit secrets."
+        elif response.status_code == 404:
+            return f"⚠️ Model not found. Check model name. Response: {response.text[:300]}"
         else:
-            return f"⚠️ API error {response.status_code}: {response.text[:200]}"
+            return f"⚠️ API error {response.status_code}: {response.text[:400]}"
 
     except requests.exceptions.Timeout:
         return "⚠️ Request timed out. Please try again."
@@ -704,11 +712,18 @@ def run_ai_assistant():
 
     if submitted and question.strip():
         with st.spinner("Fetching data and thinking..."):
-            # Fetch relevant DB context
-            context = _fetch_context(question.strip(), role, user_id)
+            try:
+                # Fetch relevant DB context
+                context = _fetch_context(question.strip(), role, user_id)
 
-            # Call Claude
-            answer = _ask_claude(question.strip(), history, context)
+                # Call Claude
+                answer = _ask_claude(question.strip(), history, context)
+
+                if not answer or not answer.strip():
+                    answer = "⚠️ No response received from Claude. Please try again."
+
+            except Exception as e:
+                answer = f"⚠️ Error: {str(e)}"
 
             # Save to history
             st.session_state.ai_history.append({
@@ -717,10 +732,10 @@ def run_ai_assistant():
                 "timestamp": datetime.utcnow().isoformat()
             })
 
-            # Increment usage counter
-            if user_id:
+            # Increment usage counter only on real answer
+            if user_id and not answer.startswith("⚠️"):
                 _increment_usage(user_id)
 
-            # Reset form
+            # Reset form key so input clears
             st.session_state.ai_input_key += 1
             st.rerun()
