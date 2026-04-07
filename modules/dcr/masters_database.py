@@ -287,7 +287,19 @@ def create_doctor(name, specialization, phone, clinic_address, territory_ids, st
             }),
             "Error linking stockist"
         )
-    
+
+    # Audit log
+    try:
+        admin_supabase.table("audit_logs").insert({
+            "action": "DOCTOR_ADDED",
+            "message": f"Doctor '{name}' added",
+            "performed_by": created_by,
+            "target_type": "doctor",
+            "target_id": str(doctor_id)
+        }).execute()
+    except Exception:
+        pass
+
     # TODO: Link chemists when table exists
     
     return doctor_id
@@ -439,7 +451,21 @@ def create_chemist(name, shop_name, phone, address, territory_id, stockist_id, c
     if not chemist:
         raise Exception("Failed to create chemist")
     
-    return chemist[0]['id']
+    chemist_id = chemist[0]['id']
+
+    # Audit log
+    try:
+        admin_supabase.table("audit_logs").insert({
+            "action": "CHEMIST_ADDED",
+            "message": f"Chemist '{name}' added",
+            "performed_by": created_by,
+            "target_type": "chemist",
+            "target_id": str(chemist_id)
+        }).execute()
+    except Exception:
+        pass
+
+    return chemist_id
 
 def update_chemist(chemist_id, name, shop_name, phone, address, updated_by):
     """
