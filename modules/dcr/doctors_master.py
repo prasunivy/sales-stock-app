@@ -12,7 +12,6 @@ from modules.dcr.masters_database import (
     delete_doctor_soft,
     get_user_territories,
     get_stockists_by_territories,
-    get_chemists_by_territories,
     get_all_users
 )
 from modules.dcr.dcr_helpers import get_current_user_id
@@ -89,12 +88,16 @@ def show_doctors_list():
     with col3:
         active_only = st.checkbox("Active only", value=True)
     
-    # Add button
-    if st.button("➕ Add New Doctor", type="primary"):
-        st.session_state.doctors_master_action = "ADD"
-        st.session_state.doctors_master_selected_user = selected_user_id
-        st.rerun()
-    
+    # Add button — admin only
+    role = st.session_state.get("role", "user")
+    if role != "admin":
+        st.info("ℹ️ Only admin can add or delete doctors. Please contact your admin.")
+    else:
+        if st.button("➕ Add New Doctor", type="primary"):
+            st.session_state.doctors_master_action = "ADD"
+            st.session_state.doctors_master_selected_user = selected_user_id
+            st.rerun()
+
     st.write("---")
     
     # Get doctors
@@ -130,45 +133,55 @@ def show_doctors_list():
                     st.session_state.doctors_master_selected_user = selected_user_id
                     st.rerun()
                 
-                if st.button("🗑️ Delete", key=f"delete_{doctor['id']}"):
-                    if st.session_state.get(f"confirm_delete_{doctor['id']}"):
-                        delete_doctor_soft(doctor['id'], current_user_id)
-                        st.success("Doctor deleted!")
-                        st.rerun()
-                    else:
-                        st.session_state[f"confirm_delete_{doctor['id']}"] = True
-                        st.warning("Click again to confirm")
+                if role == "admin":
+                    if st.button("🗑️ Delete", key=f"delete_{doctor['id']}"):
+                        if st.session_state.get(f"confirm_delete_{doctor['id']}"):
+                            delete_doctor_soft(doctor['id'], current_user_id)
+                            st.success("Doctor deleted!")
+                            st.rerun()
+                        else:
+                            st.session_state[f"confirm_delete_{doctor['id']}"] = True
+                            st.warning("Click again to confirm")
 
 
 def show_add_doctor_form():
     """
-    Form to add new doctor
+    Form to add new doctor — admin only
     """
+    current_user_id = get_current_user_id()
+    role = st.session_state.get("role", "user")
+
+    # Guard: only admin can add doctors
+    if role != "admin":
+        st.warning("⚠️ Only admin can add doctors. Please contact your admin.")
+        if st.button("⬅️ Back to List"):
+            st.session_state.doctors_master_action = None
+            st.session_state.selected_doctor_id = None
+            st.rerun()
+        return
+
     # Initialize form counter to prevent duplicate keys
     if "doctors_form_counter" not in st.session_state:
         st.session_state.doctors_form_counter = 0
-    
+
     form_id = st.session_state.doctors_form_counter
     st.write("### ➕ Add New Doctor")
-    
-    current_user_id = get_current_user_id()
-    role = st.session_state.get("role", "user")
+
     selected_user_id = st.session_state.get("doctors_master_selected_user", current_user_id)
-    
+
     # Back button
     if st.button("⬅️ Back to List"):
         st.session_state.doctors_master_action = None
         st.session_state.selected_doctor_id = None
         st.rerun()
-    
+
     st.write("---")
-    
-    # Admin sees user selection
-    if role == "admin":
-        users = get_all_users()
-        user_options = {u['id']: u['username'] for u in users}
-        st.info(f"Creating doctor for: **{user_options.get(selected_user_id, 'Unknown')}**")
-    
+
+    # Show which user this doctor is being created for
+    users = get_all_users()
+    user_options = {u['id']: u['username'] for u in users}
+    st.info(f"Creating doctor for: **{user_options.get(selected_user_id, 'Unknown')}**")
+
     # Form
     with st.form(f"add_doctor_form_{form_id}"):
         # Basic info
@@ -176,79 +189,29 @@ def show_add_doctor_form():
         specialization = st.text_input("Specialization", placeholder="Cardiologist")
         phone = st.text_input("Phone", placeholder="+91 98XXXXXXXX")
         clinic_address = st.text_area("Clinic Address", placeholder="123 Main St, City")
-        
+
         st.write("---")
-        
-        # Territories (auto-filled for user, selectable for admin)
+
+        # Territories
         st.write("#### Territories *")
         user_territories = get_user_territories(selected_user_id)
-        
+
         if not user_territories:
             st.error("No territories assigned to this user!")
             st.stop()
-        
-        if role == "user":
-            st.info("Your assigned territories (auto-selected):")
-            for t in user_territories:
-                st.write(f"✓ {t['name']}")
-            selected_territories = [t['id'] for t in user_territories]
-        else:
-            territory_options = {t['id']: t['name'] for t in user_territories}
-            selected_territories = st.multiselect(
-                "Select territories:",
-                options=list(territory_options.keys()),
-                default=list(territory_options.keys()),
-                format_func=lambda x: territory_options[x],
-                key=f"terr_multi_{form_id}"
-            )
-            if not selected_territories:
-                selected_territories = []
-        
-        st.write("---")
-        
-        # Stockists
-        st.write("#### Stockists (Optional)")
-        if selected_territories:
-            stockists = get_stockists_by_territories(selected_territories)
-        else:
-            stockists = []
-        
-        if stockists:
-            stockist_options = {s['id']: s['name'] for s in stockists}
-            selected_stockists = st.multiselect(
-                "Choose stockists:",
-                options=list(stockist_options.keys()),
-                format_func=lambda x: stockist_options[x],
-                key=f"stock_multi_{form_id}"
-            )
-        else:
-            selected_stockists = []
-            st.info("No stockists available")
-        
-        st.write("---")
-        
-        # Chemists
-        st.write("#### Linked Chemists (Optional)")
-        if selected_territories:
-            chemists = get_chemists_by_territories(selected_territories)
-        else:
-            chemists = []
-        
-        if chemists:
-            chemist_options = {c['id']: f"{c['name']} ({c['shop_name']})" for c in chemists}
-            selected_chemists = st.multiselect(
-                "Choose chemists:",
-                options=list(chemist_options.keys()),
-                format_func=lambda x: chemist_options[x],
-                key=f"chem_multi_{form_id}"
-            )
-        else:
-            selected_chemists = []
-            st.info("No chemists available")
-        
+
+        territory_options = {t['id']: t['name'] for t in user_territories}
+        selected_territories = st.multiselect(
+            "Select territories:",
+            options=list(territory_options.keys()),
+            default=list(territory_options.keys()),
+            format_func=lambda x: territory_options[x],
+            key=f"terr_multi_{form_id}"
+        )
+
         # Submit
         submitted = st.form_submit_button("💾 Save Doctor", type="primary")
-    
+
     # Handle submission OUTSIDE form
     if submitted:
         if not doctor_name:
@@ -256,44 +219,23 @@ def show_add_doctor_form():
         elif not selected_territories:
             st.error("Please select at least one territory")
         else:
-            st.write("🧪 **TESTING MODE** - Checking database connection...")
-            
             try:
-                # Import what we need
-                from anchors.supabase_client import admin_supabase
-                
-                # Try to create the insert query
-                st.write("Step 1: Creating insert query...")
-                test_query = admin_supabase.table("doctors").insert({
-                    "name": doctor_name,
-                    "specialization": specialization,
-                    "phone": phone,
-                    "clinic_address": clinic_address,
-                    "is_active": True,
-                    "created_by": current_user_id
-                })
-                
-                st.write(f"✅ Query created! Type: {type(test_query)}")
-                st.write(f"Has 'select' method? {hasattr(test_query, 'select')}")
-                st.write(f"Has 'execute' method? {hasattr(test_query, 'execute')}")
-                
-                # Try to execute it
-                st.write("Step 2: Executing query...")
-                result = test_query.execute()
-                
-                st.write(f"✅ Execute worked! Result type: {type(result)}")
-                
-                if hasattr(result, 'data'):
-                    st.write(f"Result has data: {result.data}")
-                    if result.data:
-                        st.success(f"✅ Doctor created! ID: {result.data[0]['id']}")
-                else:
-                    st.write(f"Result: {result}")
-                
+                new_doctor_id = create_doctor(
+                    name=doctor_name,
+                    specialization=specialization,
+                    phone=phone,
+                    clinic_address=clinic_address,
+                    territory_ids=selected_territories,
+                    stockist_ids=[],
+                    chemist_ids=[],
+                    created_by=current_user_id
+                )
+                st.success(f"✅ Doctor added successfully!")
+                st.session_state.doctors_form_counter += 1
+                st.session_state.doctors_master_action = None
+                st.rerun()
             except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
-                import traceback
-                st.code(traceback.format_exc())
+                st.error(f"❌ Error saving doctor: {str(e)}")
 def show_edit_doctor_form():
     """
     Form to edit existing doctor
