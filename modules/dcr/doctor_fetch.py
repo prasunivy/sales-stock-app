@@ -176,8 +176,7 @@ def show_doctor_update_form():
     
     # Locations
     st.write("#### 📍 Locations (Max 3)")
-    st.info("💡 Click 'Fetch Location' to auto-fill GPS coordinates from your phone")
-    
+
     existing_locations = safe_exec(
         admin_supabase.table("doctor_locations")
         .select("*")
@@ -185,21 +184,40 @@ def show_doctor_update_form():
         .eq("is_active", True)
         .order("added_at"),
         "Error loading locations"
-    )
-    
+    ) or []
+
+    # ── Restore GPS coords from URL params if GPS button triggered reload ──
+    params = st.query_params
+    if "gps_lat" in params and "gps_long" in params:
+        try:
+            st.session_state.gps_lat     = float(params["gps_lat"])
+            st.session_state.gps_long    = float(params["gps_long"])
+            st.session_state.gps_fetched = True
+        except Exception:
+            pass
+        # Also restore doctor/territory from params if session state was lost
+        if "gps_doc_id" in params and not st.session_state.get("doctor_fetch_doctor_id"):
+            st.session_state.doctor_fetch_doctor_id = params["gps_doc_id"]
+        if "gps_terr_id" in params and not st.session_state.get("doctor_fetch_territory"):
+            st.session_state.doctor_fetch_territory = params["gps_terr_id"]
+        if "gps_mode" in params and not st.session_state.get("doctor_fetch_mode"):
+            st.session_state.doctor_fetch_mode = params["gps_mode"]
+        # Clear GPS params from URL now that we've read them
+        st.query_params.clear()
+
     # Show existing locations
     for idx, loc in enumerate(existing_locations):
         with st.expander(f"Location {idx+1}: {loc['location_name']}"):
             st.write(f"📍 Lat: {loc['latitude']}, Long: {loc['longitude']}")
-            st.write(f"Added: {loc['added_at']}")
-    
+            st.write(f"Added: {loc['added_at'][:10]}")
+
     # New location form (if under 3)
     if len(existing_locations) < 3:
         st.write(f"**Add New Location ({len(existing_locations)}/3 saved)**")
 
         import streamlit.components.v1 as components
 
-        # Initialize GPS coords in session state
+        # Initialize GPS session state
         if "gps_lat" not in st.session_state:
             st.session_state.gps_lat = 0.0
         if "gps_long" not in st.session_state:
@@ -207,10 +225,24 @@ def show_doctor_update_form():
         if "gps_fetched" not in st.session_state:
             st.session_state.gps_fetched = False
 
-        # ── Step 1: GPS fetch button ──────────────────────────────
-        components.html("""
+        # Show captured coords if already fetched
+        if st.session_state.gps_fetched:
+            st.success(
+                f"✅ GPS ready — "
+                f"Lat: **{st.session_state.gps_lat:.6f}** | "
+                f"Long: **{st.session_state.gps_long:.6f}**"
+            )
+
+        # Build the redirect URL with GPS coords + doctor context embedded
+        # JavaScript fetches GPS then redirects to same page with all params in URL
+        # Streamlit reads them on reload and restores full session state
+        doc_id_for_js   = str(doctor_id)
+        terr_id_for_js  = str(st.session_state.get("doctor_fetch_territory", ""))
+        mode_for_js     = str(st.session_state.get("doctor_fetch_mode", "UPDATE"))
+
+        components.html(f"""
             <style>
-                #gps-btn {
+                #gps-btn {{
                     background-color: #1a6b5a;
                     color: white;
                     border: none;
@@ -220,127 +252,90 @@ def show_doctor_update_form():
                     cursor: pointer;
                     width: 100%;
                     margin-top: 4px;
-                }
-                #gps-btn:hover { background-color: #145249; }
-                #gps-btn:disabled { background-color: #888; cursor: not-allowed; }
-                #gps-status {
+                }}
+                #gps-btn:hover {{ background-color: #145249; }}
+                #gps-btn:disabled {{ background-color: #888; cursor: not-allowed; }}
+                #gps-status {{
                     font-size: 13px;
                     margin-top: 8px;
                     min-height: 20px;
                     font-weight: bold;
-                }
+                }}
             </style>
 
             <button id="gps-btn" onclick="fetchGPS()">📍 Fetch My Current Location</button>
             <div id="gps-status"></div>
 
             <script>
-            function fetchGPS() {
+            function fetchGPS() {{
                 var btn    = document.getElementById('gps-btn');
                 var status = document.getElementById('gps-status');
 
                 btn.disabled  = true;
                 btn.innerText = '⏳ Fetching GPS... (may take 10-20 sec)';
                 status.style.color = '#333';
-                status.innerText = 'Waiting for GPS signal...';
+                status.innerText   = 'Waiting for GPS signal...';
 
-                if (!navigator.geolocation) {
+                if (!navigator.geolocation) {{
                     status.style.color = '#c0392b';
-                    status.innerText = '❌ GPS not supported on this browser.';
+                    status.innerText   = '❌ GPS not supported on this browser.';
                     btn.disabled  = false;
                     btn.innerText = '📍 Fetch My Current Location';
                     return;
-                }
+                }}
 
                 navigator.geolocation.getCurrentPosition(
-                    function(pos) {
-                        var lat = pos.coords.latitude.toFixed(8);
-                        var lon = pos.coords.longitude.toFixed(8);
+                    function(pos) {{
+                        var lat  = pos.coords.latitude.toFixed(8);
+                        var lon  = pos.coords.longitude.toFixed(8);
 
                         status.style.color = '#1a6b5a';
-                        status.innerText = '✅ GPS captured: ' + lat + ', ' + lon
-                            + ' — scroll down, coordinates are filled. Enter a name and save.';
-                        btn.disabled  = false;
-                        btn.innerText = '📍 Fetch Again';
+                        status.innerText   = '✅ Got location! Saving to page...';
 
-                        // Write into Streamlit's hidden input field and trigger change
-                        var inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                        for (var i = 0; i < inputs.length; i++) {
-                            if (inputs[i].getAttribute('aria-label') === 'gps_coords_input') {
-                                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                                    window.parent.HTMLInputElement.prototype, 'value').set;
-                                nativeInputValueSetter.call(inputs[i], lat + ',' + lon);
-                                inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
-                                break;
-                            }
-                        }
-                    },
-                    function(err) {
-                        var msgs = {
+                        // Redirect with GPS coords AND doctor context in URL
+                        // So Streamlit can restore everything after reload
+                        var base = window.parent.location.href.split('?')[0];
+                        var url  = base
+                            + '?gps_lat='    + lat
+                            + '&gps_long='   + lon
+                            + '&gps_doc_id=' + '{doc_id_for_js}'
+                            + '&gps_terr_id='+ '{terr_id_for_js}'
+                            + '&gps_mode='   + '{mode_for_js}';
+                        window.parent.location.href = url;
+                    }},
+                    function(err) {{
+                        var msgs = {{
                             1: '❌ Permission denied. Go to Settings > Browser > Location and allow access.',
                             2: '❌ GPS unavailable. Move to an open area and try again.',
                             3: '❌ Timed out. Please try again.'
-                        };
+                        }};
                         status.style.color = '#c0392b';
-                        status.innerText = msgs[err.code] || '❌ GPS error: ' + err.message;
+                        status.innerText   = msgs[err.code] || '❌ GPS error: ' + err.message;
                         btn.disabled  = false;
                         btn.innerText = '📍 Fetch My Current Location';
-                    },
-                    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+                    }},
+                    {{ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }}
                 );
-            }
+            }}
             </script>
         """, height=120)
 
-        # ── Hidden input that JavaScript writes lat,long into ─────
-        # Streamlit detects the change and reruns, storing in session state
-        raw_coords = st.text_input(
-            "gps_coords_input",
-            value="",
-            key="gps_coords_raw",
-            label_visibility="collapsed"
-        )
-
-        # When JS writes "lat,long" into the hidden input, parse and store
-        if raw_coords and ',' in raw_coords:
-            try:
-                parts = raw_coords.strip().split(',')
-                parsed_lat  = float(parts[0])
-                parsed_long = float(parts[1])
-                # Only update if different — avoids infinite rerun loop
-                if (parsed_lat  != st.session_state.gps_lat or
-                        parsed_long != st.session_state.gps_long):
-                    st.session_state.gps_lat     = parsed_lat
-                    st.session_state.gps_long    = parsed_long
-                    st.session_state.gps_fetched = True
-            except Exception:
-                pass
-
-        # ── Step 2: Show captured coordinates ─────────────────────
-        if st.session_state.gps_fetched:
-            st.success(
-                f"✅ GPS coordinates ready — "
-                f"Lat: **{st.session_state.gps_lat:.6f}** | "
-                f"Long: **{st.session_state.gps_long:.6f}**"
-            )
-
+        # Lat / Long display (read-only, filled from session state after GPS fetch)
         col1, col2 = st.columns(2)
         with col1:
-            new_lat  = st.number_input(
+            st.text_input(
                 "Latitude",
-                format="%.8f",
-                value=st.session_state.gps_lat,
-                key="loc_lat_input"
+                value=f"{st.session_state.gps_lat:.8f}" if st.session_state.gps_fetched else "Not fetched yet",
+                disabled=True
             )
         with col2:
-            new_long = st.number_input(
+            st.text_input(
                 "Longitude",
-                format="%.8f",
-                value=st.session_state.gps_long,
-                key="loc_long_input"
+                value=f"{st.session_state.gps_long:.8f}" if st.session_state.gps_fetched else "Not fetched yet",
+                disabled=True
             )
 
-        # ── Step 3: Location name + Save button ───────────────────
+        # Location name + Save button
         new_loc_name = st.text_input(
             "Location Name *",
             placeholder="e.g., City Hospital Main Gate",
@@ -350,7 +345,7 @@ def show_doctor_update_form():
         if st.button("📍 Save This Location", type="primary", key="save_location_btn"):
             if not new_loc_name or not new_loc_name.strip():
                 st.error("❌ Please enter a location name before saving.")
-            elif new_lat == 0.0 and new_long == 0.0:
+            elif not st.session_state.gps_fetched or (st.session_state.gps_lat == 0.0 and st.session_state.gps_long == 0.0):
                 st.error("❌ Please fetch your GPS location first.")
             else:
                 current_user_id = get_current_user_id()
@@ -358,8 +353,8 @@ def show_doctor_update_form():
                     admin_supabase.table("doctor_locations").insert({
                         "doctor_id": doctor_id,
                         "location_name": new_loc_name.strip(),
-                        "latitude": new_lat,
-                        "longitude": new_long,
+                        "latitude": st.session_state.gps_lat,
+                        "longitude": st.session_state.gps_long,
                         "added_by": current_user_id
                     }),
                     "Error adding location"
