@@ -12,6 +12,7 @@ from modules.dcr.masters_database import (
     delete_doctor_soft,
     get_user_territories,
     get_stockists_by_territories,
+    get_chemists_by_territories,
     get_all_users
 )
 from modules.dcr.dcr_helpers import get_current_user_id
