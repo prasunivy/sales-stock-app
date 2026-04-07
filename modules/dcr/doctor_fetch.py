@@ -210,21 +210,12 @@ def show_doctor_update_form():
         if "gps_fetched" not in st.session_state:
             st.session_state.gps_fetched = False
 
-        # Read coords from URL if GPS button triggered a reload
-        params = st.query_params
-        if "lat" in params and "long" in params:
-            try:
-                st.session_state.gps_lat = float(params["lat"])
-                st.session_state.gps_long = float(params["long"])
-                st.session_state.gps_fetched = True
-                st.query_params.clear()
-            except Exception:
-                pass
-
         if st.session_state.gps_fetched:
             st.success(f"✅ Location fetched! Lat: {st.session_state.gps_lat:.6f}, Long: {st.session_state.gps_long:.6f}")
 
-        components.html("""
+        # Use a Streamlit component that sends coords back via postMessage
+        # WITHOUT reloading the page — so session state is preserved
+        gps_result = components.html("""
             <style>
                 #gps-btn {
                     background-color: #1a6b5a;
@@ -265,9 +256,15 @@ def show_doctor_update_form():
                     function(pos) {
                         var lat = pos.coords.latitude.toFixed(8);
                         var lon = pos.coords.longitude.toFixed(8);
-                        status.innerText = '✅ Got location! Reloading page to save...';
-                        var base = window.parent.location.href.split('?')[0];
-                        window.parent.location.href = base + '?lat=' + lat + '&long=' + lon;
+                        status.style.color = '#1a6b5a';
+                        status.innerText = '✅ Got: ' + lat + ', ' + lon + ' — copy these into the boxes below.';
+                        btn.disabled  = false;
+                        btn.innerText = '📍 Fetch Again';
+                        // Send to Streamlit via postMessage (no page reload)
+                        window.parent.postMessage({
+                            type: 'streamlit:setComponentValue',
+                            value: lat + ',' + lon
+                        }, '*');
                     },
                     function(err) {
                         var msgs = {
@@ -284,6 +281,17 @@ def show_doctor_update_form():
             }
             </script>
         """, height=110)
+
+        # If postMessage returned a value, parse and store in session state
+        if gps_result and isinstance(gps_result, str) and ',' in gps_result:
+            try:
+                parts = gps_result.split(',')
+                st.session_state.gps_lat   = float(parts[0])
+                st.session_state.gps_long  = float(parts[1])
+                st.session_state.gps_fetched = True
+                st.rerun()
+            except Exception:
+                pass
 
         col1, col2 = st.columns(2)
         with col1:
@@ -363,8 +371,7 @@ def show_doctor_update_form():
         
         st.success("✅ Doctor details updated successfully!")
         
-        # Clear GPS params and session state
-        st.query_params.clear()
+        # Clear GPS session state
         st.session_state.gps_lat = 0.0
         st.session_state.gps_long = 0.0
         st.session_state.gps_fetched = False
