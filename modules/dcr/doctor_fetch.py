@@ -352,7 +352,7 @@ def show_doctor_update_form():
 def show_capture_location_flow():
     """
     Capture GPS location and link it to a doctor.
-    Step 1: Fetch GPS coordinates
+    Step 1: Fetch GPS → coordinates shown on screen → user enters them → Save & Next
     Step 2: Select Territory
     Step 3: Select Doctor → Save
     """
@@ -370,8 +370,12 @@ def show_capture_location_flow():
 
     # ── STEP 1: GPS Fetch ─────────────────────────────────────
     if not st.session_state.gps_fetched:
-        st.info("📌 Step 1 of 3 — Stand at the doctor's location and fetch your GPS coordinates.")
+        st.info("📌 **Step 1 of 3** — Stand at the doctor's location. "
+                "Click the button below to get your GPS coordinates, "
+                "then enter them in the boxes that appear and click **Save & Next**.")
 
+        # JavaScript fetches GPS and displays coords in a large clear box
+        # No redirect needed — user copies the values into the Streamlit inputs below
         components.html("""
             <style>
                 #gps-btn {
@@ -383,30 +387,134 @@ def show_capture_location_flow():
                     border-radius: 8px;
                     cursor: pointer;
                     width: 100%;
-                    margin-top: 4px;
                 }
                 #gps-btn:hover { background-color: #145249; }
                 #gps-btn:disabled { background-color: #888; cursor: not-allowed; }
-                #gps-status {
-                    font-size: 14px;
-                    margin-top: 10px;
-                    min-height: 22px;
+                #gps-result {
+                    display: none;
+                    background: #d4edda;
+                    border: 2px solid #1a6b5a;
+                    border-radius: 10px;
+                    padding: 16px;
+                    margin-top: 14px;
+                }
+                #gps-result .label {
+                    font-size: 13px;
+                    color: #155724;
+                    margin-bottom: 10px;
+                    font-weight: 600;
+                    text-align: center;
+                }
+                .coord-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    background: white;
+                    border-radius: 8px;
+                    padding: 10px 14px;
+                    margin-bottom: 8px;
+                }
+                .coord-label {
+                    font-size: 13px;
+                    color: #5a7268;
+                    font-weight: 600;
+                    width: 40px;
+                }
+                .coord-value {
+                    font-size: 18px;
                     font-weight: bold;
+                    color: #1a6b5a;
+                    flex: 1;
+                    text-align: center;
+                    letter-spacing: 0.5px;
+                }
+                .copy-btn {
+                    background: #1a6b5a;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 6px 14px;
+                    font-size: 13px;
+                    cursor: pointer;
+                    white-space: nowrap;
+                }
+                .copy-btn:hover { background: #145249; }
+                .copy-btn.copied { background: #28a745; }
+                #gps-result .instruction {
+                    font-size: 13px;
+                    color: #155724;
+                    margin-top: 8px;
+                    text-align: center;
+                }
+                #gps-status {
+                    font-size: 13px;
+                    margin-top: 10px;
+                    font-weight: bold;
+                    min-height: 20px;
                 }
             </style>
 
             <button id="gps-btn" onclick="fetchGPS()">📍 Fetch My Current Location</button>
             <div id="gps-status"></div>
 
+            <div id="gps-result">
+                <div class="label">✅ GPS Coordinates Captured — tap 📋 Copy then paste into the box below</div>
+
+                <div class="coord-row">
+                    <span class="coord-label">Lat</span>
+                    <span class="coord-value" id="lat-display">—</span>
+                    <button class="copy-btn" id="copy-lat-btn" onclick="copyCoord('lat-display','copy-lat-btn')">📋 Copy</button>
+                </div>
+
+                <div class="coord-row">
+                    <span class="coord-label">Long</span>
+                    <span class="coord-value" id="long-display">—</span>
+                    <button class="copy-btn" id="copy-long-btn" onclick="copyCoord('long-display','copy-long-btn')">📋 Copy</button>
+                </div>
+
+                <div class="instruction">
+                    👇 Paste each value into the Latitude / Longitude boxes below, then click <b>Save & Next</b>
+                </div>
+            </div>
+
             <script>
+            function copyCoord(spanId, btnId) {
+                var text = document.getElementById(spanId).innerText;
+                var btn  = document.getElementById(btnId);
+                navigator.clipboard.writeText(text).then(function() {
+                    btn.innerText = '✅ Copied!';
+                    btn.classList.add('copied');
+                    setTimeout(function() {
+                        btn.innerText = '📋 Copy';
+                        btn.classList.remove('copied');
+                    }, 2000);
+                }).catch(function() {
+                    // Fallback for older browsers
+                    var el = document.createElement('textarea');
+                    el.value = text;
+                    document.body.appendChild(el);
+                    el.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(el);
+                    btn.innerText = '✅ Copied!';
+                    btn.classList.add('copied');
+                    setTimeout(function() {
+                        btn.innerText = '📋 Copy';
+                        btn.classList.remove('copied');
+                    }, 2000);
+                });
+            }
+
             function fetchGPS() {
                 var btn    = document.getElementById('gps-btn');
                 var status = document.getElementById('gps-status');
+                var result = document.getElementById('gps-result');
 
                 btn.disabled  = true;
                 btn.innerText = '⏳ Fetching GPS... (may take 10-20 sec)';
                 status.style.color = '#333';
                 status.innerText   = 'Waiting for GPS signal...';
+                result.style.display = 'none';
 
                 if (!navigator.geolocation) {
                     status.style.color = '#c0392b';
@@ -418,19 +526,17 @@ def show_capture_location_flow():
 
                 navigator.geolocation.getCurrentPosition(
                     function(pos) {
-                        var lat = pos.coords.latitude.toFixed(8);
-                        var lon = pos.coords.longitude.toFixed(8);
+                        var lat = pos.coords.latitude.toFixed(6);
+                        var lon = pos.coords.longitude.toFixed(6);
+
+                        document.getElementById('lat-display').innerText  = lat;
+                        document.getElementById('long-display').innerText = lon;
+                        result.style.display = 'block';
 
                         status.style.color = '#1a6b5a';
-                        status.innerText   = '✅ Got it! ' + lat + ', ' + lon + ' — redirecting...';
-
-                        // Redirect iframe with coords + mode in URL
-                        var base = window.location.href.split('?')[0];
-                        var url  = base
-                            + '?gps_lat='  + lat
-                            + '&gps_long=' + lon
-                            + '&gps_mode=CAPTURE';
-                        window.location.href = url;
+                        status.innerText   = '✅ Done! Copy each value and paste into the boxes below.';
+                        btn.disabled  = false;
+                        btn.innerText = '🔄 Fetch Again';
                     },
                     function(err) {
                         var msgs = {
@@ -447,11 +553,39 @@ def show_capture_location_flow():
                 );
             }
             </script>
-        """, height=130)
+        """, height=340)
 
-        if st.button("⬅️ Back to Home", key="capture_back_step1"):
-            st.session_state.doctor_fetch_mode = None
-            st.rerun()
+        st.write("")
+        st.write("**Enter coordinates shown above:**")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            entered_lat = st.number_input(
+                "Latitude", format="%.6f",
+                value=0.0, step=0.000001,
+                key="capture_lat_input"
+            )
+        with col2:
+            entered_long = st.number_input(
+                "Longitude", format="%.6f",
+                value=0.0, step=0.000001,
+                key="capture_long_input"
+            )
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("Save & Next ➡️", type="primary", key="capture_coords_next"):
+                if entered_lat == 0.0 and entered_long == 0.0:
+                    st.error("❌ Please fetch GPS and enter the coordinates first.")
+                else:
+                    st.session_state.gps_lat     = entered_lat
+                    st.session_state.gps_long    = entered_long
+                    st.session_state.gps_fetched = True
+                    st.rerun()
+        with col_b:
+            if st.button("⬅️ Back to Home", key="capture_back_step1"):
+                st.session_state.doctor_fetch_mode = None
+                st.rerun()
         return
 
     # ── Coordinates captured — show them ─────────────────────
