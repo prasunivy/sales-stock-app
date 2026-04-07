@@ -197,10 +197,9 @@ def show_doctor_update_form():
     if len(existing_locations) < 3:
         st.write(f"**Add New Location ({len(existing_locations)}/3 saved)**")
 
-        # ── GPS Location fetcher ──────────────────────────────────
         import streamlit.components.v1 as components
 
-        # Initialize GPS coords in session state if not present
+        # Initialize GPS coords in session state
         if "gps_lat" not in st.session_state:
             st.session_state.gps_lat = 0.0
         if "gps_long" not in st.session_state:
@@ -208,9 +207,8 @@ def show_doctor_update_form():
         if "gps_fetched" not in st.session_state:
             st.session_state.gps_fetched = False
 
-        # Use a Streamlit component that sends coords back via postMessage
-        # WITHOUT reloading the page — so session state is preserved
-        gps_result = components.html("""
+        # ── Step 1: GPS fetch button ──────────────────────────────
+        components.html("""
             <style>
                 #gps-btn {
                     background-color: #1a6b5a;
@@ -225,7 +223,12 @@ def show_doctor_update_form():
                 }
                 #gps-btn:hover { background-color: #145249; }
                 #gps-btn:disabled { background-color: #888; cursor: not-allowed; }
-                #gps-status { font-size: 13px; margin-top: 8px; color: #333; min-height: 20px; }
+                #gps-status {
+                    font-size: 13px;
+                    margin-top: 8px;
+                    min-height: 20px;
+                    font-weight: bold;
+                }
             </style>
 
             <button id="gps-btn" onclick="fetchGPS()">📍 Fetch My Current Location</button>
@@ -238,9 +241,11 @@ def show_doctor_update_form():
 
                 btn.disabled  = true;
                 btn.innerText = '⏳ Fetching GPS... (may take 10-20 sec)';
+                status.style.color = '#333';
                 status.innerText = 'Waiting for GPS signal...';
 
                 if (!navigator.geolocation) {
+                    status.style.color = '#c0392b';
                     status.innerText = '❌ GPS not supported on this browser.';
                     btn.disabled  = false;
                     btn.innerText = '📍 Fetch My Current Location';
@@ -251,20 +256,28 @@ def show_doctor_update_form():
                     function(pos) {
                         var lat = pos.coords.latitude.toFixed(8);
                         var lon = pos.coords.longitude.toFixed(8);
+
                         status.style.color = '#1a6b5a';
-                        status.style.fontWeight = 'bold';
-                        status.innerText = '✅ GPS captured: ' + lat + ', ' + lon + ' — coordinates filled below. Enter a name and save.';
+                        status.innerText = '✅ GPS captured: ' + lat + ', ' + lon
+                            + ' — scroll down, coordinates are filled. Enter a name and save.';
                         btn.disabled  = false;
                         btn.innerText = '📍 Fetch Again';
-                        // Send to Streamlit via postMessage (no page reload)
-                        window.parent.postMessage({
-                            type: 'streamlit:setComponentValue',
-                            value: lat + ',' + lon
-                        }, '*');
+
+                        // Write into Streamlit's hidden input field and trigger change
+                        var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                        for (var i = 0; i < inputs.length; i++) {
+                            if (inputs[i].getAttribute('aria-label') === 'gps_coords_input') {
+                                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                                    window.parent.HTMLInputElement.prototype, 'value').set;
+                                nativeInputValueSetter.call(inputs[i], lat + ',' + lon);
+                                inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+                                break;
+                            }
+                        }
                     },
                     function(err) {
                         var msgs = {
-                            1: '❌ Permission denied. Go to phone Settings > Browser > Location and allow access, then try again.',
+                            1: '❌ Permission denied. Go to Settings > Browser > Location and allow access.',
                             2: '❌ GPS unavailable. Move to an open area and try again.',
                             3: '❌ Timed out. Please try again.'
                         };
@@ -277,36 +290,62 @@ def show_doctor_update_form():
                 );
             }
             </script>
-        """, height=110)
+        """, height=120)
 
-        # If postMessage returned a value, parse and store in session state
-        if gps_result and isinstance(gps_result, str) and ',' in gps_result:
+        # ── Hidden input that JavaScript writes lat,long into ─────
+        # Streamlit detects the change and reruns, storing in session state
+        raw_coords = st.text_input(
+            "gps_coords_input",
+            value="",
+            key="gps_coords_raw",
+            label_visibility="collapsed"
+        )
+
+        # When JS writes "lat,long" into the hidden input, parse and store
+        if raw_coords and ',' in raw_coords:
             try:
-                parts = gps_result.split(',')
-                st.session_state.gps_lat    = float(parts[0])
-                st.session_state.gps_long   = float(parts[1])
-                st.session_state.gps_fetched = True
-                st.rerun()
+                parts = raw_coords.strip().split(',')
+                parsed_lat  = float(parts[0])
+                parsed_long = float(parts[1])
+                # Only update if different — avoids infinite rerun loop
+                if (parsed_lat  != st.session_state.gps_lat or
+                        parsed_long != st.session_state.gps_long):
+                    st.session_state.gps_lat     = parsed_lat
+                    st.session_state.gps_long    = parsed_long
+                    st.session_state.gps_fetched = True
             except Exception:
                 pass
 
-        # Show confirmation box when GPS is fetched
+        # ── Step 2: Show captured coordinates ─────────────────────
         if st.session_state.gps_fetched:
             st.success(
-                f"✅ GPS coordinates captured and filled below:\n\n"
-                f"📍 **Lat:** {st.session_state.gps_lat:.6f} &nbsp;&nbsp; "
-                f"**Long:** {st.session_state.gps_long:.6f}"
+                f"✅ GPS coordinates ready — "
+                f"Lat: **{st.session_state.gps_lat:.6f}** | "
+                f"Long: **{st.session_state.gps_long:.6f}**"
             )
 
-        # Coordinates auto-filled from session state
         col1, col2 = st.columns(2)
         with col1:
-            new_lat  = st.number_input("Latitude",  format="%.8f", value=st.session_state.gps_lat)
+            new_lat  = st.number_input(
+                "Latitude",
+                format="%.8f",
+                value=st.session_state.gps_lat,
+                key="loc_lat_input"
+            )
         with col2:
-            new_long = st.number_input("Longitude", format="%.8f", value=st.session_state.gps_long)
+            new_long = st.number_input(
+                "Longitude",
+                format="%.8f",
+                value=st.session_state.gps_long,
+                key="loc_long_input"
+            )
 
-        # Location name + dedicated save button
-        new_loc_name = st.text_input("Location Name *", placeholder="e.g., City Hospital Main Gate")
+        # ── Step 3: Location name + Save button ───────────────────
+        new_loc_name = st.text_input(
+            "Location Name *",
+            placeholder="e.g., City Hospital Main Gate",
+            key="loc_name_input"
+        )
 
         if st.button("📍 Save This Location", type="primary", key="save_location_btn"):
             if not new_loc_name or not new_loc_name.strip():
