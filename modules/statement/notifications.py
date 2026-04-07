@@ -55,6 +55,9 @@ ACTION_CONFIG = {
     "DOCTOR_INPUT_DELETED":       ("🗑️",  "Doctor Input Deleted",       "red"),
     "DOCTOR_OUTPUT_SAVED":        ("📤", "Doctor Output Saved",        "green"),
     "DOCTOR_OUTPUT_DELETED":      ("🗑️",  "Doctor Output Deleted",      "red"),
+    # Doctor / Chemist Master
+    "DOCTOR_ADDED":               ("👨‍⚕️", "Doctor Added",               "green"),
+    "CHEMIST_ADDED":              ("🏪", "Chemist Added",              "green"),
 }
 
 COLOR_MAP = {
@@ -131,7 +134,8 @@ def run_notifications():
             # NEW ↓
             "📦 OFS":         ["OFS_SUBMITTED", "OFS_DELETED"],
             "💊 Doctor I/O": ["DOCTOR_INPUT_SAVED", "DOCTOR_INPUT_UPDATED", "DOCTOR_INPUT_DELETED",
-                              "DOCTOR_OUTPUT_SAVED", "DOCTOR_OUTPUT_DELETED"],
+                              "DOCTOR_OUTPUT_SAVED", "DOCTOR_OUTPUT_DELETED",
+                              "DOCTOR_ADDED", "CHEMIST_ADDED"],
         }
         selected_module = st.selectbox("Filter by Module", list(module_options.keys()), key="notif_module_filter")
 
