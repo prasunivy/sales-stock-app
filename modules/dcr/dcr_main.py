@@ -416,11 +416,31 @@ def show_stage_1_header():
         return
     
     selected_user_id = current_user_id
-    
+
+    # ── Pre-fill saved values when resuming a draft ───────────────
+    saved_date        = st.session_state.get("dcr_report_date")
+    saved_area_type   = st.session_state.get("dcr_area_type")
+    saved_territories = st.session_state.get("dcr_territory_ids") or []
+
+    # Resolve saved date — could be a string or a date object
+    default_date = date.today()
+    if saved_date:
+        try:
+            if isinstance(saved_date, str):
+                default_date = date.fromisoformat(saved_date)
+            else:
+                default_date = saved_date
+        except Exception:
+            default_date = date.today()
+
+    # Resolve saved area type index
+    area_options = ["HQ", "EX_STATION", "OUTSTATION", "MEETING"]
+    default_area_index = area_options.index(saved_area_type) if saved_area_type in area_options else 0
+
     # Date picker
     report_date = st.date_input(
         "Report Date",
-        value=date.today(),
+        value=default_date,
         max_value=date.today(),
         help="Cannot select future dates"
     )
@@ -445,20 +465,21 @@ def show_stage_1_header():
                 st.error("❌ Another DCR already exists for this date. Cannot change to this date.")
                 return
     
-    # Area type
+    # Area type — pre-selected to saved value when resuming
     area_type = st.radio(
         "Area Type",
-        options=["HQ", "EX_STATION", "OUTSTATION", "MEETING"],
+        options=area_options,
         format_func=lambda x: {
             "HQ": "🏢 Headquarters",
             "EX_STATION": "🚉 Ex-Station",
             "OUTSTATION": "🌍 Outstation",
             "MEETING": "👥 Meeting"
         }[x],
+        index=default_area_index,
         horizontal=True
     )
     
-    # Territory selection
+    # Territory selection — pre-selected to saved territories when resuming
     selected_territories = []
     if area_type != "MEETING":
         st.write("**Select Territories**")
@@ -469,10 +490,15 @@ def show_stage_1_header():
             st.warning("⚠️ No territories assigned")
             st.info("**For testing:** Select MEETING area type")
             return
-        
+
+        # Only keep saved territories that are valid for this user
+        valid_ids = [t['id'] for t in user_territories]
+        default_territories = [tid for tid in saved_territories if tid in valid_ids]
+
         selected_territories = st.multiselect(
             "Territories worked today",
-            options=[t['id'] for t in user_territories],
+            options=valid_ids,
+            default=default_territories,
             format_func=lambda x: next((t['name'] for t in user_territories if t['id'] == x), x)
         )
         
