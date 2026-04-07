@@ -263,23 +263,6 @@ def run_ai_assistant():
         with st.chat_message("assistant"):
             st.write(turn["a"])
 
-    # Suggested questions when empty
-    if not st.session_state.ai_chat:
-        st.markdown("**Try asking:**")
-        suggestions = [
-            "What are the total payments received this month?",
-            "Which stockists have outstanding invoices?",
-            "What is the closing stock of IVYNORMRZ at CNF?",
-            "Show me credit notes raised in March",
-            "How many invoices were raised this month?",
-        ]
-        cols = st.columns(2)
-        for i, s in enumerate(suggestions):
-            with cols[i % 2]:
-                if st.button(s, key=f"sug_{i}", use_container_width=True):
-                    st.session_state["_ai_pending"] = s
-                    st.rerun()
-
     # Process pending suggestion click
     if "_ai_pending" in st.session_state:
         pending = st.session_state.pop("_ai_pending")
