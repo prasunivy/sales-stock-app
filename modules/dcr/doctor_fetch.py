@@ -197,8 +197,6 @@ def show_doctor_update_form():
     if len(existing_locations) < 3:
         st.write(f"**Add New Location ({len(existing_locations)}/3 saved)**")
 
-        new_loc_name = st.text_input("Location Name", placeholder="e.g., City Hospital Main Gate")
-
         # ── GPS Location fetcher ──────────────────────────────────
         import streamlit.components.v1 as components
 
@@ -209,9 +207,6 @@ def show_doctor_update_form():
             st.session_state.gps_long = 0.0
         if "gps_fetched" not in st.session_state:
             st.session_state.gps_fetched = False
-
-        if st.session_state.gps_fetched:
-            st.success(f"✅ Location fetched! Lat: {st.session_state.gps_lat:.6f}, Long: {st.session_state.gps_long:.6f}")
 
         # Use a Streamlit component that sends coords back via postMessage
         # WITHOUT reloading the page — so session state is preserved
@@ -257,7 +252,8 @@ def show_doctor_update_form():
                         var lat = pos.coords.latitude.toFixed(8);
                         var lon = pos.coords.longitude.toFixed(8);
                         status.style.color = '#1a6b5a';
-                        status.innerText = '✅ Got: ' + lat + ', ' + lon + ' — copy these into the boxes below.';
+                        status.style.fontWeight = 'bold';
+                        status.innerText = '✅ GPS captured: ' + lat + ', ' + lon + ' — coordinates filled below. Enter a name and save.';
                         btn.disabled  = false;
                         btn.innerText = '📍 Fetch Again';
                         // Send to Streamlit via postMessage (no page reload)
@@ -272,6 +268,7 @@ def show_doctor_update_form():
                             2: '❌ GPS unavailable. Move to an open area and try again.',
                             3: '❌ Timed out. Please try again.'
                         };
+                        status.style.color = '#c0392b';
                         status.innerText = msgs[err.code] || '❌ GPS error: ' + err.message;
                         btn.disabled  = false;
                         btn.innerText = '📍 Fetch My Current Location';
@@ -286,18 +283,54 @@ def show_doctor_update_form():
         if gps_result and isinstance(gps_result, str) and ',' in gps_result:
             try:
                 parts = gps_result.split(',')
-                st.session_state.gps_lat   = float(parts[0])
-                st.session_state.gps_long  = float(parts[1])
+                st.session_state.gps_lat    = float(parts[0])
+                st.session_state.gps_long   = float(parts[1])
                 st.session_state.gps_fetched = True
                 st.rerun()
             except Exception:
                 pass
 
+        # Show confirmation box when GPS is fetched
+        if st.session_state.gps_fetched:
+            st.success(
+                f"✅ GPS coordinates captured and filled below:\n\n"
+                f"📍 **Lat:** {st.session_state.gps_lat:.6f} &nbsp;&nbsp; "
+                f"**Long:** {st.session_state.gps_long:.6f}"
+            )
+
+        # Coordinates auto-filled from session state
         col1, col2 = st.columns(2)
         with col1:
             new_lat  = st.number_input("Latitude",  format="%.8f", value=st.session_state.gps_lat)
         with col2:
             new_long = st.number_input("Longitude", format="%.8f", value=st.session_state.gps_long)
+
+        # Location name + dedicated save button
+        new_loc_name = st.text_input("Location Name *", placeholder="e.g., City Hospital Main Gate")
+
+        if st.button("📍 Save This Location", type="primary", key="save_location_btn"):
+            if not new_loc_name or not new_loc_name.strip():
+                st.error("❌ Please enter a location name before saving.")
+            elif new_lat == 0.0 and new_long == 0.0:
+                st.error("❌ Please fetch your GPS location first.")
+            else:
+                current_user_id = get_current_user_id()
+                safe_exec(
+                    admin_supabase.table("doctor_locations").insert({
+                        "doctor_id": doctor_id,
+                        "location_name": new_loc_name.strip(),
+                        "latitude": new_lat,
+                        "longitude": new_long,
+                        "added_by": current_user_id
+                    }),
+                    "Error adding location"
+                )
+                st.success(f"✅ Location '{new_loc_name.strip()}' saved successfully!")
+                # Reset GPS state
+                st.session_state.gps_lat     = 0.0
+                st.session_state.gps_long    = 0.0
+                st.session_state.gps_fetched = False
+                st.rerun()
     
     
     st.write("---")
@@ -343,19 +376,6 @@ def show_doctor_update_form():
                 .update({"date_of_anniversary": str(new_doa), "updated_by": current_user_id})
                 .eq("id", doctor_id),
                 "Error updating DOA"
-            )
-        
-        # Add new location if filled
-        if new_loc_name and (new_lat != 0.0 or new_long != 0.0):
-            safe_exec(
-                admin_supabase.table("doctor_locations").insert({
-                    "doctor_id": doctor_id,
-                    "location_name": new_loc_name,
-                    "latitude": new_lat,
-                    "longitude": new_long,
-                    "added_by": current_user_id
-                }),
-                "Error adding location"
             )
         
         # Add new remark if filled
