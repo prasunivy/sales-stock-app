@@ -46,18 +46,38 @@ def safe_exec(query, error_msg="Database error"):
 
 def check_duplicate_dcr(user_id, report_date):
     """
-    Check if DCR already exists for user on this date
-    Returns True if duplicate exists
+    Check if a SUBMITTED DCR already exists for user on this date.
+    Drafts do NOT block new DCRs — the user can start fresh or resume.
+    Returns True only if a submitted DCR exists for that date.
     """
     result = safe_exec(
         admin_supabase.table("dcr_reports")
         .select("id")
         .eq("user_id", user_id)
         .eq("report_date", str(report_date))
-        .eq("is_deleted", False),
+        .eq("is_deleted", False)
+        .eq("status", "submitted"),
         "Error checking duplicate DCR"
     )
     return len(result) > 0
+
+
+def get_draft_dcr_for_date(user_id, report_date):
+    """
+    Return an existing draft DCR for user on this specific date, or None.
+    Used to offer a 'resume draft' option when the user picks a date
+    that already has an unfinished draft.
+    """
+    result = safe_exec(
+        admin_supabase.table("dcr_reports")
+        .select("id, current_step")
+        .eq("user_id", user_id)
+        .eq("report_date", str(report_date))
+        .eq("is_deleted", False)
+        .eq("status", "draft"),
+        "Error checking draft DCR for date"
+    )
+    return result[0] if result else None
 
 
 def create_dcr_draft(user_id, report_date, area_type, territory_ids, created_by):
