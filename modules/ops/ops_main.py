@@ -391,6 +391,7 @@ def run_ops():
         "🚚 Freight Entries":               "DOCUMENT_BROWSER_FREIGHT",
         "📦 Opening Stock":                 "OPENING_STOCK",
         "💰 Opening Balance":               "OPENING_BALANCE",
+        "📋 View/Edit Opening Entries":     "VIEW_OPENING_ENTRIES",
         "💰 Party Balance":                 "PARTY_BALANCE",
         "📒 Ledger":                        "LEDGER",
         "📦 Stock Ledger":                  "STOCK_LEDGER",
@@ -407,6 +408,7 @@ def run_ops():
         "💰 Payment Register":              "PAYMENT_REGISTER",
         "🔄 Return / Replace":              "RETURN_REPLACE",
         "🔄 Recalculate Balances":          "RECALC_BALANCES",
+        "🔧 Repair Missing Stock Entries":  "REPAIR_STOCK_ENTRIES",
         "📊 OPS Insights":                  "OPS_INSIGHTS",
     }
 
@@ -1142,6 +1144,238 @@ This action will:
                     .execute()
 
                 st.warning("✏️ Previous Opening Balance removed. Re-enter amount.")
+
+
+    # =========================
+    # VIEW / EDIT OPENING ENTRIES
+    # =========================
+    elif section == "VIEW_OPENING_ENTRIES":
+        st.subheader("📋 View & Edit Opening Entries")
+        st.caption("View, edit, or delete Opening Balance and Opening Stock entries")
+
+        tab1, tab2 = st.tabs(["💰 Opening Balances", "📦 Opening Stock"])
+
+        # ─────────────────────────────────────────────────────────────
+        # TAB 1 — OPENING BALANCES
+        # ─────────────────────────────────────────────────────────────
+        with tab1:
+            st.write("#### Opening Balances (from financial_ledger)")
+
+            try:
+                ob_rows = admin_supabase.table("financial_ledger") \
+                    .select("id, party_id, txn_date, debit, credit, ops_document_id") \
+                    .eq("narration", "Opening Balance") \
+                    .order("txn_date") \
+                    .execute().data or []
+            except Exception as e:
+                st.error(f"Error loading opening balances: {e}")
+                ob_rows = []
+
+            if not ob_rows:
+                st.info("No opening balance entries found.")
+            else:
+                all_stockists_map = {s["id"]: s["name"] for s in st.session_state.stockists_master}
+                all_cnfs_map      = {c["id"]: c["name"] for c in st.session_state.cnfs_master}
+
+                def _resolve_party(party_id):
+                    if not party_id:
+                        return "Company"
+                    return all_stockists_map.get(party_id) or all_cnfs_map.get(party_id) or str(party_id)
+
+                for ob_row in ob_rows:
+                    ob_party_name = _resolve_party(ob_row["party_id"])
+                    ob_net = ob_row["debit"] - ob_row["credit"]
+                    ob_label = f"₹{ob_net:,.2f} Dr" if ob_net >= 0 else f"₹{abs(ob_net):,.2f} Cr"
+                    with st.expander(f"🏦 {ob_party_name} — {ob_row['txn_date']} — {ob_label}"):
+                        ob_col1, ob_col2 = st.columns([3, 1])
+                        with ob_col1:
+                            ob_new_amount = st.number_input(
+                                "Amount (positive = Debit, negative = Credit)",
+                                value=float(ob_net),
+                                step=0.01,
+                                key=f"ob_amt_{ob_row['id']}"
+                            )
+                            ob_new_date = st.date_input(
+                                "Date",
+                                value=date.fromisoformat(ob_row["txn_date"]),
+                                key=f"ob_date_{ob_row['id']}"
+                            )
+                        with ob_col2:
+                            st.write("")
+                            st.write("")
+                            if st.button("💾 Update", key=f"ob_upd_{ob_row['id']}"):
+                                try:
+                                    ob_new_debit  = ob_new_amount if ob_new_amount >= 0 else 0
+                                    ob_new_credit = abs(ob_new_amount) if ob_new_amount < 0 else 0
+                                    admin_supabase.table("financial_ledger").update({
+                                        "debit": ob_new_debit,
+                                        "credit": ob_new_credit,
+                                        "txn_date": ob_new_date.isoformat()
+                                    }).eq("id", ob_row["id"]).execute()
+                                    try:
+                                        admin_supabase.table("audit_logs").insert({
+                                            "action": "OB_UPDATED",
+                                            "message": f"Opening Balance updated for {ob_party_name}: ₹{ob_new_amount:,.2f}",
+                                            "performed_by": resolve_user_id(),
+                                            "target_type": "financial_ledger",
+                                            "target_id": str(ob_row["id"])
+                                        }).execute()
+                                    except Exception:
+                                        pass
+                                    st.success("✅ Updated")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Update failed: {e}")
+
+                            if st.button("🗑️ Delete", key=f"ob_del_{ob_row['id']}"):
+                                ob_confirm_key = f"ob_del_confirm_{ob_row['id']}"
+                                if st.session_state.get(ob_confirm_key):
+                                    try:
+                                        admin_supabase.table("financial_ledger") \
+                                            .delete().eq("id", ob_row["id"]).execute()
+                                        if ob_row.get("ops_document_id"):
+                                            ob_ops_check = admin_supabase.table("ops_documents") \
+                                                .select("narration") \
+                                                .eq("id", ob_row["ops_document_id"]) \
+                                                .limit(1).execute().data
+                                            if ob_ops_check and ob_ops_check[0].get("narration") == "Opening Balance":
+                                                admin_supabase.table("ops_documents") \
+                                                    .delete().eq("id", ob_row["ops_document_id"]).execute()
+                                        try:
+                                            admin_supabase.table("audit_logs").insert({
+                                                "action": "OB_DELETED",
+                                                "message": f"Opening Balance deleted for {ob_party_name}",
+                                                "performed_by": resolve_user_id(),
+                                                "target_type": "financial_ledger",
+                                                "target_id": str(ob_row["id"])
+                                            }).execute()
+                                        except Exception:
+                                            pass
+                                        st.success("🗑️ Deleted")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Delete failed: {e}")
+                                else:
+                                    st.session_state[ob_confirm_key] = True
+                                    st.warning("⚠️ Click Delete again to confirm")
+
+        # ─────────────────────────────────────────────────────────────
+        # TAB 2 — OPENING STOCK
+        # ─────────────────────────────────────────────────────────────
+        with tab2:
+            st.write("#### Opening Stock Entries (from stock_ledger)")
+
+            try:
+                os_rows = admin_supabase.table("stock_ledger") \
+                    .select("id, product_id, entity_type, entity_id, txn_date, qty_in, qty_out, narration, ops_document_id") \
+                    .ilike("narration", "Opening Stock%") \
+                    .order("txn_date") \
+                    .execute().data or []
+            except Exception as e:
+                st.error(f"Error loading opening stock: {e}")
+                os_rows = []
+
+            if not os_rows:
+                st.info("No opening stock entries found.")
+            else:
+                os_product_map  = {p["id"]: p["name"] for p in st.session_state.products_master}
+                os_stockist_map = {s["id"]: s["name"] for s in st.session_state.stockists_master}
+                os_cnf_map      = {c["id"]: c["name"] for c in st.session_state.cnfs_master}
+                os_user_map     = {u["id"]: u["username"] for u in st.session_state.users_master}
+
+                def _resolve_os_entity(etype, eid):
+                    if etype == "Company" or not eid:
+                        return "Company"
+                    if etype == "CNF":
+                        return os_cnf_map.get(eid, str(eid))
+                    if etype == "User":
+                        return os_user_map.get(eid, str(eid))
+                    if etype == "Stockist":
+                        return os_stockist_map.get(eid, str(eid))
+                    return str(eid)
+
+                for os_row in os_rows:
+                    os_prod_name   = os_product_map.get(os_row["product_id"], str(os_row["product_id"]))
+                    os_entity_name = _resolve_os_entity(os_row["entity_type"], os_row["entity_id"])
+                    os_qty         = os_row["qty_in"] if os_row["qty_in"] else os_row["qty_out"]
+                    os_direction   = "IN" if os_row["qty_in"] else "OUT"
+
+                    with st.expander(f"📦 {os_prod_name} | {os_entity_name} | {os_row['txn_date']} | {os_qty} units ({os_direction})"):
+                        os_col1, os_col2 = st.columns([3, 1])
+                        with os_col1:
+                            os_new_qty = st.number_input(
+                                "Quantity",
+                                value=float(os_qty),
+                                min_value=0.0,
+                                step=1.0,
+                                key=f"os_qty_{os_row['id']}"
+                            )
+                            os_new_date = st.date_input(
+                                "Date",
+                                value=date.fromisoformat(os_row["txn_date"]),
+                                key=f"os_date_{os_row['id']}"
+                            )
+                        with os_col2:
+                            st.write("")
+                            st.write("")
+                            if st.button("💾 Update", key=f"os_upd_{os_row['id']}"):
+                                try:
+                                    os_update_payload = {
+                                        "txn_date": os_new_date.isoformat(),
+                                        "closing_qty": os_new_qty
+                                    }
+                                    if os_row["qty_in"]:
+                                        os_update_payload["qty_in"] = os_new_qty
+                                    else:
+                                        os_update_payload["qty_out"] = os_new_qty
+                                    admin_supabase.table("stock_ledger") \
+                                        .update(os_update_payload).eq("id", os_row["id"]).execute()
+                                    try:
+                                        admin_supabase.table("audit_logs").insert({
+                                            "action": "OS_UPDATED",
+                                            "message": f"Opening Stock updated: {os_prod_name} @ {os_entity_name} = {os_new_qty} units",
+                                            "performed_by": resolve_user_id(),
+                                            "target_type": "stock_ledger",
+                                            "target_id": str(os_row["id"])
+                                        }).execute()
+                                    except Exception:
+                                        pass
+                                    st.success("✅ Updated")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Update failed: {e}")
+
+                            if st.button("🗑️ Delete", key=f"os_del_{os_row['id']}"):
+                                os_confirm_key = f"os_del_confirm_{os_row['id']}"
+                                if st.session_state.get(os_confirm_key):
+                                    try:
+                                        admin_supabase.table("stock_ledger") \
+                                            .delete().eq("id", os_row["id"]).execute()
+                                        if os_row.get("ops_document_id"):
+                                            os_ops_check = admin_supabase.table("ops_documents") \
+                                                .select("narration") \
+                                                .eq("id", os_row["ops_document_id"]) \
+                                                .limit(1).execute().data
+                                            if os_ops_check and "Opening Stock" in (os_ops_check[0].get("narration") or ""):
+                                                admin_supabase.table("ops_documents") \
+                                                    .delete().eq("id", os_row["ops_document_id"]).execute()
+                                        try:
+                                            admin_supabase.table("audit_logs").insert({
+                                                "action": "OS_DELETED",
+                                                "message": f"Opening Stock deleted: {os_prod_name} @ {os_entity_name}",
+                                                "performed_by": resolve_user_id(),
+                                                "target_type": "stock_ledger",
+                                                "target_id": str(os_row["id"])
+                                            }).execute()
+                                        except Exception:
+                                            pass
+                                        st.success("🗑️ Deleted")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Delete failed: {e}")
+                                else:
+                                    st.session_state[os_confirm_key] = True
+                                    st.warning("⚠️ Click Delete again to confirm")
 
 
     # =========================
@@ -8510,6 +8744,162 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             st.error("❌ Failed to delete freight entry")
                             st.exception(e)
                 st.divider()
+
+
+    # =========================
+    # REPAIR MISSING STOCK ENTRIES
+    # =========================
+    elif section == "REPAIR_STOCK_ENTRIES":
+        st.subheader("🔧 Repair Missing Stock Entries")
+
+        st.info("""
+        **What this does:**
+        Scans every non-deleted OPS document (STOCK_OUT and STOCK_IN) that has ops_lines
+        and checks whether matching stock_ledger entries exist. If any are missing, it
+        creates them.
+
+        **When to use:**
+        If an invoice appears in the Financial Ledger or Document Browser but is absent
+        from the Stock Ledger, the stock INSERT was silently dropped during submission.
+        Run this to repair it without touching anything that already exists.
+        """)
+        st.warning("⚠️ This only INSERTs missing entries — it will never duplicate existing ones.")
+
+        if "repair_stock_done" not in st.session_state:
+            st.session_state.repair_stock_done = False
+        if "repair_stock_log" not in st.session_state:
+            st.session_state.repair_stock_log = []
+
+        if st.session_state.repair_stock_done:
+            repair_log = st.session_state.repair_stock_log
+            st.success(f"✅ Repair complete. {len(repair_log)} missing stock entr{'ies' if len(repair_log) != 1 else 'y'} created.")
+            if repair_log:
+                st.write("**Entries created:**")
+                for repair_entry in repair_log:
+                    st.write(f"- {repair_entry}")
+            else:
+                st.write("No missing entries found — stock ledger is already complete.")
+            if st.button("🔄 Run Again"):
+                st.session_state.repair_stock_done = False
+                st.session_state.repair_stock_log = []
+                st.rerun()
+            st.stop()
+
+        if st.button("▶️ Run Repair", type="primary"):
+            try:
+                with st.spinner("Loading all OPS documents..."):
+                    repair_docs = admin_supabase.table("ops_documents") \
+                        .select("id, ops_no, ops_type, stock_as, from_entity_type, from_entity_id, to_entity_type, to_entity_id, ops_date") \
+                        .in_("ops_type", ["STOCK_OUT", "STOCK_IN"]) \
+                        .eq("is_deleted", False) \
+                        .execute().data or []
+
+                repair_inserted = []
+                repair_errors = []
+                repair_progress = st.progress(0)
+                repair_total = len(repair_docs)
+
+                for repair_i, repair_doc in enumerate(repair_docs):
+                    repair_doc_id      = repair_doc["id"]
+                    repair_ops_no      = repair_doc.get("ops_no", repair_doc_id)
+                    repair_stock_as    = repair_doc.get("stock_as", "")
+                    repair_ops_date    = repair_doc.get("ops_date")
+                    repair_from_etype  = repair_doc.get("from_entity_type")
+                    repair_from_eid    = repair_doc.get("from_entity_id")
+                    repair_to_etype    = repair_doc.get("to_entity_type")
+                    repair_to_eid      = repair_doc.get("to_entity_id")
+                    repair_doc_label   = repair_stock_as.replace("_", " ").title()
+
+                    # Get ops_lines for this document
+                    repair_lines = admin_supabase.table("ops_lines") \
+                        .select("product_id, sale_qty, free_qty") \
+                        .eq("ops_document_id", repair_doc_id) \
+                        .execute().data or []
+
+                    if not repair_lines:
+                        repair_progress.progress((repair_i + 1) / repair_total)
+                        continue
+
+                    # Get existing stock_ledger entries for this document
+                    repair_existing = admin_supabase.table("stock_ledger") \
+                        .select("product_id, entity_type, direction") \
+                        .eq("ops_document_id", repair_doc_id) \
+                        .execute().data or []
+
+                    # Build set of (product_id, entity_type, direction) already present
+                    repair_existing_keys = {
+                        (e["product_id"], e["entity_type"], e["direction"])
+                        for e in repair_existing
+                    }
+
+                    for repair_line in repair_lines:
+                        repair_product_id = repair_line["product_id"]
+                        repair_qty = (repair_line.get("sale_qty") or 0) + (repair_line.get("free_qty") or 0)
+                        if repair_qty <= 0:
+                            continue
+
+                        # Check / create OUT entry for FROM entity
+                        repair_out_key = (repair_product_id, repair_from_etype, "OUT")
+                        if repair_out_key not in repair_existing_keys and repair_from_etype:
+                            try:
+                                admin_supabase.table("stock_ledger").insert({
+                                    "ops_document_id": repair_doc_id,
+                                    "product_id": repair_product_id,
+                                    "entity_type": repair_from_etype,
+                                    "entity_id": repair_from_eid,
+                                    "txn_date": repair_ops_date,
+                                    "qty_in": 0,
+                                    "qty_out": repair_qty,
+                                    "closing_qty": 0,
+                                    "direction": "OUT",
+                                    "narration": f"Stock OUT - {repair_doc_label} - To {repair_to_etype} [REPAIRED]"
+                                }).execute()
+                                repair_existing_keys.add(repair_out_key)
+                                repair_inserted.append(
+                                    f"{repair_ops_no} | OUT | {repair_from_etype} | product {repair_product_id} | qty {repair_qty}"
+                                )
+                            except Exception as repair_ex:
+                                repair_errors.append(f"{repair_ops_no} OUT error: {repair_ex}")
+
+                        # Check / create IN entry for TO entity
+                        # Skip only if doc_stock_as is sample or lot (same rule as original submit)
+                        repair_in_key = (repair_product_id, repair_to_etype, "IN")
+                        if (repair_in_key not in repair_existing_keys
+                                and repair_to_etype
+                                and repair_stock_as not in ["sample", "lot"]):
+                            try:
+                                admin_supabase.table("stock_ledger").insert({
+                                    "ops_document_id": repair_doc_id,
+                                    "product_id": repair_product_id,
+                                    "entity_type": repair_to_etype,
+                                    "entity_id": repair_to_eid,
+                                    "txn_date": repair_ops_date,
+                                    "qty_in": repair_qty,
+                                    "qty_out": 0,
+                                    "closing_qty": 0,
+                                    "direction": "IN",
+                                    "narration": f"Stock IN - {repair_doc_label} - From {repair_from_etype} [REPAIRED]"
+                                }).execute()
+                                repair_existing_keys.add(repair_in_key)
+                                repair_inserted.append(
+                                    f"{repair_ops_no} | IN | {repair_to_etype} | product {repair_product_id} | qty {repair_qty}"
+                                )
+                            except Exception as repair_ex:
+                                repair_errors.append(f"{repair_ops_no} IN error: {repair_ex}")
+
+                    repair_progress.progress((repair_i + 1) / repair_total)
+
+                if repair_errors:
+                    st.error(f"⚠️ {len(repair_errors)} errors occurred:")
+                    for repair_err in repair_errors:
+                        st.write(f"- {repair_err}")
+
+                st.session_state.repair_stock_log = repair_inserted
+                st.session_state.repair_stock_done = True
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"❌ Repair failed: {str(e)}")
 
 
     # =========================
