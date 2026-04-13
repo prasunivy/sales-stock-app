@@ -13,7 +13,8 @@ from modules.dcr.masters_database import (
     get_user_territories,
     get_stockists_by_territories,
     get_chemists_by_territories,
-    get_all_users
+    get_all_users,
+    check_doctor_has_dcr_visits,
 )
 from modules.dcr.dcr_helpers import get_current_user_id
 
@@ -239,74 +240,108 @@ def show_add_doctor_form():
                 st.error(f"❌ Error saving doctor: {str(e)}")
 def show_edit_doctor_form():
     """
-    Form to edit existing doctor
+    Form to edit existing doctor.
+    Admin can edit territories (with a DCR-visit warning if applicable).
+    Non-admin can edit name/phone/clinic/stockists but not territories.
     """
     st.write("### ✏️ Edit Doctor")
-    
+
     doctor_id = st.session_state.selected_doctor_id
     current_user_id = get_current_user_id()
-    
+    role = st.session_state.get("role", "user")
+
     # Back button
     if st.button("⬅️ Back to List"):
         st.session_state.doctors_master_action = None
         st.session_state.selected_doctor_id = None
         st.rerun()
-    
+
     # Load doctor
     doctor = get_doctor_by_id(doctor_id)
-    
+
     if not doctor:
         st.error("Doctor not found")
         return
-    
+
     st.write("---")
-    
+
+    # Warn admin if this doctor has existing DCR visit records
+    if role == "admin":
+        has_visits = check_doctor_has_dcr_visits(doctor_id)
+        if has_visits:
+            st.warning(
+                "⚠️ This doctor has existing DCR visit records. "
+                "Territory changes will affect how historical visits are displayed. "
+                "Proceed only if you are sure."
+            )
+
+    # Determine which user's territories to load for the multiselect
+    selected_user_id = st.session_state.get("doctors_master_selected_user", current_user_id)
+
     # Form (pre-filled)
     with st.form("edit_doctor_form"):
         doctor_name = st.text_input("Doctor Name *", value=doctor['name'])
         specialization = st.text_input("Specialization", value=doctor.get('specialization', ''))
         phone = st.text_input("Phone", value=doctor.get('phone', ''))
         clinic_address = st.text_area("Clinic Address", value=doctor.get('clinic_address', ''))
-        
+
         st.write("---")
+
+        # ── Territories ──────────────────────────────────────────────
         st.write("#### Territories")
-        st.info("Territory changes not allowed (has existing DCR visits)")
-        for t_name in doctor.get('territory_names', []):
-            st.write(f"✓ {t_name}")
-        
+        if role == "admin":
+            all_user_territories = get_user_territories(selected_user_id)
+            territory_options = {t['id']: t['name'] for t in all_user_territories}
+            existing_territory_ids = doctor.get('territory_ids', [])
+            selected_territories = st.multiselect(
+                "Select territories (admin can change):",
+                options=list(territory_options.keys()),
+                default=[tid for tid in existing_territory_ids if tid in territory_options],
+                format_func=lambda x: territory_options.get(x, x),
+                key="edit_terr_multi"
+            )
+        else:
+            st.info("ℹ️ Territory changes require admin access.")
+            for t_name in doctor.get('territory_names', []):
+                st.write(f"✓ {t_name}")
+            selected_territories = doctor.get('territory_ids', [])
+
         st.write("---")
-        
-        # Stockists (editable)
+
+        # ── Stockists ────────────────────────────────────────────────
         st.write("#### Stockists")
         existing_stockist_ids = doctor.get('stockist_ids', [])
-        territory_ids = doctor.get('territory_ids', [])
-        stockists = get_stockists_by_territories(territory_ids)
+        # Use the (possibly updated) selected territories for stockist lookup
+        territory_ids_for_lookup = selected_territories if role == "admin" else doctor.get('territory_ids', [])
+        stockists = get_stockists_by_territories(territory_ids_for_lookup)
         selected_stockists = []
-        
+
         for s in stockists:
             default = s['id'] in existing_stockist_ids
             if st.checkbox(s['name'], value=default, key=f"stock_{s['id']}"):
                 selected_stockists.append(s['id'])
-        
+
         st.write("---")
-        
-        # Chemists (editable)
+
+        # ── Chemists ─────────────────────────────────────────────────
         st.write("#### Linked Chemists")
         existing_chemist_ids = doctor.get('chemist_ids', [])
-        chemists = get_chemists_by_territories(territory_ids)
+        chemists = get_chemists_by_territories(territory_ids_for_lookup)
         selected_chemists = []
-        
+
         for c in chemists:
             default = c['id'] in existing_chemist_ids
             if st.checkbox(f"{c['name']} ({c['shop_name']})", value=default, key=f"chem_{c['id']}"):
                 selected_chemists.append(c['id'])
-        
+
         # Submit
         submitted = st.form_submit_button("💾 Update Doctor", type="primary")
-        
+
         if submitted:
             if not doctor_name:
                 st.error("Doctor name is required")
+            elif role == "admin" and not selected_territories:
+                st.error("Please select at least one territory")
             else:
                 try:
                     update_doctor(
@@ -315,6 +350,7 @@ def show_edit_doctor_form():
                         specialization=specialization,
                         phone=phone,
                         clinic_address=clinic_address,
+                        territory_ids=selected_territories,
                         stockist_ids=selected_stockists,
                         chemist_ids=selected_chemists,
                         updated_by=current_user_id
