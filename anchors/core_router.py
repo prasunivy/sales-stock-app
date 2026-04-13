@@ -531,64 +531,108 @@ def _dash_monthly_sales(stockist_ids, month, year):
     else:
         month_end = f"{year}-{month+1:02d}-01"
 
-    # Gross Sale — invoices to user's stockists this month
+    # ── Stockist name map for detail dropdowns ────────────────────
+    stockist_name_map = {}
+    try:
+        s_rows = safe_exec(
+            admin_supabase.table("stockists")
+            .select("id, name")
+            .in_("id", stockist_ids),
+            "Error loading stockist names"
+        ) or []
+        stockist_name_map = {r["id"]: r["name"] for r in s_rows}
+    except Exception:
+        pass
+
+    # ── Gross Sale ────────────────────────────────────────────────
+    # Fetch invoice headers (id, ops_no, ops_date, to_entity_id)
     inv_rows = safe_exec(
         admin_supabase.table("ops_documents")
-        .select("invoice_total")
+        .select("id, ops_no, ops_date, to_entity_id")
         .eq("ops_type", "STOCK_OUT")
         .eq("stock_as", "normal")
         .eq("is_deleted", False)
         .in_("to_entity_id", stockist_ids)
         .gte("ops_date", month_start)
-        .lt("ops_date", month_end),
+        .lt("ops_date", month_end)
+        .order("ops_date", desc=True),
         "Error loading invoices"
     ) or []
-    gross_sale = sum(float(r.get("invoice_total") or 0) for r in inv_rows)
 
-    # Credit Notes — to user's stockists this month
+    # gross_amount is a document-level figure stored identically on
+    # every ops_line row — so we take it from ONE line per document only.
+    gross_sale    = 0.0
+    inv_gross_map = {}  # ops_document_id → gross_amount
+    if inv_rows:
+        inv_ids   = [r["id"] for r in inv_rows]
+        inv_lines = safe_exec(
+            admin_supabase.table("ops_lines")
+            .select("ops_document_id, gross_amount")
+            .in_("ops_document_id", inv_ids),
+            "Error loading invoice lines"
+        ) or []
+        for line in inv_lines:
+            oid = line["ops_document_id"]
+            if oid not in inv_gross_map:          # first occurrence only
+                inv_gross_map[oid] = float(line.get("gross_amount") or 0)
+        gross_sale = sum(inv_gross_map.values())
+
+    # ── Credit Notes ──────────────────────────────────────────────
     cn_rows = safe_exec(
         admin_supabase.table("ops_documents")
-        .select("id")
+        .select("id, ops_no, ops_date, from_entity_id")
         .eq("stock_as", "credit_note")
         .eq("is_deleted", False)
         .in_("from_entity_id", stockist_ids)
         .gte("ops_date", month_start)
-        .lt("ops_date", month_end),
+        .lt("ops_date", month_end)
+        .order("ops_date", desc=True),
         "Error loading credit notes"
     ) or []
-    cn_ids = [r["id"] for r in cn_rows]
-    cn_amount = 0.0
+    cn_ids      = [r["id"] for r in cn_rows]
+    cn_amount   = 0.0
+    cn_gross_map = {}  # ops_document_id → gross_amount
     if cn_ids:
         cn_lines = safe_exec(
             admin_supabase.table("ops_lines")
-            .select("net_amount")
+            .select("ops_document_id, gross_amount")
             .in_("ops_document_id", cn_ids),
             "Error loading CN lines"
         ) or []
-        cn_amount = sum(float(r.get("net_amount") or 0) for r in cn_lines)
+        for line in cn_lines:
+            oid = line["ops_document_id"]
+            if oid not in cn_gross_map:           # first occurrence only
+                cn_gross_map[oid] = float(line.get("gross_amount") or 0)
+        cn_amount = sum(cn_gross_map.values())
 
-    # Payments — from user's stockists this month
+    # ── Payments ──────────────────────────────────────────────────
     pay_rows = safe_exec(
         admin_supabase.table("ops_documents")
-        .select("id")
+        .select("id, ops_no, ops_date, from_entity_id")
         .eq("ops_type", "ADJUSTMENT")
         .eq("is_deleted", False)
         .in_("from_entity_id", stockist_ids)
         .gte("ops_date", month_start)
-        .lt("ops_date", month_end),
+        .lt("ops_date", month_end)
+        .order("ops_date", desc=True),
         "Error loading payments"
     ) or []
-    pay_ids = [r["id"] for r in pay_rows]
+    pay_ids       = [r["id"] for r in pay_rows]
     payment_total = 0.0
+    pay_amount_map = {}  # ops_document_id → credit amount
     if pay_ids:
         pay_ledger = safe_exec(
             admin_supabase.table("financial_ledger")
-            .select("credit")
+            .select("ops_document_id, credit")
             .in_("ops_document_id", pay_ids),
             "Error loading payment ledger"
         ) or []
-        payment_total = sum(float(r.get("credit") or 0) for r in pay_ledger)
+        for line in pay_ledger:
+            oid = line["ops_document_id"]
+            pay_amount_map[oid] = pay_amount_map.get(oid, 0.0) + float(line.get("credit") or 0)
+        payment_total = sum(pay_amount_map.values())
 
+    # ── Metrics ───────────────────────────────────────────────────
     col1, col2 = st.columns(2)
     with col1:
         st.metric("💊 Gross Sale", f"₹{gross_sale:,.0f}")
@@ -607,6 +651,54 @@ def _dash_monthly_sales(stockist_ids, month, year):
             f"</div>",
             unsafe_allow_html=True
         )
+
+    # ── Gross Sale detail dropdown ────────────────────────────────
+    if inv_rows:
+        with st.expander(f"📋 Gross Sale Details ({len(inv_rows)} invoice(s))"):
+            for r in inv_rows:
+                party = stockist_name_map.get(r.get("to_entity_id"), "Unknown")
+                amt   = inv_gross_map.get(r["id"], 0.0)
+                st.markdown(
+                    f"<div style='padding:0.35rem 0.5rem;border-bottom:1px solid #e8f0ee;"
+                    f"font-size:0.84rem;display:flex;justify-content:space-between;'>"
+                    f"<span><b>{r.get('ops_no','—')}</b> &nbsp;·&nbsp; "
+                    f"{r.get('ops_date','')[:10]} &nbsp;·&nbsp; {party}</span>"
+                    f"<span style='font-weight:600;color:#1a6b5a;'>₹{amt:,.0f}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
+    # ── Payments detail dropdown ──────────────────────────────────
+    if pay_rows:
+        with st.expander(f"📋 Payment Details ({len(pay_rows)} record(s))"):
+            for r in pay_rows:
+                party = stockist_name_map.get(r.get("from_entity_id"), "Unknown")
+                amt   = pay_amount_map.get(r["id"], 0.0)
+                st.markdown(
+                    f"<div style='padding:0.35rem 0.5rem;border-bottom:1px solid #e8f0ee;"
+                    f"font-size:0.84rem;display:flex;justify-content:space-between;'>"
+                    f"<span><b>{r.get('ops_no','—')}</b> &nbsp;·&nbsp; "
+                    f"{r.get('ops_date','')[:10]} &nbsp;·&nbsp; {party}</span>"
+                    f"<span style='font-weight:600;color:#1a4b8a;'>₹{amt:,.0f}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
+    # ── Credit Notes detail dropdown ──────────────────────────────
+    if cn_rows:
+        with st.expander(f"📋 Credit Note Details ({len(cn_rows)} record(s))"):
+            for r in cn_rows:
+                party = stockist_name_map.get(r.get("from_entity_id"), "Unknown")
+                amt   = cn_gross_map.get(r["id"], 0.0)
+                st.markdown(
+                    f"<div style='padding:0.35rem 0.5rem;border-bottom:1px solid #e8f0ee;"
+                    f"font-size:0.84rem;display:flex;justify-content:space-between;'>"
+                    f"<span><b>{r.get('ops_no','—')}</b> &nbsp;·&nbsp; "
+                    f"{r.get('ops_date','')[:10]} &nbsp;·&nbsp; {party}</span>"
+                    f"<span style='font-weight:600;color:#b35c00;'>₹{amt:,.0f}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
 
 
 # ──────────────────────────────────────────────────────────────────
