@@ -305,9 +305,11 @@ def create_doctor(name, specialization, phone, clinic_address, territory_ids, st
     return doctor_id
 
 
-def update_doctor(doctor_id, name, specialization, phone, clinic_address, stockist_ids, chemist_ids, updated_by):
+def update_doctor(doctor_id, name, specialization, phone, clinic_address, territory_ids, stockist_ids, chemist_ids, updated_by):
     """
-    Update doctor (territories cannot be changed)
+    Update doctor. Admin can now change territories.
+    Deletes existing doctor_territories rows and re-inserts the new selection.
+    Stockists are also fully replaced. Audit log written on every update.
     """
     # Update basic info
     safe_exec(
@@ -320,7 +322,24 @@ def update_doctor(doctor_id, name, specialization, phone, clinic_address, stocki
         }).eq("id", doctor_id),
         "Error updating doctor"
     )
-    
+
+    # Update territories — delete all then re-insert
+    safe_exec(
+        admin_supabase.table("doctor_territories")
+        .delete()
+        .eq("doctor_id", doctor_id),
+        "Error deleting old territories"
+    )
+    for tid in territory_ids:
+        safe_exec(
+            admin_supabase.table("doctor_territories").insert({
+                "doctor_id": doctor_id,
+                "territory_id": tid,
+                "assigned_by": updated_by
+            }),
+            "Error linking territory"
+        )
+
     # Update stockists - delete all and re-add
     safe_exec(
         admin_supabase.table("doctor_stockists")
@@ -328,7 +347,6 @@ def update_doctor(doctor_id, name, specialization, phone, clinic_address, stocki
         .eq("doctor_id", doctor_id),
         "Error deleting old stockists"
     )
-    
     for stockist_id in stockist_ids:
         safe_exec(
             admin_supabase.table("doctor_stockists").insert({
@@ -338,8 +356,35 @@ def update_doctor(doctor_id, name, specialization, phone, clinic_address, stocki
             }),
             "Error linking stockist"
         )
-    
+
+    # Audit log
+    try:
+        admin_supabase.table("audit_logs").insert({
+            "action": "DOCTOR_UPDATED",
+            "message": f"Doctor ID {doctor_id} updated (name/phone/territories/stockists may have changed)",
+            "performed_by": updated_by,
+            "target_type": "doctor",
+            "target_id": str(doctor_id)
+        }).execute()
+    except Exception:
+        pass
+
     # TODO: Update chemists when table exists
+
+
+def check_doctor_has_dcr_visits(doctor_id):
+    """
+    Returns True if this doctor has any DCR visit records.
+    Used in the edit form to show a warning (but NOT to block editing).
+    """
+    result = safe_exec(
+        admin_supabase.table("dcr_doctor_visits")
+        .select("id")
+        .eq("doctor_id", doctor_id)
+        .limit(1),
+        "Error checking DCR visits for doctor"
+    )
+    return len(result) > 0
 
 
 def delete_doctor_soft(doctor_id, deleted_by):
