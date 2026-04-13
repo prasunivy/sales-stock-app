@@ -2682,7 +2682,9 @@ This action will:
         st.divider()
         st.subheader("📊 Invoice Outstanding — Party-wise (Read-Only)")
 
-        # ---- 1️⃣ Invoice totals (ops_lines) ----
+        # ---- 1️⃣ Invoice totals (ops_lines) — first line per document only ----
+        # net_amount is document-level and stored identically on every ops_line row;
+        # summing across all lines inflates the figure by the number of products.
         lines_resp = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .execute()
@@ -2690,7 +2692,8 @@ This action will:
         invoice_totals = {}
         for row in (lines_resp.data or []):
             doc_id = row["ops_document_id"]
-            invoice_totals[doc_id] = invoice_totals.get(doc_id, 0) + float(row["net_amount"])
+            if doc_id not in invoice_totals:          # first occurrence only
+                invoice_totals[doc_id] = float(row["net_amount"])
 
         # ---- 2️⃣ Settlement totals (payment_settlements) ----
         settle_resp = admin_supabase.table("payment_settlements") \
@@ -3380,15 +3383,62 @@ This action will:
                 query = query.in_("to_entity_id", user_stockist_ids)
             
             invoices = query.order("ops_date").execute().data
-            
-            if not invoices:
-                st.info("No outstanding invoices found for the selected filters")
+
+            # ── Opening Balance for selected stockist(s) ──────────────────
+            # Fetch debit entries with narration "Opening Balance" from financial_ledger,
+            # then subtract any payment_settlements already allocated against them.
+            ob_total = 0.0
+            ob_rows_by_stockist = {}   # stockist_id → outstanding OB amount
+
+            def _fetch_ob_for_stockist(sid):
+                ob_rows = safe_exec(
+                    admin_supabase.table("financial_ledger")
+                    .select("ops_document_id, debit, credit")
+                    .eq("party_id", sid)
+                    .eq("narration", "Opening Balance"),
+                    "Error loading opening balance"
+                ) or []
+                ob_original = sum(float(r.get("debit") or 0) for r in ob_rows)
+                ob_credited = sum(float(r.get("credit") or 0) for r in ob_rows)
+                ob_doc_ids  = list({r["ops_document_id"] for r in ob_rows})
+                already_paid = 0.0
+                for did in ob_doc_ids:
+                    setts = safe_exec(
+                        admin_supabase.table("payment_settlements")
+                        .select("amount")
+                        .eq("invoice_id", did),
+                        "Error loading OB settlements"
+                    ) or []
+                    already_paid += sum(float(s.get("amount") or 0) for s in setts)
+                return max(0.0, ob_original - ob_credited - already_paid)
+
+            if selected_stockist_id:
+                ob = _fetch_ob_for_stockist(selected_stockist_id)
+                if ob > 0:
+                    ob_rows_by_stockist[selected_stockist_id] = ob
+                    ob_total = ob
+            elif selected_user_id and user_stockist_ids:
+                for sid in user_stockist_ids:
+                    ob = _fetch_ob_for_stockist(sid)
+                    if ob > 0:
+                        ob_rows_by_stockist[sid] = ob
+                        ob_total += ob
+            else:
+                # All stockists
+                for s in st.session_state.stockists_master:
+                    ob = _fetch_ob_for_stockist(s["id"])
+                    if ob > 0:
+                        ob_rows_by_stockist[s["id"]] = ob
+                        ob_total += ob
+
+            if not invoices and ob_total == 0:
+                st.info("No outstanding invoices or opening balance found for the selected filters")
                 st.stop()
-            
+
             # Calculate aging and prepare display
-            
+
             invoice_data = []
-            total_due = 0
+            total_due = ob_total   # seed with opening balance outstanding
             
             # Aging buckets
             aging_summary = {
@@ -3469,8 +3519,10 @@ This action will:
                 
                 total_due += outstanding
             
-            # Display summary
-            st.success(f"**Total Outstanding: ₹{total_due:,.2f}** across {len(invoice_data)} invoices")
+            # Display summary — total includes opening balance
+            total_invoices = total_due - ob_total   # invoice-only portion for the label
+            ob_label = f" + Opening Balance ₹{ob_total:,.2f}" if ob_total > 0 else ""
+            st.success(f"**Total Outstanding: ₹{total_due:,.2f}** across {len(invoice_data)} invoice(s){ob_label}")
             
             # Show aging summary
             col1, col2, col3, col4, col5 = st.columns(5)
@@ -3484,6 +3536,22 @@ This action will:
                 st.metric("91-120 Days", f"₹{aging_summary['91-120']:,.0f}")
             with col5:
                 st.metric("120+ Days", f"₹{aging_summary['120+']:,.0f}")
+
+            # ── Opening Balance row (shown before invoice list) ───────────
+            if ob_total > 0:
+                st.divider()
+                st.markdown("**💰 Opening Balance (Unallocated)**")
+                if ob_rows_by_stockist:
+                    for sid, ob_amt in ob_rows_by_stockist.items():
+                        sname = next((s["name"] for s in st.session_state.stockists_master if s["id"] == sid), "Unknown")
+                        st.markdown(
+                            f"<div style='background:#fff8e1;border-left:4px solid #e67e22;"
+                            f"padding:0.55rem 0.9rem;border-radius:6px;margin-bottom:5px;font-size:0.88rem;'>"
+                            f"<b>{sname}</b> — Opening Balance &nbsp;|&nbsp; "
+                            f"<span style='color:#c0392b;font-weight:600;'>₹{ob_amt:,.2f}</span> outstanding"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
             
             st.divider()
             
@@ -8471,7 +8539,11 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
         if st.button("▶️ Run Recalculation", type="primary"):
             try:
                 with st.spinner("Fetching all invoices..."):
-                    invoices = admin_supabase.table("ops_documents")                        .select("id, invoice_total")                        .eq("ops_type", "STOCK_OUT")                        .eq("is_deleted", False)                        .execute().data or []
+                    invoices = admin_supabase.table("ops_documents") \
+                        .select("id") \
+                        .eq("ops_type", "STOCK_OUT") \
+                        .eq("is_deleted", False) \
+                        .execute().data or []
 
                 updated = 0
                 errors = 0
@@ -8480,10 +8552,24 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
 
                 for i, inv in enumerate(invoices):
                     try:
-                        settlements = admin_supabase.table("payment_settlements")                            .select("amount")                            .eq("invoice_id", inv["id"])                            .execute().data or []
+                        # Step 1 — Recalculate invoice_total from ops_lines (first line only).
+                        # net_amount is a document-level figure stored identically on every
+                        # ops_line row, so summing across all lines inflates it by product count.
+                        first_line = admin_supabase.table("ops_lines") \
+                            .select("net_amount") \
+                            .eq("ops_document_id", inv["id"]) \
+                            .limit(1) \
+                            .execute().data
+                        inv_total = float(first_line[0].get("net_amount", 0)) \
+                            if first_line else 0.0
+
+                        # Step 2 — Sum payments already allocated to this invoice
+                        settlements = admin_supabase.table("payment_settlements") \
+                            .select("amount") \
+                            .eq("invoice_id", inv["id"]) \
+                            .execute().data or []
 
                         paid = sum(float(s.get("amount", 0)) for s in settlements)
-                        inv_total = float(inv.get("invoice_total") or 0)
                         outstanding = max(0, inv_total - paid)
 
                         if outstanding <= 0:
@@ -8493,7 +8579,9 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                         else:
                             status = "UNPAID"
 
+                        # Step 3 — Write corrected invoice_total + outstanding + status
                         admin_supabase.table("ops_documents").update({
+                            "invoice_total": inv_total,
                             "paid_amount": paid,
                             "outstanding_balance": outstanding,
                             "payment_status": status
