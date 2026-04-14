@@ -11,6 +11,7 @@ from modules.dcr.masters_database import (
     update_doctor,
     delete_doctor_soft,
     get_user_territories,
+    get_all_territories,
     get_stockists_by_territories,
     get_chemists_by_territories,
     get_all_users,
@@ -290,13 +291,13 @@ def show_edit_doctor_form():
         # ── Territories ──────────────────────────────────────────────
         st.write("#### Territories")
         if role == "admin":
-            all_user_territories = get_user_territories(selected_user_id)
-            territory_options = {t['id']: t['name'] for t in all_user_territories}
+            all_system_territories = get_all_territories()
+            territory_options = {t['id']: t['name'] for t in all_system_territories}
             existing_territory_ids = doctor.get('territory_ids', [])
             selected_territories = st.multiselect(
                 "Select territories (admin can change):",
                 options=list(territory_options.keys()),
-                default=[tid for tid in existing_territory_ids if tid in territory_options],
+                default=existing_territory_ids,
                 format_func=lambda x: territory_options.get(x, x),
                 key="edit_terr_multi"
             )
