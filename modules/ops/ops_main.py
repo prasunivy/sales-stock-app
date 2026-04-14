@@ -429,6 +429,12 @@ def run_ops():
         "DOCUMENT_BROWSER_CN_DELETE":            "DOCUMENT_BROWSER_CREDIT_NOTES",
         "DOCUMENT_BROWSER_CN_DELETE_EXEC":       "DOCUMENT_BROWSER_CREDIT_NOTES",
         "DOCUMENT_BROWSER_CN_ARCHIVE_VIEW":      "DOCUMENT_BROWSER_ARCHIVED_CN",
+        # Transfer sub-sections
+        "DOCUMENT_BROWSER_TRANSFER_VIEW":        "DOCUMENT_BROWSER_TRANSFERS",
+        "DOCUMENT_BROWSER_TRANSFER_EDIT":        "DOCUMENT_BROWSER_TRANSFERS",
+        "DOCUMENT_BROWSER_TRANSFER_DELETE":      "DOCUMENT_BROWSER_TRANSFERS",
+        "DOCUMENT_BROWSER_TRANSFER_DELETE_EXEC": "DOCUMENT_BROWSER_TRANSFERS",
+        "DOCUMENT_BROWSER_ARCH_TRANSFER_VIEW":   "DOCUMENT_BROWSER_ARCHIVED_TRANSFERS",
     }
 
     # If in a sub-section, show the parent in the selectbox (so it looks
@@ -900,7 +906,7 @@ This action will:
         # =========================
         # PREFILL OPS SESSION STATE
         # =========================
-        st.session_state.ops_from_entity_type = old_invoice["reference_type"]
+        st.session_state.ops_from_entity_type = old_invoice.get("from_entity_type")
         st.session_state.ops_from_entity_id = old_invoice.get("from_entity_id")
 
         st.session_state.ops_to_entity_type = old_invoice.get("to_entity_type")
@@ -6030,20 +6036,20 @@ This action:
                     with b1:
                         if st.button("👁 View", key=f"view_tr_{doc['id']}"):
                             st.session_state.selected_ops_id = doc["id"]
-                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_VIEW"
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFER_VIEW"
                             st.rerun()
 
                     with b2:
                         if st.button("✏️ Edit", key=f"edit_tr_{doc['id']}"):
                             st.session_state.edit_source_ops_id = doc["id"]
                             st.session_state.edit_mode = True
-                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_EDIT"
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFER_EDIT"
                             st.rerun()
 
                     with b3:
                         if st.button("🗑 Delete", key=f"del_tr_{doc['id']}"):
                             st.session_state.selected_ops_id = doc["id"]
-                            st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICE_DELETE"
+                            st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFER_DELETE"
                             st.rerun()
 
                 st.divider()
@@ -6055,7 +6061,7 @@ This action:
         st.info("📌 These are transfers that were deleted or replaced by an edit.")
 
         docs = admin_supabase.table("ops_documents") \
-            .select("id, ops_no, ops_date, reference_no, narration, updated_at") \
+            .select("id, ops_no, ops_date, reference_no, narration, from_entity_type, from_entity_id, to_entity_type, to_entity_id, updated_at") \
             .eq("stock_as", "transfer") \
             .eq("is_deleted", True) \
             .order("updated_at", desc=True) \
@@ -6067,17 +6073,11 @@ This action:
 
         doc_ids = [d["id"] for d in docs]
 
-        ledger_data = admin_supabase.table("financial_ledger") \
-            .select("ops_document_id, party_id") \
-            .in_("ops_document_id", doc_ids) \
-            .execute().data or []
-
         lines_data = admin_supabase.table("ops_lines") \
             .select("ops_document_id, net_amount") \
             .in_("ops_document_id", doc_ids) \
             .execute().data or []
 
-        party_lookup = {row["ops_document_id"]: row["party_id"] for row in ledger_data}
         total_lookup = {}
         for line in lines_data:
             did = line["ops_document_id"]
@@ -6085,22 +6085,31 @@ This action:
                 total_lookup[did] = line["net_amount"]
 
         for doc in docs:
-            party_id = party_lookup.get(doc["id"])
-            if party_id:
-                party_name = next(
-                    (s["name"] for s in st.session_state.stockists_master if s["id"] == party_id),
-                    "Unknown Party"
-                )
-            else:
-                party_name = "Company"
-
             doc_total = total_lookup.get(doc["id"], 0)
+
+            # Resolve from/to names from entity columns (not financial_ledger party_id)
+            arch_from_type = doc.get("from_entity_type")
+            arch_to_type   = doc.get("to_entity_type")
+            if arch_from_type and arch_to_type:
+                _, arch_from_name = resolve_entity_display_name(arch_from_type, doc.get("from_entity_id"), None)
+                _, arch_to_name   = resolve_entity_display_name(arch_to_type,   doc.get("to_entity_id"),   None)
+                arch_route = f"{arch_from_name} → {arch_to_name}"
+            else:
+                try:
+                    narr = doc.get("narration", "")
+                    if " - " in narr and " to " in narr:
+                        parts = narr.split(" - ")[1].split(" to ")
+                        arch_route = f"{parts[0].strip()} → {parts[1].strip()}"
+                    else:
+                        arch_route = doc.get("narration", "—")
+                except Exception:
+                    arch_route = "—"
 
             with st.container():
                 c1, c2, c3 = st.columns([4, 3, 3])
                 with c1:
                     st.write(f"🗄️ **{doc['ops_no']}**")
-                    st.caption(f"👤 {party_name}")
+                    st.caption(f"📤 {arch_route}")
                 with c2:
                     st.write(f"**Date:** {doc['ops_date']}")
                     st.caption(f"Archived: {doc.get('updated_at', '-')[:10]}")
@@ -6109,9 +6118,305 @@ This action:
                     st.write(f"**💰 ₹{doc_total:,.2f}**")
                     if st.button("👁 View", key=f"view_arch_tr_{doc['id']}"):
                         st.session_state.selected_ops_id = doc["id"]
-                        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVE_VIEW"
+                        st.session_state.ops_section = "DOCUMENT_BROWSER_ARCH_TRANSFER_VIEW"
                         st.rerun()
                 st.divider()
+
+    # =========================
+    # TRANSFER — VIEW
+    # =========================
+    elif section == "DOCUMENT_BROWSER_TRANSFER_VIEW":
+        ops_id = st.session_state.get("selected_ops_id")
+        if not ops_id:
+            st.error("Transfer not found")
+            st.stop()
+
+        doc = admin_supabase.table("ops_documents") \
+            .select("*") \
+            .eq("id", ops_id) \
+            .single() \
+            .execute().data
+
+        if not doc:
+            st.error("Transfer does not exist or was deleted")
+            st.stop()
+
+        st.subheader(f"🔄 Transfer View — {doc['ops_no']}")
+
+        from_type, from_name = resolve_entity_display_name(
+            doc.get("from_entity_type"), doc.get("from_entity_id"), doc.get("narration")
+        )
+        to_type = doc.get("to_entity_type")
+        _, to_name = resolve_entity_display_name(to_type, doc.get("to_entity_id"), None) if to_type else (None, "Unknown")
+
+        st.markdown(f"""
+**Date:** {doc['ops_date']}
+**Reference:** {doc.get('reference_no') or '-'}
+**From:** {from_type} — {from_name}
+**To:** {to_type or 'Unknown'} — {to_name}
+""")
+        st.divider()
+
+        lines = admin_supabase.table("ops_lines") \
+            .select("*") \
+            .eq("ops_document_id", ops_id) \
+            .execute().data or []
+
+        if lines:
+            first = lines[0]
+            total_gross    = first["gross_amount"]
+            total_tax      = first["tax_amount"]
+            total_discount = first["discount_amount"]
+            total_net      = first["net_amount"]
+        else:
+            total_gross = total_tax = total_discount = total_net = 0
+
+        for line in lines:
+            c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
+            with c1:
+                prod_name = next(
+                    (p["name"] for p in st.session_state.products_master if p["id"] == line["product_id"]),
+                    "Unknown Product"
+                )
+                st.write(prod_name)
+            with c2:
+                st.write(f"Sale: {line['sale_qty']}")
+            with c3:
+                st.write(f"Free: {line['free_qty']}")
+            with c4:
+                st.write(f"Gross: ₹{line['gross_amount']:,.2f}")
+            with c5:
+                st.write(f"Net: ₹{line['net_amount']:,.2f}")
+
+        st.divider()
+        st.markdown(f"""
+### 💰 Transfer Breakdown
+- **Gross Amount:** ₹ {total_gross:,.2f}
+- **Less: Discount:** ₹ {total_discount:,.2f}
+- **Taxable Amount (Net):** ₹ {total_gross - total_discount:,.2f}
+- **Add: GST/Tax:** ₹ {total_tax:,.2f}
+
+---
+### 📌 TOTAL: ₹ {total_net:,.2f}
+""")
+        st.divider()
+
+        if st.button("⬅ Back to Transfers"):
+            st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFERS"
+            st.rerun()
+
+    # =========================
+    # TRANSFER — EDIT
+    # =========================
+    elif section == "DOCUMENT_BROWSER_TRANSFER_EDIT":
+        source_ops_id = st.session_state.get("edit_source_ops_id")
+        if not source_ops_id:
+            st.error("No transfer selected for edit")
+            st.stop()
+
+        old_doc = admin_supabase.table("ops_documents") \
+            .select("*") \
+            .eq("id", source_ops_id) \
+            .eq("is_deleted", False) \
+            .single() \
+            .execute().data
+
+        if not old_doc:
+            st.error("Transfer not found or already deleted")
+            st.stop()
+
+        old_lines = admin_supabase.table("ops_lines") \
+            .select("*") \
+            .eq("ops_document_id", source_ops_id) \
+            .execute().data or []
+
+        st.subheader(f"✏️ Edit Transfer — {old_doc['ops_no']}")
+        st.info("Editing will create a NEW transfer document and archive this one for audit safety.")
+
+        st.session_state.ops_from_entity_type = old_doc.get("from_entity_type")
+        st.session_state.ops_from_entity_id   = old_doc.get("from_entity_id")
+        st.session_state.ops_to_entity_type   = old_doc.get("to_entity_type")
+        st.session_state.ops_to_entity_id     = old_doc.get("to_entity_id")
+
+        st.session_state.ops_products = [
+            {
+                "product":    l.get("product", ""),
+                "product_id": l["product_id"],
+                "sale_qty":   int(l.get("sale_qty", 0)),
+                "free_qty":   int(l.get("free_qty", 0)),
+                "total_qty":  int(l.get("sale_qty", 0)) + int(l.get("free_qty", 0))
+            }
+            for l in old_lines
+        ]
+
+        st.session_state.ops_amounts = {
+            "gross":    float(old_lines[0]["gross_amount"])    if old_lines else 0.0,
+            "tax":      float(old_lines[0]["tax_amount"])      if old_lines else 0.0,
+            "discount": float(old_lines[0]["discount_amount"]) if old_lines else 0.0,
+            "net":      float(old_lines[0]["net_amount"])      if old_lines else 0.0,
+        }
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("➡️ Continue to Edit"):
+                st.session_state.ops_section = "STOCK_FLOW"
+                st.rerun()
+        with col2:
+            if st.button("⬅ Back to Transfers"):
+                st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFERS"
+                st.rerun()
+
+    # =========================
+    # TRANSFER — DELETE (CONFIRM)
+    # =========================
+    elif section == "DOCUMENT_BROWSER_TRANSFER_DELETE":
+        ops_id = st.session_state.get("selected_ops_id")
+        if not ops_id:
+            st.error("Transfer not selected")
+            st.stop()
+
+        doc = admin_supabase.table("ops_documents") \
+            .select("ops_no, ops_date, narration, is_deleted") \
+            .eq("id", ops_id) \
+            .single() \
+            .execute().data
+
+        if not doc or doc["is_deleted"]:
+            st.error("Transfer already deleted or not found")
+            st.stop()
+
+        st.subheader("⚠️ Delete Transfer")
+        st.warning(f"""
+You are about to DELETE:
+
+**Transfer:** {doc['ops_no']}
+**Date:** {doc['ops_date']}
+
+This action will:
+- Create **reverse entries** to nullify stock impact
+- Mark transfer as deleted (archived)
+- Record in audit logs
+""")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("❌ No, Go Back"):
+                st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFERS"
+                st.rerun()
+        with col2:
+            if st.button("✅ Confirm Delete Transfer", type="primary"):
+                try:
+                    admin_id = resolve_user_id()
+
+                    reverse_resp = admin_supabase.table("ops_documents").insert({
+                        "ops_no":       f"DEL-{doc['ops_no']}",
+                        "ops_date":     datetime.utcnow().date().isoformat(),
+                        "ops_type":     "ADJUSTMENT",
+                        "stock_as":     "adjustment",
+                        "direction":    "ADJUST",
+                        "narration":    f"Deletion of {doc['ops_no']}",
+                        "reference_no": doc["ops_no"],
+                        "created_by":   admin_id
+                    }).execute()
+                    reverse_ops_id = reverse_resp.data[0]["id"]
+
+                    stock_rows = admin_supabase.table("stock_ledger") \
+                        .select("*").eq("ops_document_id", ops_id).execute().data or []
+                    for s in stock_rows:
+                        admin_supabase.table("stock_ledger").insert({
+                            "ops_document_id": reverse_ops_id,
+                            "product_id":      s["product_id"],
+                            "entity_type":     s["entity_type"],
+                            "entity_id":       s["entity_id"],
+                            "txn_date":        datetime.utcnow().date().isoformat(),
+                            "qty_in":          s["qty_out"],
+                            "qty_out":         s["qty_in"],
+                            "closing_qty":     0,
+                            "direction":       "ADJUST",
+                            "narration":       f"Deletion of {doc['ops_no']}"
+                        }).execute()
+
+                    admin_supabase.table("ops_documents").update({
+                        "is_deleted": True,
+                        "updated_at": datetime.utcnow().isoformat()
+                    }).eq("id", ops_id).execute()
+
+                    admin_supabase.table("audit_logs").insert({
+                        "action":       "DELETE_OPS",
+                        "target_type":  "ops_documents",
+                        "target_id":    ops_id,
+                        "performed_by": admin_id,
+                        "message":      f"Transfer {doc['ops_no']} deleted",
+                        "metadata":     {"reverse_ops_id": reverse_ops_id}
+                    }).execute()
+
+                    st.success("✅ Transfer deleted successfully")
+                    st.session_state.ops_section = "DOCUMENT_BROWSER_TRANSFERS"
+                    st.rerun()
+                except Exception as e:
+                    st.error("❌ Failed to delete transfer")
+                    st.exception(e)
+
+    # =========================
+    # TRANSFER — ARCHIVED VIEW
+    # =========================
+    elif section == "DOCUMENT_BROWSER_ARCH_TRANSFER_VIEW":
+        ops_id = st.session_state.get("selected_ops_id")
+        if not ops_id:
+            st.error("Transfer not found")
+            st.stop()
+
+        doc = admin_supabase.table("ops_documents") \
+            .select("*") \
+            .eq("id", ops_id) \
+            .single() \
+            .execute().data
+
+        if not doc:
+            st.error("Transfer not found")
+            st.stop()
+
+        st.subheader(f"🗄️ Archived Transfer — {doc['ops_no']}")
+        st.info("This transfer has been deleted/archived.")
+
+        from_type, from_name = resolve_entity_display_name(
+            doc.get("from_entity_type"), doc.get("from_entity_id"), doc.get("narration")
+        )
+        to_type = doc.get("to_entity_type")
+        _, to_name = resolve_entity_display_name(to_type, doc.get("to_entity_id"), None) if to_type else (None, "Unknown")
+
+        st.markdown(f"""
+**Date:** {doc['ops_date']}
+**Reference:** {doc.get('reference_no') or '-'}
+**From:** {from_type} — {from_name}
+**To:** {to_type or 'Unknown'} — {to_name}
+""")
+        st.divider()
+
+        lines = admin_supabase.table("ops_lines") \
+            .select("*").eq("ops_document_id", ops_id).execute().data or []
+
+        for line in lines:
+            c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
+            with c1:
+                prod_name = next(
+                    (p["name"] for p in st.session_state.products_master if p["id"] == line["product_id"]),
+                    "Unknown Product"
+                )
+                st.write(prod_name)
+            with c2:
+                st.write(f"Sale: {line['sale_qty']}")
+            with c3:
+                st.write(f"Free: {line['free_qty']}")
+            with c4:
+                st.write(f"Gross: ₹{line['gross_amount']:,.2f}")
+            with c5:
+                st.write(f"Net: ₹{line['net_amount']:,.2f}")
+
+        st.divider()
+        if st.button("⬅ Back to Archived Transfers"):
+            st.session_state.ops_section = "DOCUMENT_BROWSER_ARCHIVED_TRANSFERS"
+            st.rerun()
 
     # =========================
     # DOCUMENT BROWSER — SAMPLES & LOTS
