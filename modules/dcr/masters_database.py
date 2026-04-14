@@ -49,6 +49,22 @@ def get_all_users():
     return result
 
 
+def get_all_territories():
+    """
+    Get ALL territories in the system (for admin territory picker).
+    Used in the doctor edit form so admin can assign any territory,
+    not just those belonging to the currently selected user.
+    Returns list of {id, name}
+    """
+    result = safe_exec(
+        admin_supabase.table("territories")
+        .select("id, name")
+        .order("name"),
+        "Error loading all territories"
+    )
+    return result
+
+
 def get_stockists_by_territories(territory_ids):
     """
     Get stockists for given territories
