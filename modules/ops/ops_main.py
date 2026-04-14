@@ -2080,6 +2080,50 @@ This action will:
                     else:
                         direction_val = "ADJUST"
                     try:
+                        # ─────────────────────────────────────────────────────
+                        # 🔒 SERVER-SIDE DUPLICATE CHECK
+                        # Prevents double-submission caused by connection drops
+                        # or Streamlit re-renders firing the button twice.
+                        # A duplicate is defined as: same reference_no + same date
+                        # + same from/to entities + same stock_as + not deleted,
+                        # submitted within the last 5 minutes.
+                        # ─────────────────────────────────────────────────────
+                        from datetime import datetime, timedelta, timezone
+                        _dup_window = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+
+                        _dup_query = admin_supabase.table("ops_documents") \
+                            .select("id, ops_no") \
+                            .eq("ops_date", ops_txn_date.isoformat()) \
+                            .eq("stock_as", stock_as_val) \
+                            .eq("from_entity_type", st.session_state.ops_from_entity_type) \
+                            .eq("to_entity_type", st.session_state.ops_to_entity_type) \
+                            .eq("is_deleted", False) \
+                            .gte("created_at", _dup_window)
+
+                        # Only match on reference_no if one was actually entered
+                        if reference_no and reference_no.strip():
+                            _dup_query = _dup_query.eq("reference_no", reference_no.strip())
+
+                        # Also match from/to entity IDs if present
+                        if st.session_state.ops_from_entity_id:
+                            _dup_query = _dup_query.eq("from_entity_id", st.session_state.ops_from_entity_id)
+                        if st.session_state.ops_to_entity_id:
+                            _dup_query = _dup_query.eq("to_entity_id", st.session_state.ops_to_entity_id)
+
+                        _dup_result = _dup_query.execute().data or []
+
+                        if _dup_result:
+                            _dup_doc = _dup_result[0]
+                            st.error(
+                                f"⛔ Duplicate detected — this entry was already submitted "
+                                f"as **{_dup_doc['ops_no']}** within the last 5 minutes. "
+                                f"If this is genuinely a new entry, wait 5 minutes and try again, "
+                                f"or contact admin to review the existing document."
+                            )
+                            st.session_state.ops_submit_done = True
+                            st.stop()
+                        # ─────────────────────────────────────────────────────
+
                         response = admin_supabase.table("ops_documents").insert({
                             "ops_no": f"OPS-{__import__('datetime').datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                             "ops_date": ops_txn_date.isoformat(),
@@ -3338,6 +3382,44 @@ This action will:
                     db_direction = "IN"
                 else:
                     db_direction = "OUT"
+
+                # ─────────────────────────────────────────────────────
+                # 🔒 SERVER-SIDE DUPLICATE CHECK FOR PAYMENTS
+                # ─────────────────────────────────────────────────────
+                from datetime import datetime as _dt2, timedelta as _td2, timezone as _tz2
+                _pay_dup_window = (_dt2.now(_tz2.utc) - _td2(minutes=5)).isoformat()
+
+                _pay_dup_query = admin_supabase.table("ops_documents") \
+                    .select("id, ops_no") \
+                    .eq("ops_date", pay_date.isoformat()) \
+                    .eq("ops_type", "ADJUSTMENT") \
+                    .eq("direction", db_direction) \
+                    .eq("from_entity_type", st.session_state.pay_from_entity_type) \
+                    .eq("to_entity_type", st.session_state.pay_to_entity_type) \
+                    .eq("is_deleted", False) \
+                    .gte("created_at", _pay_dup_window)
+
+                if pay_ref and pay_ref.strip():
+                    _pay_dup_query = _pay_dup_query.eq("reference_no", pay_ref.strip())
+                if st.session_state.pay_from_entity_id:
+                    _pay_dup_query = _pay_dup_query.eq("from_entity_id", st.session_state.pay_from_entity_id)
+                if st.session_state.pay_to_entity_id:
+                    _pay_dup_query = _pay_dup_query.eq("to_entity_id", st.session_state.pay_to_entity_id)
+
+                _pay_dup_result = _pay_dup_query.execute().data or []
+
+                if _pay_dup_result:
+                    _pay_dup_doc = _pay_dup_result[0]
+                    st.error(
+                        f"⛔ Duplicate detected — this payment was already submitted "
+                        f"as **{_pay_dup_doc['ops_no']}** within the last 5 minutes. "
+                        f"If this is genuinely a new entry, wait 5 minutes and try again, "
+                        f"or contact admin to review the existing document."
+                    )
+                    st.session_state.pay_submit_done = True
+                    st.stop()
+                # ─────────────────────────────────────────────────────
+
                 doc_resp = admin_supabase.table("ops_documents").insert({
                     "ops_no": f"PAY-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                     "ops_date": pay_date.isoformat(),
@@ -7232,6 +7314,34 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             try:
                 user_id = resolve_user_id()
 
+                # ─────────────────────────────────────────────────────
+                # 🔒 SERVER-SIDE DUPLICATE CHECK FOR RETURN/REPLACE
+                # ─────────────────────────────────────────────────────
+                from datetime import datetime as _dt3, timedelta as _td3, timezone as _tz3
+                _rr_dup_window = (_dt3.now(_tz3.utc) - _td3(minutes=5)).isoformat()
+                _rr_dup_query = admin_supabase.table("ops_documents") \
+                    .select("id, ops_no") \
+                    .eq("ops_date", return_date.isoformat()) \
+                    .eq("ops_type", "ADJUSTMENT") \
+                    .eq("direction", "ADJUST") \
+                    .eq("is_deleted", False) \
+                    .gte("created_at", _rr_dup_window)
+                if reference_no and reference_no.strip():
+                    _rr_dup_query = _rr_dup_query.eq("reference_no", reference_no.strip())
+                _rr_dup_result = _rr_dup_query.execute().data or []
+                # Filter to only RET- prefixed docs
+                _rr_dup_result = [d for d in _rr_dup_result if str(d.get("ops_no", "")).startswith("RET-")]
+                if _rr_dup_result:
+                    _rr_dup_doc = _rr_dup_result[0]
+                    st.error(
+                        f"⛔ Duplicate detected — this return/replace was already submitted "
+                        f"as **{_rr_dup_doc['ops_no']}** within the last 5 minutes. "
+                        f"Contact admin to review the existing document."
+                    )
+                    st.session_state.return_replace_submit_done = True
+                    st.stop()
+                # ─────────────────────────────────────────────────────
+
                 # Create OPS document for return
                 disposition_map = {
                     "Add to Saleable Stock (goods are OK)": "saleable",
@@ -7533,6 +7643,31 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                     st.stop()
                 
                 # Create OPS document for freight
+                # ─────────────────────────────────────────────────────
+                # 🔒 SERVER-SIDE DUPLICATE CHECK FOR FREIGHT
+                # ─────────────────────────────────────────────────────
+                from datetime import datetime as _dt4, timedelta as _td4, timezone as _tz4
+                _fr_dup_window = (_dt4.now(_tz4.utc) - _td4(minutes=5)).isoformat()
+                _fr_dup_query = admin_supabase.table("ops_documents") \
+                    .select("id, ops_no") \
+                    .eq("ops_date", freight_date.isoformat()) \
+                    .eq("ops_type", "ADJUSTMENT") \
+                    .eq("is_deleted", False) \
+                    .gte("created_at", _fr_dup_window)
+                if reference_no and reference_no.strip():
+                    _fr_dup_query = _fr_dup_query.eq("reference_no", reference_no.strip())
+                _fr_dup_result = _fr_dup_query.execute().data or []
+                _fr_dup_result = [d for d in _fr_dup_result if str(d.get("ops_no", "")).startswith("FREIGHT-")]
+                if _fr_dup_result:
+                    _fr_dup_doc = _fr_dup_result[0]
+                    st.error(
+                        f"⛔ Duplicate detected — this freight entry was already submitted "
+                        f"as **{_fr_dup_doc['ops_no']}** within the last 5 minutes. "
+                        f"Contact admin to review the existing document."
+                    )
+                    st.session_state.freight_submit_done = True
+                    st.stop()
+                # ─────────────────────────────────────────────────────
                 freight_ops = admin_supabase.table("ops_documents").insert({
                     "ops_no": f"FREIGHT-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
                     "ops_date": freight_date.isoformat(),
