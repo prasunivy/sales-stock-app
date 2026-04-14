@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from anchors.supabase_client import admin_supabase
 
 def _mobile_table(df, compact_cols, detail_title_col, uid_prefix='tbl'):
@@ -2094,7 +2094,6 @@ This action will:
                         # + same from/to entities + same stock_as + not deleted,
                         # submitted within the last 5 minutes.
                         # ─────────────────────────────────────────────────────
-                        from datetime import datetime, timedelta, timezone
                         _dup_window = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
 
                         _dup_query = admin_supabase.table("ops_documents") \
@@ -3392,8 +3391,7 @@ This action will:
                 # ─────────────────────────────────────────────────────
                 # 🔒 SERVER-SIDE DUPLICATE CHECK FOR PAYMENTS
                 # ─────────────────────────────────────────────────────
-                from datetime import datetime as _dt2, timedelta as _td2, timezone as _tz2
-                _pay_dup_window = (_dt2.now(_tz2.utc) - _td2(minutes=5)).isoformat()
+                _pay_dup_window = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
 
                 _pay_dup_query = admin_supabase.table("ops_documents") \
                     .select("id, ops_no") \
@@ -7622,8 +7620,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 # ─────────────────────────────────────────────────────
                 # 🔒 SERVER-SIDE DUPLICATE CHECK FOR RETURN/REPLACE
                 # ─────────────────────────────────────────────────────
-                from datetime import datetime as _dt3, timedelta as _td3, timezone as _tz3
-                _rr_dup_window = (_dt3.now(_tz3.utc) - _td3(minutes=5)).isoformat()
+                _rr_dup_window = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
                 _rr_dup_query = admin_supabase.table("ops_documents") \
                     .select("id, ops_no") \
                     .eq("ops_date", return_date.isoformat()) \
@@ -7951,8 +7948,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 # ─────────────────────────────────────────────────────
                 # 🔒 SERVER-SIDE DUPLICATE CHECK FOR FREIGHT
                 # ─────────────────────────────────────────────────────
-                from datetime import datetime as _dt4, timedelta as _td4, timezone as _tz4
-                _fr_dup_window = (_dt4.now(_tz4.utc) - _td4(minutes=5)).isoformat()
+                _fr_dup_window = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
                 _fr_dup_query = admin_supabase.table("ops_documents") \
                     .select("id, ops_no") \
                     .eq("ops_date", freight_date.isoformat()) \
