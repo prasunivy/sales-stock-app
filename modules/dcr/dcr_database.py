@@ -62,6 +62,44 @@ def check_duplicate_dcr(user_id, report_date):
     return len(result) > 0
 
 
+def get_submitted_dcr_for_date(user_id, report_date):
+    """
+    Return details of the submitted DCR that is blocking this date.
+    Returns a dict with id, report_date, area_type, submitted_at, territory_names, or None.
+    """
+    result = safe_exec(
+        admin_supabase.table("dcr_reports")
+        .select("id, report_date, area_type, submitted_at, territory_ids")
+        .eq("user_id", user_id)
+        .eq("report_date", str(report_date))
+        .eq("is_deleted", False)
+        .eq("status", "submitted")
+        .limit(1),
+        "Error fetching blocking DCR details"
+    )
+    if not result:
+        return None
+    row = result[0]
+    # Resolve territory names
+    territory_names = []
+    try:
+        t_ids = json.loads(row.get("territory_ids") or "[]")
+        if not isinstance(t_ids, list):
+            t_ids = []
+        if t_ids:
+            territories = safe_exec(
+                admin_supabase.table("territories")
+                .select("name")
+                .in_("id", t_ids),
+                "Error loading territory names"
+            )
+            territory_names = [t["name"] for t in territories]
+    except Exception:
+        territory_names = []
+    row["territory_names"] = territory_names
+    return row
+
+
 def get_draft_dcr_for_date(user_id, report_date):
     """
     Return an existing draft DCR for user on this specific date, or None.
