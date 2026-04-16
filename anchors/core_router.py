@@ -559,22 +559,23 @@ def _dash_monthly_sales(stockist_ids, month, year):
         "Error loading invoices"
     ) or []
 
-    # gross_amount is a document-level figure stored identically on
-    # every ops_line row — so we take it from ONE line per document only.
+    # Use financial_ledger debit — one row per invoice, always correct.
+    # ops_lines.gross_amount is the document total stamped on EVERY product
+    # line row, so a 3-product invoice would count 3x with the old approach.
     gross_sale    = 0.0
-    inv_gross_map = {}  # ops_document_id → gross_amount
+    inv_gross_map = {}  # ops_document_id → gross amount
     if inv_rows:
-        inv_ids   = [r["id"] for r in inv_rows]
-        inv_lines = safe_exec(
-            admin_supabase.table("ops_lines")
-            .select("ops_document_id, gross_amount")
+        inv_ids    = [r["id"] for r in inv_rows]
+        inv_ledger = safe_exec(
+            admin_supabase.table("financial_ledger")
+            .select("ops_document_id, debit")
             .in_("ops_document_id", inv_ids),
-            "Error loading invoice lines"
+            "Error loading invoice ledger"
         ) or []
-        for line in inv_lines:
-            oid = line["ops_document_id"]
-            if oid not in inv_gross_map:          # first occurrence only
-                inv_gross_map[oid] = float(line.get("gross_amount") or 0)
+        for row in inv_ledger:
+            oid = row["ops_document_id"]
+            if oid not in inv_gross_map:
+                inv_gross_map[oid] = float(row.get("debit") or 0)
         gross_sale = sum(inv_gross_map.values())
 
     # ── Credit Notes ──────────────────────────────────────────────
@@ -591,18 +592,18 @@ def _dash_monthly_sales(stockist_ids, month, year):
     ) or []
     cn_ids      = [r["id"] for r in cn_rows]
     cn_amount   = 0.0
-    cn_gross_map = {}  # ops_document_id → gross_amount
+    cn_gross_map = {}  # ops_document_id -> gross amount
     if cn_ids:
-        cn_lines = safe_exec(
-            admin_supabase.table("ops_lines")
-            .select("ops_document_id, gross_amount")
+        cn_ledger = safe_exec(
+            admin_supabase.table("financial_ledger")
+            .select("ops_document_id, credit")
             .in_("ops_document_id", cn_ids),
-            "Error loading CN lines"
+            "Error loading CN ledger"
         ) or []
-        for line in cn_lines:
-            oid = line["ops_document_id"]
-            if oid not in cn_gross_map:           # first occurrence only
-                cn_gross_map[oid] = float(line.get("gross_amount") or 0)
+        for row in cn_ledger:
+            oid = row["ops_document_id"]
+            if oid not in cn_gross_map:           # one ledger row per CN
+                cn_gross_map[oid] = float(row.get("credit") or 0)
         cn_amount = sum(cn_gross_map.values())
 
     # ── Payments ──────────────────────────────────────────────────
@@ -611,6 +612,7 @@ def _dash_monthly_sales(stockist_ids, month, year):
         .select("id, ops_no, ops_date, from_entity_id")
         .eq("ops_type", "ADJUSTMENT")
         .eq("is_deleted", False)
+        .not_.like("ops_no", "REV-DEL-%")
         .in_("from_entity_id", stockist_ids)
         .gte("ops_date", month_start)
         .lt("ops_date", month_end)
