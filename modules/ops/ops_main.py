@@ -1567,6 +1567,15 @@ This action will:
             st.session_state.ops_to_entity_id = None
             st.session_state.ops_to_entity_type = None
 
+        # ✅ RESTRICT STOCK AS OPTIONS FOR INTERNAL TRANSFER ROUTES
+        # Company↔CNF, Company↔User, CNF↔User — no Invoice, no Return to Purchaser
+        _INTERNAL_ROUTES = {
+            ("Company", "CNF"), ("Company", "User"), ("CNF", "User"),
+            ("CNF", "Company"), ("User", "Company"), ("User", "CNF"),
+        }
+        if stock_direction == "Stock Out" and (from_entity, to_entity) in _INTERNAL_ROUTES:
+            stock_as_options = ["Transfer", "Sample", "Lot", "Damage"]
+
         
         
 
