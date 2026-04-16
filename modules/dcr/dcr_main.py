@@ -8,6 +8,7 @@ from datetime import date, datetime
 from modules.dcr.dcr_database import (
     init_dcr_session_state,
     check_duplicate_dcr,
+    get_submitted_dcr_for_date,
     create_dcr_draft,
     save_dcr_header,
     save_doctor_visit,
@@ -452,7 +453,25 @@ def show_stage_1_header():
     # Check duplicate only if creating NEW DCR (not editing)
     if not st.session_state.get("dcr_report_id"):
         if check_duplicate_dcr(selected_user_id, report_date):
-            st.error("❌ A DCR already exists for this date. Please check View My Reports.")
+            blocking = get_submitted_dcr_for_date(selected_user_id, report_date)
+            st.error("❌ Cannot create DCR — a submitted DCR already exists for this date.")
+            if blocking:
+                territory_str = ", ".join(blocking.get("territory_names") or []) or "—"
+                submitted_raw = blocking.get("submitted_at") or ""
+                try:
+                    from datetime import datetime as _dt
+                    submitted_str = _dt.fromisoformat(submitted_raw.replace("Z", "+00:00")).strftime("%d %b %Y, %I:%M %p")
+                except Exception:
+                    submitted_str = submitted_raw or "—"
+                st.info(
+                    f"**Why it is blocked:**  \n"
+                    f"A DCR for **{blocking.get('report_date')}** was already submitted and cannot be duplicated.  \n\n"
+                    f"**Details of the existing DCR:**  \n"
+                    f"- **Area Type:** {blocking.get('area_type') or '—'}  \n"
+                    f"- **Territories:** {territory_str}  \n"
+                    f"- **Submitted At:** {submitted_str}  \n\n"
+                    f"If this was submitted by mistake, ask your admin to delete it from View Reports."
+                )
             if st.button("⬅️ Back to Home"):
                 st.session_state.dcr_current_step = 0
                 st.session_state.active_module = None
@@ -462,7 +481,25 @@ def show_stage_1_header():
         existing_dcr = get_dcr_by_id(st.session_state.dcr_report_id)
         if existing_dcr and str(existing_dcr.get('report_date')) != str(report_date):
             if check_duplicate_dcr(selected_user_id, report_date):
-                st.error("❌ Another DCR already exists for this date. Cannot change to this date.")
+                blocking = get_submitted_dcr_for_date(selected_user_id, report_date)
+                st.error("❌ Cannot change to this date — a submitted DCR already exists for it.")
+                if blocking:
+                    territory_str = ", ".join(blocking.get("territory_names") or []) or "—"
+                    submitted_raw = blocking.get("submitted_at") or ""
+                    try:
+                        from datetime import datetime as _dt
+                        submitted_str = _dt.fromisoformat(submitted_raw.replace("Z", "+00:00")).strftime("%d %b %Y, %I:%M %p")
+                    except Exception:
+                        submitted_str = submitted_raw or "—"
+                    st.info(
+                        f"**Why it is blocked:**  \n"
+                        f"A DCR for **{blocking.get('report_date')}** was already submitted and cannot be duplicated.  \n\n"
+                        f"**Details of the existing DCR:**  \n"
+                        f"- **Area Type:** {blocking.get('area_type') or '—'}  \n"
+                        f"- **Territories:** {territory_str}  \n"
+                        f"- **Submitted At:** {submitted_str}  \n\n"
+                        f"If this was submitted by mistake, ask your admin to delete it from View Reports."
+                    )
                 return
     
     # Area type — pre-selected to saved value when resuming
