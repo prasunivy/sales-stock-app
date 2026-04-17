@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime, date, timedelta, timezone
-from anchors.supabase_client import admin_supabase
+from anchors.supabase_client import admin_supabase, safe_exec
 
 def _mobile_table(df, compact_cols, detail_title_col, uid_prefix='tbl'):
     import json, uuid
