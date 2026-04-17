@@ -216,6 +216,7 @@ def _do_logout():
               .eq("editing_by", user_id).execute()
     except Exception:
         pass
+    st.query_params.clear()
     st.session_state.clear()
     st.rerun()
 
