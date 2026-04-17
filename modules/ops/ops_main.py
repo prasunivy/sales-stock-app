@@ -4232,6 +4232,7 @@ This action will:
             import pandas as _pd
             from io import BytesIO as _BytesIO
             from collections import defaultdict as _defaultdict
+            from datetime import datetime as _dt
 
             # ── Filters ──────────────────────────────────────────────────────
             col1, col2, col3 = st.columns(3)
