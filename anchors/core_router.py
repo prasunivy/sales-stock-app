@@ -62,6 +62,7 @@ def route_module():
         "📊 Doc I/O",
         "🗓️ Tour",
         "📋 POB",
+        "🛒 Order From Stockist",
         "📈 Reports",
     ]
     if role == "admin":
@@ -78,6 +79,7 @@ def route_module():
         "📊 Doc I/O":       "DOCTOR_IO",
         "🗓️ Tour":          "TOUR",
         "📋 POB":           "POB",
+        "🛒 Order From Stockist": "OFS",
         "📈 Reports":       "REPORTS",
         "🔔 Notifications": "NOTIFICATIONS",
         "🔧 Admin":         "ADMIN",
@@ -175,6 +177,10 @@ def route_module():
     elif active == "POB":
         from modules.pob.pob_main import run_pob
         run_pob()
+
+    elif active == "OFS":
+        from modules.orders.ofs_main import run_ofs
+        run_ofs()
 
     elif active == "REPORTS":
         from modules.statement.statement_main import run_reports
