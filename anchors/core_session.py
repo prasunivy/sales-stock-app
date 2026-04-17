@@ -45,12 +45,72 @@ def init_session():
             st.session_state[k] = v
 
 
+def _try_restore_session():
+    """
+    If session state was wiped (after Streamlit reconnect/sleep),
+    try to restore login silently using the username stored in the URL query params.
+    Returns True if session was restored, False otherwise.
+    """
+    # Only attempt restore if not already logged in
+    if st.session_state.get("auth_user"):
+        return True
+
+    # Check if username is stored in URL
+    params = st.query_params
+    username = params.get("u", None)
+    if not username:
+        return False
+
+    try:
+        from anchors.supabase_client import admin_supabase, supabase, safe_exec
+
+        # Re-verify the user is still valid and active in Supabase
+        user_check = safe_exec(
+            admin_supabase.table("users")
+            .select("id, is_active, role, username")
+            .eq("username", username)
+            .limit(1),
+            "Error checking user"
+        )
+
+        if not user_check or not user_check[0]["is_active"]:
+            # User no longer valid — clear the URL param and force re-login
+            st.query_params.clear()
+            return False
+
+        # Re-authenticate silently using Supabase stored session
+        # We use admin lookup to restore auth_user object
+        user_row = user_check[0]
+
+        # Create a minimal mock auth object so the app works normally
+        class RestoredUser:
+            def __init__(self, uid):
+                self.id = uid
+
+        st.session_state.auth_user = RestoredUser(user_row["id"])
+        st.session_state.role = user_row["role"]
+
+        # Reset engine state (safe defaults on reconnect)
+        for k in ["engine_stage", "admin_section", "statement_id",
+                  "product_index", "statement_year", "statement_month",
+                  "selected_stockist_id", "active_module"]:
+            st.session_state[k] = None
+
+        return True
+
+    except Exception:
+        # If anything fails, fall back to login screen
+        st.query_params.clear()
+        return False
+
+
 def handle_login():
     """Handle authentication. Shows login form if not authenticated."""
     init_session()
 
-    if st.session_state.auth_user:
-        return  # Logout is handled in core_router top nav bar
+    # ── Try auto-restore from URL param first ─────────────────────
+    if _try_restore_session():
+        return  # Already logged in or just restored
 
     # ── Login screen ──────────────────────────────────────────────
     st.title("🏠 Ivy Pharmaceuticals")
@@ -93,6 +153,9 @@ def handle_login():
                     st.session_state.auth_user = auth_response.user
                     st.session_state.role = user_check[0]["role"]
 
+                    # ── Save username to URL so session can be restored ──
+                    st.query_params["u"] = username
+
                     # Reset all engine state on fresh login
                     for k in ["engine_stage", "admin_section", "statement_id",
                                "product_index", "statement_year", "statement_month",
@@ -106,5 +169,3 @@ def handle_login():
                     st.error(f"❌ Login failed: {str(e)}")
 
     st.stop()
-
-
