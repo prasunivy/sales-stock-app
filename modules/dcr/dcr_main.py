@@ -1182,11 +1182,25 @@ def show_expense_report():
     rows = []
     for r in reports:
         t_ids = r.get("territory_ids") or []
+        # territory_ids may come as a JSON string from Supabase — parse it
+        if isinstance(t_ids, str):
+            try:
+                import json as _json2
+                t_ids = _json2.loads(t_ids)
+            except Exception:
+                t_ids = []
         if isinstance(t_ids, list) and t_ids:
-            terr_names = ", ".join(
-                terr_map.get(str(tid), str(tid)[:8])
-                for tid in t_ids
-            ) or "\u2014"
+            resolved = []
+            for tid in t_ids:
+                name = terr_map.get(str(tid))
+                if not name:
+                    # try int form
+                    try:
+                        name = terr_map.get(str(int(tid)))
+                    except Exception:
+                        pass
+                resolved.append(name if name else str(tid)[:8])
+            terr_names = ", ".join(resolved) or "\u2014"
         elif r.get("area_type") == "MEETING":
             terr_names = "Meeting"
         else:
