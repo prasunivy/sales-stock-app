@@ -286,11 +286,75 @@ def show_monthly_history():
         st.write(f"**✅ Submitted ({len(submitted)} day(s))**")
         for report in submitted:
             with st.expander(f"📋 {report['report_date']} — {report['area_type']}"):
-                st.write(f"📍 Doctors: {report.get('doctor_count', 0)}")
-                st.write(f"🏪 Chemists: {report.get('chemist_count', 0)}")
-                st.write(f"🎁 Gifts: {report.get('gift_count', 0)}")
-                st.write(f"🚗 KM: {report.get('km_travelled', 0)}")
-                st.write(f"💰 Expenses: ₹{report.get('misc_expense', 0)}")
+
+                # ── Territories ──────────────────────────────────────
+                try:
+                    from anchors.supabase_client import admin_supabase as _supa, safe_exec as _sex
+                    import json as _json
+                    t_ids = report.get("territory_ids") or []
+                    if isinstance(t_ids, str):
+                        t_ids = _json.loads(t_ids)
+                    if t_ids:
+                        t_rows = _sex(
+                            _supa.table("territories").select("name").in_("id", t_ids),
+                            ""
+                        )
+                        t_names = ", ".join(r["name"] for r in t_rows) if t_rows else "—"
+                    elif report.get("area_type") == "MEETING":
+                        t_names = "Meeting"
+                    else:
+                        t_names = "—"
+                except Exception:
+                    t_names = "—"
+                st.write(f"🗺️ **Territories:** {t_names}")
+
+                # ── Doctor visits with names ──────────────────────────
+                try:
+                    doc_visits = _sex(
+                        _supa.table("dcr_doctor_visits")
+                        .select("doctors(name)")
+                        .eq("dcr_report_id", report["id"])
+                        .order("sequence_no"),
+                        ""
+                    )
+                    if doc_visits:
+                        st.write(f"👨‍⚕️ **Doctors Visited ({len(doc_visits)}):**")
+                        for dv in doc_visits:
+                            dname = (dv.get("doctors") or {}).get("name", "Unknown")
+                            st.write(f"&nbsp;&nbsp;&nbsp;• Dr. {dname}")
+                    else:
+                        st.write(f"👨‍⚕️ **Doctors Visited:** 0")
+                except Exception:
+                    st.write(f"👨‍⚕️ **Doctors:** {report.get('doctor_count', 0)}")
+
+                st.write(f"🏪 **Chemists:** {report.get('chemist_count', 0)}")
+
+                # ── Gifts with doctor name, description, amount ───────
+                try:
+                    gift_rows = _sex(
+                        _supa.table("dcr_gifts")
+                        .select("doctor_id, gift_description, gift_amount, doctors(name)")
+                        .eq("dcr_report_id", report["id"])
+                        .order("sequence_no"),
+                        ""
+                    )
+                    if gift_rows:
+                        total_gift = sum(float(g.get("gift_amount") or 0) for g in gift_rows)
+                        st.write(f"🎁 **Gifts ({len(gift_rows)}) — Total: ₹{total_gift:,.0f}**")
+                        for g in gift_rows:
+                            gname = (g.get("doctors") or {}).get("name", "Unknown")
+                            gdesc = g.get("gift_description") or "—"
+                            gamt  = float(g.get("gift_amount") or 0)
+                            st.write(f"&nbsp;&nbsp;&nbsp;• Dr. {gname}: {gdesc} (₹{gamt:,.0f})")
+                    else:
+                        st.write("🎁 **Gifts:** None")
+                except Exception:
+                    st.write(f"🎁 **Gifts:** {report.get('gift_count', 0)}")
+
+                st.write(f"🚗 **KM:** {report.get('km_travelled', 0)}")
+                st.write(f"💰 **Expenses:** ₹{report.get('misc_expense', 0)}")
+                if report.get("misc_expense_details"):
+                    st.write(f"📝 **Details:** {report['misc_expense_details']}")
     
     # Show draft reports with Resume button
     if drafts:
