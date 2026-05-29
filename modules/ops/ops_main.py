@@ -2302,19 +2302,27 @@ This action will:
 
                         st.success("✅ OPS document saved successfully")
                         st.session_state.ops_submit_done = True
-                        # Push notification — invoice created
+                        # Push notification — send to user assigned to this stockist
                         try:
-                            from anchors.fcm_helper import notify_invoice_created
+                            from anchors.fcm_helper import send_push_notification
                             _saved = response.data[0]
-                            notify_invoice_created(
-                                user_id=user_id,
-                                ops_no=_saved.get("ops_no", ""),
-                                party_name=st.session_state.get("ops_to_entity_name", ""),
-                                amount=float(_saved.get("invoice_total", 0) or 0)
-                            )
+                            _stockist_id = st.session_state.get("ops_to_entity_id") \
+                                if st.session_state.get("ops_to_entity_type") == "Stockist" \
+                                else st.session_state.get("ops_from_entity_id")
+                            if _stockist_id:
+                                _user_map = admin_supabase.table("user_stockists") \
+                                    .select("user_id") \
+                                    .eq("stockist_id", _stockist_id) \
+                                    .execute()
+                                for _um in (_user_map.data or []):
+                                    send_push_notification(
+                                        user_id=_um["user_id"],
+                                        title="📄 New Invoice Created",
+                                        body=f"{_saved.get('ops_no', '')} | {st.session_state.get('ops_to_entity_name', '')} | ₹{float(_saved.get('invoice_total', 0) or 0):,.0f}",
+                                        data={"type": "invoice", "ops_no": _saved.get("ops_no", "")}
+                                    )
                         except Exception:
                             pass
-
                         # ✅ IF EDITING, REVERSE THE OLD STOCK & FINANCIAL ENTRIES
                         if st.session_state.edit_source_ops_id:
                             old_ops_id = st.session_state.edit_source_ops_id
@@ -3545,16 +3553,29 @@ This action will:
 
 
                 st.session_state.pay_submit_done = True
-                # Push notification — payment created
+                # Push notification — send to user assigned to this stockist
                 try:
-                    from anchors.fcm_helper import notify_payment_created
+                    from anchors.fcm_helper import send_push_notification
                     _pay_doc = doc_resp.data[0]
-                    notify_payment_created(
-                        user_id=user_id,
-                        ops_no=_pay_doc.get("ops_no", ""),
-                        party_name=st.session_state.get("pay_from_entity_name", ""),
-                        amount=float(net_amt or 0)
+                    # Find the stockist in this payment
+                    _stockist_id = (
+                        st.session_state.get("pay_from_entity_id")
+                        if st.session_state.get("pay_from_entity_type") == "Stockist"
+                        else st.session_state.get("pay_to_entity_id")
                     )
+                    if _stockist_id:
+                        # Find user assigned to this stockist
+                        _user_map = admin_supabase.table("user_stockists") \
+                            .select("user_id") \
+                            .eq("stockist_id", _stockist_id) \
+                            .execute()
+                        for _um in (_user_map.data or []):
+                            send_push_notification(
+                                user_id=_um["user_id"],
+                                title="💰 Payment Recorded",
+                                body=f"{_pay_doc.get('ops_no', '')} | {st.session_state.get('pay_from_entity_name', '')} | ₹{float(net_amt or 0):,.0f}",
+                                data={"type": "payment", "ops_no": _pay_doc.get("ops_no", "")}
+                            )
                 except Exception:
                     pass
                 st.session_state.last_payment_ops_id = payment_ops_id
