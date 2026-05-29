@@ -2302,6 +2302,18 @@ This action will:
 
                         st.success("✅ OPS document saved successfully")
                         st.session_state.ops_submit_done = True
+                        # Push notification — invoice created
+                        try:
+                            from anchors.fcm_helper import notify_invoice_created
+                            _saved = response.data[0]
+                            notify_invoice_created(
+                                user_id=user_id,
+                                ops_no=_saved.get("ops_no", ""),
+                                party_name=st.session_state.get("ops_to_entity_name", ""),
+                                amount=float(_saved.get("invoice_total", 0) or 0)
+                            )
+                        except Exception:
+                            pass
 
                         # ✅ IF EDITING, REVERSE THE OLD STOCK & FINANCIAL ENTRIES
                         if st.session_state.edit_source_ops_id:
@@ -3533,6 +3545,18 @@ This action will:
 
 
                 st.session_state.pay_submit_done = True
+                # Push notification — payment created
+                try:
+                    from anchors.fcm_helper import notify_payment_created
+                    _pay_doc = doc_resp.data[0]
+                    notify_payment_created(
+                        user_id=user_id,
+                        ops_no=_pay_doc.get("ops_no", ""),
+                        party_name=st.session_state.get("pay_from_entity_name", ""),
+                        amount=float(net_amt or 0)
+                    )
+                except Exception:
+                    pass
                 st.session_state.last_payment_ops_id = payment_ops_id
                 st.rerun()
 
