@@ -6,3 +6,5 @@ reportlab
 pillow
 matplotlib
 python-dotenv
+google-auth
+google-auth-httplib2
