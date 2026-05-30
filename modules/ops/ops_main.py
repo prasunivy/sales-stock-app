@@ -2306,6 +2306,10 @@ This action will:
                         try:
                             from anchors.fcm_helper import send_push_notification
                             _saved = response.data[0]
+                            _doc_type = st.session_state.get("ops_stock_as", "Invoice")
+                            _notif_title = "📝 Credit Note Created" if _doc_type == "Credit Note" \
+                                else "📄 New Invoice Created"
+                            _notif_type = "credit_note" if _doc_type == "Credit Note" else "invoice"
                             _stockist_id = st.session_state.get("ops_to_entity_id") \
                                 if st.session_state.get("ops_to_entity_type") == "Stockist" \
                                 else st.session_state.get("ops_from_entity_id")
@@ -2317,9 +2321,9 @@ This action will:
                                 for _um in (_user_map.data or []):
                                     send_push_notification(
                                         user_id=_um["user_id"],
-                                        title="📄 New Invoice Created",
+                                        title=_notif_title,
                                         body=f"{_saved.get('ops_no', '')} | {st.session_state.get('ops_to_entity_name', '')} | ₹{float(_saved.get('invoice_total', 0) or 0):,.0f}",
-                                        data={"type": "invoice", "ops_no": _saved.get("ops_no", "")}
+                                        data={"type": _notif_type, "ops_no": _saved.get("ops_no", "")}
                                     )
                         except Exception:
                             pass
