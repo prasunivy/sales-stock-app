@@ -3579,7 +3579,7 @@ This action will:
                 except Exception:
                     pass
                 st.session_state.last_payment_ops_id = payment_ops_id
-                st.rerun()
+                st.stop()
 
 
 
