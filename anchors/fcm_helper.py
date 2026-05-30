@@ -9,6 +9,7 @@ import streamlit as st
 import google.auth
 import google.auth.transport.requests
 from google.oauth2 import service_account
+from anchors.supabase_client import admin_supabase
 
 
 def _get_access_token() -> str:
@@ -30,7 +31,6 @@ def _get_access_token() -> str:
 def _get_fcm_token_for_user(user_id: str) -> str:
     """Get the FCM device token for a user from Supabase."""
     try:
-        from anchors.supabase_client import admin_supabase
         result = admin_supabase.table("user_fcm_tokens") \
             .select("token") \
             .eq("user_id", user_id) \
@@ -95,6 +95,17 @@ def send_push_notification(
         )
 
         if response.status_code == 200:
+            # Save to user_notifications for My Activity screen
+            try:
+                admin_supabase.table("user_notifications").insert({
+                    "user_id": user_id,
+                    "title": title,
+                    "body": body,
+                    "type": (data or {}).get("type", ""),
+                    "ops_no": (data or {}).get("ops_no", ""),
+                }).execute()
+            except Exception:
+                pass
             return True
         else:
             st.error(f"FCM error: {response.status_code} {response.text}")
@@ -115,7 +126,6 @@ def send_push_to_all_users(
     Returns count of successful sends.
     """
     try:
-        from anchors.supabase_client import admin_supabase
         users = admin_supabase.table("user_fcm_tokens") \
             .select("user_id") \
             .execute()
