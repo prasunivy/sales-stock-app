@@ -1292,10 +1292,11 @@ def show_expense_report():
     st.dataframe(df_display, use_container_width=True, hide_index=True)
 
     st.write("---")
+    _lgo_km = df["KM (Let's Go)"].sum()
     st.write(
         f"**Summary:** {len(rows)} working days | "
         f"KM (DCR): {df['KM Travelled (DCR)'].sum():.1f} | "
-        f"KM (Lets Go): {df[\"KM (Let's Go)\"].sum():.1f} | "
+        f"KM (Lets Go): {_lgo_km:.1f} | "
         f"Daily Expense: ₹{df['Daily Expense (₹)'].sum():.0f} | "
         f"Misc Expense: ₹{df['Misc Expense (₹)'].sum():.2f} | "
         f"Total Gifts: ₹{df['Gifts Given (₹)'].sum():.2f} | "
