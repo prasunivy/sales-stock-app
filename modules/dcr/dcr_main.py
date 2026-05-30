@@ -1295,7 +1295,7 @@ def show_expense_report():
     st.write(
         f"**Summary:** {len(rows)} working days | "
         f"KM (DCR): {df['KM Travelled (DCR)'].sum():.1f} | "
-        f"KM (Let's Go): {df[\"KM (Let's Go)\"].sum():.1f} | "
+        f"KM (Lets Go): {df[\"KM (Let's Go)\"].sum():.1f} | "
         f"Daily Expense: ₹{df['Daily Expense (₹)'].sum():.0f} | "
         f"Misc Expense: ₹{df['Misc Expense (₹)'].sum():.2f} | "
         f"Total Gifts: ₹{df['Gifts Given (₹)'].sum():.2f} | "
