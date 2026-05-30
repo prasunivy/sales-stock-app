@@ -76,9 +76,9 @@ def send_push_notification(
                 "android": {
                     "notification": {
                         "channel_id": "ivy_pharma_channel",
-                        "priority": "HIGH",
                         "sound": "default",
-                    }
+                    },
+                    "priority": "high",
                 },
                 "data": {k: str(v) for k, v in (data or {}).items()},
             }
