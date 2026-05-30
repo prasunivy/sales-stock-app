@@ -1258,17 +1258,26 @@ def show_expense_report():
 
         daily_exp = user_expense_map.get(uid, 0)
         km_rate = user_km_map.get(uid, 0)
-        lets_go_expense = daily_exp + (lets_go_km * km_rate)
+        dcr_km = float(r.get("km_travelled") or 0)
+        misc_exp = float(r.get("misc_expense") or 0)
+
+        # User Exp: (km_rate x dcr_km) + daily_exp + misc_expense
+        user_exp = round((km_rate * dcr_km) + daily_exp + misc_exp, 0)
+        # Lets Go Exp: (km_rate x lets_go_km) + daily_exp + misc_expense
+        lgo_exp = round((km_rate * lets_go_km) + daily_exp + misc_exp, 0)
 
         rows.append({
             "Date":                  r["report_date"],
             "Territories":           terr_names,
             "Visited With":          visited_with_str,
             "Doctors Visited":       num_doctors,
-            "KM Travelled (DCR)":    float(r.get("km_travelled") or 0),
-            "KM (Let's Go)":         round(lets_go_km, 1),
-            "Daily Expense (₹)":     round(lets_go_expense, 0),
-            "Misc Expense (₹)":      float(r.get("misc_expense") or 0),
+            "KM (DCR)":              round(dcr_km, 1),
+            "KM (Lets Go)":          round(lets_go_km, 1),
+            "KM Rate (₹/km)":        km_rate,
+            "Daily Exp (₹)":         daily_exp,
+            "Misc Expense (₹)":      misc_exp,
+            "User Exp (₹)":          user_exp,
+            "Lets Go Exp (₹)":       lgo_exp,
             "Gifts Given (₹)":       total_gift,
         })
 
@@ -1280,10 +1289,13 @@ def show_expense_report():
         "Territories":           "",
         "Visited With":          "",
         "Doctors Visited":       df["Doctors Visited"].sum(),
-        "KM Travelled (DCR)":    df["KM Travelled (DCR)"].sum(),
-        "KM (Let's Go)":         df["KM (Let's Go)"].sum(),
-        "Daily Expense (₹)":     df["Daily Expense (₹)"].sum(),
+        "KM (DCR)":              df["KM (DCR)"].sum(),
+        "KM (Lets Go)":          df["KM (Lets Go)"].sum(),
+        "KM Rate (₹/km)":        "",
+        "Daily Exp (₹)":         df["Daily Exp (₹)"].sum(),
         "Misc Expense (₹)":      df["Misc Expense (₹)"].sum(),
+        "User Exp (₹)":          df["User Exp (₹)"].sum(),
+        "Lets Go Exp (₹)":       df["Lets Go Exp (₹)"].sum(),
         "Gifts Given (₹)":       df["Gifts Given (₹)"].sum(),
     }
     df_display = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
@@ -1292,15 +1304,15 @@ def show_expense_report():
     st.dataframe(df_display, use_container_width=True, hide_index=True)
 
     st.write("---")
-    _lgo_km = df["KM (Let's Go)"].sum()
     st.write(
         f"**Summary:** {len(rows)} working days | "
-        f"KM (DCR): {df['KM Travelled (DCR)'].sum():.1f} | "
-        f"KM (Lets Go): {_lgo_km:.1f} | "
-        f"Daily Expense: ₹{df['Daily Expense (₹)'].sum():.0f} | "
-        f"Misc Expense: ₹{df['Misc Expense (₹)'].sum():.2f} | "
-        f"Total Gifts: ₹{df['Gifts Given (₹)'].sum():.2f} | "
-        f"Total Doctors: {int(df['Doctors Visited'].sum())}"
+        f"KM (DCR): {df['KM (DCR)'].sum():.1f} | "
+        f"KM (Lets Go): {df['KM (Lets Go)'].sum():.1f} | "
+        f"User Exp: ₹{df['User Exp (₹)'].sum():.0f} | "
+        f"Lets Go Exp: ₹{df['Lets Go Exp (₹)'].sum():.0f} | "
+        f"Misc: ₹{df['Misc Expense (₹)'].sum():.2f} | "
+        f"Gifts: ₹{df['Gifts Given (₹)'].sum():.2f} | "
+        f"Doctors: {int(df['Doctors Visited'].sum())}"
     )
 
     st.write("---")
