@@ -23,7 +23,7 @@ def _get_access_token() -> str:
         credentials.refresh(request)
         return credentials.token
     except Exception as e:
-        print(f"FCM token error: {e}")
+        st.error(f"FCM token error: {e}")
         return ""
 
 
@@ -39,7 +39,7 @@ def _get_fcm_token_for_user(user_id: str) -> str:
         if result.data:
             return result.data.get("token", "")
     except Exception as e:
-        print(f"FCM token fetch error: {e}")
+        st.error(f"FCM token fetch error: {e}")
     return ""
 
 
@@ -56,7 +56,7 @@ def send_push_notification(
     try:
         device_token = _get_fcm_token_for_user(user_id)
         if not device_token:
-            print(f"No FCM token for user {user_id}")
+            st.warning(f"No FCM token for user {user_id}")
             return False
 
         access_token = _get_access_token()
@@ -97,11 +97,11 @@ def send_push_notification(
         if response.status_code == 200:
             return True
         else:
-            print(f"FCM error: {response.status_code} {response.text}")
+            st.error(f"FCM error: {response.status_code} {response.text}")
             return False
 
     except Exception as e:
-        print(f"FCM send error: {e}")
+        st.error(f"FCM send error: {e}")
         return False
 
 
