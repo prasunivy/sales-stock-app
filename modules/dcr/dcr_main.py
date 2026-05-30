@@ -1107,11 +1107,13 @@ def show_expense_report():
 
     users = safe_exec(
         admin_supabase.table("users")
-        .select("id, username")
+        .select("id, username, daily_expense, km_allowance")
         .eq("is_active", True)
         .order("username"),
         "Error loading users"
     )
+    user_expense_map = {u["id"]: float(u.get("daily_expense") or 0) for u in users}
+    user_km_map = {u["id"]: float(u.get("km_allowance") or 0) for u in users}
     if not users:
         st.error("No users found.")
         return
@@ -1243,27 +1245,46 @@ def show_expense_report():
         else:
             visited_with_str = "Self"
 
+        # Pull KM from Let's Go tracking_sessions for this date
+        tracking = safe_exec(
+            admin_supabase.table("tracking_sessions")
+            .select("total_km")
+            .eq("user_id", uid)
+            .eq("session_date", r["report_date"])
+            .eq("status", "completed"),
+            "Error loading tracking"
+        ) or []
+        lets_go_km = sum(float(t.get("total_km") or 0) for t in tracking)
+
+        daily_exp = user_expense_map.get(uid, 0)
+        km_rate = user_km_map.get(uid, 0)
+        lets_go_expense = daily_exp + (lets_go_km * km_rate)
+
         rows.append({
-            "Date":             r["report_date"],
-            "Territories":      terr_names,
-            "Visited With":     visited_with_str,
-            "Doctors Visited":  num_doctors,
-            "KM Travelled":     float(r.get("km_travelled") or 0),
-            "Misc Expense (\u20b9)": float(r.get("misc_expense") or 0),
-            "Gifts Given (\u20b9)":  total_gift,
+            "Date":                  r["report_date"],
+            "Territories":           terr_names,
+            "Visited With":          visited_with_str,
+            "Doctors Visited":       num_doctors,
+            "KM Travelled (DCR)":    float(r.get("km_travelled") or 0),
+            "KM (Let's Go)":         round(lets_go_km, 1),
+            "Daily Expense (₹)":     round(lets_go_expense, 0),
+            "Misc Expense (₹)":      float(r.get("misc_expense") or 0),
+            "Gifts Given (₹)":       total_gift,
         })
 
     import pandas as pd
     df = pd.DataFrame(rows)
 
     totals = {
-        "Date":             "TOTAL",
-        "Territories":      "",
-        "Visited With":     "",
-        "Doctors Visited":  df["Doctors Visited"].sum(),
-        "KM Travelled":     df["KM Travelled"].sum(),
-        "Misc Expense (\u20b9)": df["Misc Expense (\u20b9)"].sum(),
-        "Gifts Given (\u20b9)":  df["Gifts Given (\u20b9)"].sum(),
+        "Date":                  "TOTAL",
+        "Territories":           "",
+        "Visited With":          "",
+        "Doctors Visited":       df["Doctors Visited"].sum(),
+        "KM Travelled (DCR)":    df["KM Travelled (DCR)"].sum(),
+        "KM (Let's Go)":         df["KM (Let's Go)"].sum(),
+        "Daily Expense (₹)":     df["Daily Expense (₹)"].sum(),
+        "Misc Expense (₹)":      df["Misc Expense (₹)"].sum(),
+        "Gifts Given (₹)":       df["Gifts Given (₹)"].sum(),
     }
     df_display = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
 
@@ -1273,9 +1294,11 @@ def show_expense_report():
     st.write("---")
     st.write(
         f"**Summary:** {len(rows)} working days | "
-        f"Total KM: {df['KM Travelled'].sum():.1f} | "
-        f"Total Expense: \u20b9{df['Misc Expense (\u20b9)'].sum():.2f} | "
-        f"Total Gifts: \u20b9{df['Gifts Given (\u20b9)'].sum():.2f} | "
+        f"KM (DCR): {df['KM Travelled (DCR)'].sum():.1f} | "
+        f"KM (Let's Go): {df[\"KM (Let's Go)\"].sum():.1f} | "
+        f"Daily Expense: ₹{df['Daily Expense (₹)'].sum():.0f} | "
+        f"Misc Expense: ₹{df['Misc Expense (₹)'].sum():.2f} | "
+        f"Total Gifts: ₹{df['Gifts Given (₹)'].sum():.2f} | "
         f"Total Doctors: {int(df['Doctors Visited'].sum())}"
     )
 
