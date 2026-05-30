@@ -8838,10 +8838,13 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             st.caption(f"📋 {len(payments)} result(s) for \"{pay_search}\"")
 
         payment_ids = [p["id"] for p in payments]
-        ledger_data = admin_supabase.table("financial_ledger")\
-            .select("ops_document_id, credit, gross_amount, discount_amount, net_amount")\
-            .in_("ops_document_id", payment_ids)\
-            .execute().data
+        if not payment_ids:
+            ledger_data = []
+        else:
+            ledger_data = admin_supabase.table("financial_ledger")\
+                .select("ops_document_id, credit, gross_amount, discount_amount, net_amount")\
+                .in_("ops_document_id", payment_ids)\
+                .execute().data
         
         amount_lookup = {}
         for entry in ledger_data:
