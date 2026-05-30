@@ -3553,33 +3553,9 @@ This action will:
 
 
                 st.session_state.pay_submit_done = True
-                # Push notification — send to user assigned to this stockist
-                try:
-                    from anchors.fcm_helper import send_push_notification
-                    _pay_doc = doc_resp.data[0]
-                    # Find the stockist in this payment
-                    _stockist_id = (
-                        st.session_state.get("pay_from_entity_id")
-                        if st.session_state.get("pay_from_entity_type") == "Stockist"
-                        else st.session_state.get("pay_to_entity_id")
-                    )
-                    if _stockist_id:
-                        # Find user assigned to this stockist
-                        _user_map = admin_supabase.table("user_stockists") \
-                            .select("user_id") \
-                            .eq("stockist_id", _stockist_id) \
-                            .execute()
-                        for _um in (_user_map.data or []):
-                            send_push_notification(
-                                user_id=_um["user_id"],
-                                title="💰 Payment Recorded",
-                                body=f"{_pay_doc.get('ops_no', '')} | {st.session_state.get('pay_from_entity_name', '')} | ₹{float(net_amt or 0):,.0f}",
-                                data={"type": "payment", "ops_no": _pay_doc.get("ops_no", "")}
-                            )
-                except Exception:
-                    pass
+                
                 st.session_state.last_payment_ops_id = payment_ops_id
-                st.stop()
+                st.rerun()
 
 
 
@@ -8708,7 +8684,33 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                         "metadata": {"allocations": allocations}
                     }).execute()
                 
+                    # Push notification to user assigned to this stockist
+                    try:
+                        from anchors.fcm_helper import send_push_notification
+                        _pay_doc = admin_supabase.table("ops_documents") \
+                            .select("ops_no, from_entity_id, from_entity_type") \
+                            .eq("id", selected_payment_id) \
+                            .maybe_single().execute()
+                        if _pay_doc.data:
+                            _stockist_id = _pay_doc.data.get("from_entity_id") \
+                                if _pay_doc.data.get("from_entity_type") == "Stockist" \
+                                else None
+                            if _stockist_id:
+                                _user_map = admin_supabase.table("user_stockists") \
+                                    .select("user_id") \
+                                    .eq("stockist_id", _stockist_id) \
+                                    .execute()
+                                for _um in (_user_map.data or []):
+                                    send_push_notification(
+                                        user_id=_um["user_id"],
+                                        title="💰 Payment Allocated",
+                                        body=f"{_pay_doc.data.get('ops_no', '')} | ₹{total_allocation:,.0f} allocated",
+                                        data={"type": "payment", "ops_no": _pay_doc.data.get("ops_no", "")}
+                                    )
+                    except Exception:
+                        pass
                     st.success("✅ Payment allocated successfully!")
+                    
                     st.balloons()
                 
                     if st.button("🔄 Allocate Another"):
