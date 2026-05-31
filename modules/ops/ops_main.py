@@ -8540,8 +8540,40 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             .order("ops_date")\
             .execute().data
 
-        if not outstanding_invoices and ob_outstanding <= 0:
-            st.warning("No outstanding invoices or opening balance found for this Stockist")
+        # ========================================================================
+        # FETCH CREDIT NOTES FOR TARGET STOCKIST
+        # ========================================================================
+        cn_docs = admin_supabase.table("ops_documents")            .select("id, ops_no, ops_date")            .eq("stock_as", "credit_note")            .eq("from_entity_id", target_stockist_id)            .eq("is_deleted", False)            .order("ops_date")            .execute().data or []
+
+        # Get CN amounts from financial_ledger (credit column)
+        cn_amount_map = {}  # cn_id → total CN amount
+        if cn_docs:
+            cn_ids = [r["id"] for r in cn_docs]
+            cn_ledger = admin_supabase.table("financial_ledger")                .select("ops_document_id, credit")                .in_("ops_document_id", cn_ids)                .execute().data or []
+            for row in cn_ledger:
+                oid = row["ops_document_id"]
+                if oid not in cn_amount_map:
+                    cn_amount_map[oid] = float(row.get("credit") or 0)
+
+        # Get already applied CN amounts from payment_settlements
+        cn_applied_map = {}  # cn_id → already applied
+        if cn_docs:
+            for cn in cn_docs:
+                setts = admin_supabase.table("payment_settlements")                    .select("amount")                    .eq("payment_ops_id", cn["id"])                    .execute().data or []
+                cn_applied_map[cn["id"]] = sum(float(s["amount"]) for s in setts)
+
+        # Only show CNs with remaining balance
+        available_cns = [
+            {**cn,
+             "cn_total": cn_amount_map.get(cn["id"], 0.0),
+             "cn_applied": cn_applied_map.get(cn["id"], 0.0),
+             "cn_available": max(0.0, cn_amount_map.get(cn["id"], 0.0) - cn_applied_map.get(cn["id"], 0.0))}
+            for cn in cn_docs
+            if max(0.0, cn_amount_map.get(cn["id"], 0.0) - cn_applied_map.get(cn["id"], 0.0)) > 0
+        ]
+
+        if not outstanding_invoices and ob_outstanding <= 0 and not available_cns:
+            st.warning("No outstanding invoices, opening balance, or credit notes found for this Stockist")
             if st.button("⬅ Back"):
                 st.session_state.ops_section = None
                 st.rerun()
@@ -8550,6 +8582,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
         st.subheader("📋 Outstanding Items to Allocate")
 
         allocations    = {}
+        cn_allocations = {}  # {(cn_id, inv_id): amount}
         ob_allocation  = 0.0
         total_allocation = 0
 
@@ -8599,14 +8632,62 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                         total_allocation += allocate_amt
                 st.divider()
     
+        # ── Credit Notes section ─────────────────────────────────────
+        if available_cns:
+            st.markdown("---")
+            st.markdown("### 📝 Credit Notes Available to Apply")
+            st.info("💡 Credit notes reduce invoice outstanding directly — no payment needed. Select which invoice each credit note applies to.")
+
+            for cn in available_cns:
+                with st.container():
+                    col1, col2, col3, col4 = st.columns([2, 1, 2, 2])
+                    with col1:
+                        st.write(f"**{cn['ops_no']}**")
+                        st.caption(f"Date: {cn['ops_date']}")
+                    with col2:
+                        st.write(f"**Available:**")
+                        st.write(f"₹{cn['cn_available']:,.2f}")
+                    with col3:
+                        # Select which invoice to apply this CN to
+                        inv_options = {"— Don't apply —": None}
+                        for inv in outstanding_invoices:
+                            inv_options[f"{inv['ops_no']} (Due: ₹{inv['outstanding_balance']:,.2f})"] = inv["id"]
+                        selected_inv_label = st.selectbox(
+                            "Apply to Invoice",
+                            list(inv_options.keys()),
+                            key=f"cn_inv_{cn['id']}"
+                        )
+                        selected_inv_id = inv_options[selected_inv_label]
+                    with col4:
+                        if selected_inv_id:
+                            # Max = min of CN available and invoice outstanding
+                            inv_due = next((i["outstanding_balance"] for i in outstanding_invoices if i["id"] == selected_inv_id), 0.0)
+                            max_cn = min(float(cn["cn_available"]), float(inv_due))
+                            cn_amt = st.number_input(
+                                "Amount ₹",
+                                min_value=0.0,
+                                max_value=float(max_cn),
+                                value=float(max_cn),
+                                step=0.01,
+                                key=f"cn_amt_{cn['id']}"
+                            )
+                            if cn_amt > 0:
+                                cn_allocations[(cn["id"], selected_inv_id)] = cn_amt
+                        else:
+                            st.write("—")
+                    st.divider()
+
         # Show allocation summary
+        cn_total = sum(cn_allocations.values())
         st.subheader("📊 Allocation Summary")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Allocating", f"₹{total_allocation:,.2f}")
+            st.metric("Payment Allocating", f"₹{total_allocation:,.2f}")
         with col2:
-            st.metric("Remaining", f"₹{remaining_to_allocate - total_allocation:,.2f}")
-    
+            st.metric("CN Applying", f"₹{cn_total:,.2f}")
+        with col3:
+            st.metric("Payment Remaining", f"₹{remaining_to_allocate - total_allocation:,.2f}")
+
         if total_allocation > remaining_to_allocate:
             st.error("❌ Total allocation exceeds available amount")
             st.stop()
@@ -8642,7 +8723,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                         # Inserting another credit here would cause a double ledger effect.
                         # We only track the settlement in payment_settlements (same as invoices).
 
-                    # Allocate against Invoices
+                    # Allocate against Invoices (from payment)
                     for inv_id, alloc_amt in allocations.items():
                         admin_supabase.table("payment_settlements").insert({
                             "payment_ops_id": selected_payment_id,
@@ -8666,7 +8747,46 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                 "outstanding_balance": max(0, new_outstanding),
                                 "payment_status": status
                             }).eq("id", inv_id).execute()
-                
+
+                    # ── Apply Credit Notes to Invoices ───────────────────
+                    for (cn_id, inv_id), cn_amt in cn_allocations.items():
+                        # Record in payment_settlements using CN as the "payment"
+                        admin_supabase.table("payment_settlements").insert({
+                            "payment_ops_id": cn_id,
+                            "invoice_id": inv_id,
+                            "amount": cn_amt
+                        }).execute()
+                        # Update invoice outstanding
+                        invoice = admin_supabase.table("ops_documents")\
+                            .select("paid_amount, outstanding_balance, invoice_total")\
+                            .eq("id", inv_id).single().execute().data
+                        if invoice:
+                            new_paid = (invoice.get("paid_amount") or 0) + cn_amt
+                            new_outstanding = (invoice.get("invoice_total") or 0) - new_paid
+                            if new_outstanding <= 0:
+                                status = "PAID"
+                            elif new_paid > 0:
+                                status = "PARTIAL"
+                            else:
+                                status = "UNPAID"
+                            admin_supabase.table("ops_documents").update({
+                                "paid_amount": new_paid,
+                                "outstanding_balance": max(0, new_outstanding),
+                                "payment_status": status
+                            }).eq("id", inv_id).execute()
+                        # Mark CN as allocated
+                        admin_supabase.table("ops_documents").update({
+                            "allocation_status": "FULLY_ALLOCATED"
+                        }).eq("id", cn_id).execute()
+                        # Audit log for CN application
+                        admin_supabase.table("audit_logs").insert({
+                            "action": "ALLOCATE_PAYMENT",
+                            "target_type": "ops_documents",
+                            "target_id": cn_id,
+                            "performed_by": user_id,
+                            "message": f"Credit Note applied ₹{cn_amt:,.2f} to invoice"
+                        }).execute()
+
                     # Update payment allocation status
                     new_total_allocated = already_allocated + total_allocation
                     if new_total_allocated >= total_payment:
