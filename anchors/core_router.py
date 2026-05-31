@@ -264,7 +264,7 @@ def _dash_admin(admin_id):
 
     users = safe_exec(
         admin_supabase.table("users")
-        .select("id, username")
+        .select("id, username, designation")
         .eq("is_active", True)
         .order("username"),
         "Error loading users"
@@ -274,7 +274,9 @@ def _dash_admin(admin_id):
         st.warning("No active users found.")
         return
 
-    user_map = {u["id"]: u["username"] for u in users}
+    ALL_REPS = "__all_reps__"
+    user_map = {ALL_REPS: "🏢 All Representatives"}
+    user_map.update({u["id"]: u["username"] for u in users})
 
     selected_id = st.selectbox(
         "👤 Select User",
@@ -284,12 +286,79 @@ def _dash_admin(admin_id):
     )
 
     st.divider()
-    _dash_render(selected_id)
+
+    if selected_id == ALL_REPS:
+        _dash_render_all_reps()
+    else:
+        _dash_render(selected_id)
 
 
 # ──────────────────────────────────────────────────────────────────
 # MAIN DASHBOARD RENDERER
 # ──────────────────────────────────────────────────────────────────
+def _dash_render_all_reps():
+    """Aggregate dashboard across all representative users."""
+    today = date.today()
+
+    # Get all representative users
+    reps = safe_exec(
+        admin_supabase.table("users")
+        .select("id")
+        .eq("designation", "representative")
+        .eq("is_active", True),
+        "Error loading reps"
+    ) or []
+    rep_ids = [r["id"] for r in reps]
+
+    # Aggregate stockists across all reps
+    stockist_map = {}
+    territory_ids_set = set()
+    for uid in rep_ids:
+        us = safe_exec(
+            admin_supabase.table("user_stockists")
+            .select("stockist_id, stockists(id, name)")
+            .eq("user_id", uid),
+            ""
+        ) or []
+        for r in us:
+            s = r.get("stockists") or {}
+            sid = s.get("id") or r.get("stockist_id")
+            if sid:
+                stockist_map[sid] = s.get("name", "Unknown")
+        ut = safe_exec(
+            admin_supabase.table("user_territories")
+            .select("territory_id")
+            .eq("user_id", uid), ""
+        ) or []
+        for r in ut:
+            if r.get("territory_id"):
+                territory_ids_set.add(r["territory_id"])
+
+    stockist_ids  = list(stockist_map.keys())
+    territory_ids = list(territory_ids_set)
+
+    st.info(f"🏢 Showing combined data for all {len(rep_ids)} representatives | {len(stockist_ids)} stockists")
+
+    # Month selector
+    col_m, col_y = st.columns([3, 1])
+    with col_m:
+        sel_month = st.selectbox("Month", options=list(range(1, 13)),
+            format_func=lambda m: MONTH_NAMES[m],
+            index=today.month - 1, key="dash_allreps_month")
+    with col_y:
+        sel_year = st.selectbox("Year", options=[today.year, today.year - 1, today.year - 2],
+            key="dash_allreps_year")
+
+    with st.expander("🚨 Red Flags — High Closing Stock", expanded=True):
+        _dash_red_flags(stockist_ids, stockist_map)
+    with st.expander(f"💰 {MONTH_NAMES[sel_month]} {sel_year} Sales", expanded=True):
+        _dash_monthly_sales(stockist_ids, sel_month, sel_year)
+    with st.expander("🎂 Doctor Birthdays & Anniversaries (±7 days)", expanded=True):
+        _dash_birthdays(territory_ids, today)
+    with st.expander("⏰ Outstanding Payments", expanded=True):
+        _dash_outstanding(stockist_ids, stockist_map, today)
+
+
 def _dash_render(user_id):
     today = date.today()
     current_month = today.month
@@ -339,10 +408,19 @@ def _dash_render(user_id):
         _dash_stmt_status(user_id, stockist_ids, stockist_map)
 
     # ═══════════════════════════════════════════════════════════════
-    # SECTION 4 — Current Month Sales Summary
+    # SECTION 4 — Month Sales Summary (with selector)
     # ═══════════════════════════════════════════════════════════════
-    with st.expander(f"💰 This Month's Sales — {MONTH_NAMES[current_month]} {current_year}", expanded=True):
-        _dash_monthly_sales(stockist_ids, current_month, current_year)
+    col_m, col_y = st.columns([3, 1])
+    with col_m:
+        sel_month = st.selectbox("Month", options=list(range(1, 13)),
+            format_func=lambda m: MONTH_NAMES[m],
+            index=current_month - 1, key=f"dash_month_{user_id}")
+    with col_y:
+        sel_year = st.selectbox("Year",
+            options=[current_year, current_year - 1, current_year - 2],
+            key=f"dash_year_{user_id}")
+    with st.expander(f"💰 {MONTH_NAMES[sel_month]} {sel_year} Sales", expanded=True):
+        _dash_monthly_sales(stockist_ids, sel_month, sel_year)
 
     # ═══════════════════════════════════════════════════════════════
     # SECTION 5 — Birthdays & Anniversaries
@@ -831,14 +909,14 @@ def _dash_outstanding(stockist_ids, stockist_map, today):
         st.info("No stockists assigned.")
         return
 
+    # Fetch invoice headers — same approach as gross sales
     inv_rows = safe_exec(
         admin_supabase.table("ops_documents")
-        .select("ops_no, ops_date, outstanding_balance, to_entity_id")
+        .select("id, ops_no, ops_date, to_entity_id")
         .eq("ops_type", "STOCK_OUT")
         .eq("stock_as", "normal")
         .eq("is_deleted", False)
-        .in_("to_entity_id", stockist_ids)
-        .gt("outstanding_balance", 0),
+        .in_("to_entity_id", stockist_ids),
         "Error loading outstanding"
     ) or []
 
@@ -846,12 +924,45 @@ def _dash_outstanding(stockist_ids, stockist_map, today):
         st.success("✅ No outstanding invoices.")
         return
 
+    # Get financial_ledger debit per invoice (same as gross sales)
+    inv_ids = [r["id"] for r in inv_rows]
+    ledger_rows = safe_exec(
+        admin_supabase.table("financial_ledger")
+        .select("ops_document_id, debit")
+        .in_("ops_document_id", inv_ids),
+        "Error loading ledger"
+    ) or []
+    invoice_total_map = {}  # ops_document_id → total invoice amount
+    for row in ledger_rows:
+        oid = row["ops_document_id"]
+        if oid not in invoice_total_map:
+            invoice_total_map[oid] = float(row.get("debit") or 0)
+
+    # Get payment settlements per invoice
+    settle_rows = safe_exec(
+        admin_supabase.table("payment_settlements")
+        .select("invoice_id, amount")
+        .in_("invoice_id", inv_ids),
+        "Error loading settlements"
+    ) or []
+    settled_map = {}  # invoice_id → total settled
+    for row in settle_rows:
+        iid = row["invoice_id"]
+        settled_map[iid] = settled_map.get(iid, 0.0) + float(row.get("amount") or 0)
+
+    # Build outstanding = invoice total - settled amount
     total_outstanding = 0.0
     total_over_45     = 0.0
     by_stockist       = {}
 
     for inv in inv_rows:
-        bal = float(inv.get("outstanding_balance") or 0)
+        oid  = inv["id"]
+        inv_total = invoice_total_map.get(oid, 0.0)
+        settled   = settled_map.get(oid, 0.0)
+        bal = max(0.0, inv_total - settled)
+        if bal <= 0:
+            continue  # fully paid — skip
+
         total_outstanding += bal
         try:
             inv_date = date.fromisoformat(inv["ops_date"])
