@@ -8099,70 +8099,62 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             if not cnf_invoices:
                 st.success("✅ No outstanding invoices for this stockist.")
 
-            # ── Fetch Credit Notes ────────────────────────────────────
-            cn_f = admin_supabase.table("ops_documents")                .select("id, ops_no, ops_date")                .eq("stock_as", "credit_note")                .eq("from_entity_id", sel_sid)                .eq("is_deleted", False)                .execute().data or []
-            cn_t = admin_supabase.table("ops_documents")                .select("id, ops_no, ops_date")                .eq("stock_as", "credit_note")                .eq("to_entity_id", sel_sid)                .eq("is_deleted", False)                .execute().data or []
-            seen = set()
-            all_cns = []
-            for cn in cn_f + cn_t:
-                if cn["id"] not in seen:
-                    seen.add(cn["id"])
-                    all_cns.append(cn)
-            all_cns.sort(key=lambda x: x["ops_date"])
+            # ── Unified credit fetch via financial_ledger.party_id ────
+            # Both CNs and Freight are stored as credit entries in financial_ledger
+            # with party_id = stockist. This is the single source of truth.
+            all_credit_ledger = admin_supabase.table("financial_ledger")                .select("ops_document_id, credit")                .eq("party_id", sel_sid)                .gt("credit", 0)                .execute().data or []
 
-            # Get CN amounts from ledger
-            cn_amt_map = {}
-            if all_cns:
-                cn_led = admin_supabase.table("financial_ledger")                    .select("ops_document_id, debit, credit")                    .in_("ops_document_id", [c["id"] for c in all_cns])                    .execute().data or []
-                for row in cn_led:
-                    oid = row["ops_document_id"]
-                    if oid not in cn_amt_map:
-                        cn_amt_map[oid] = float(row.get("debit") or 0) + float(row.get("credit") or 0)
+            credit_doc_ids = list({
+                r["ops_document_id"] for r in all_credit_ledger
+                if r.get("ops_document_id")
+            })
 
-            # Get already applied CN amounts
-            cn_applied = {}
-            for cn in all_cns:
-                s = admin_supabase.table("payment_settlements")                    .select("amount").eq("payment_ops_id", cn["id"])                    .execute().data or []
-                cn_applied[cn["id"]] = sum(float(x["amount"]) for x in s)
+            credit_amt_map = {}
+            for row in all_credit_ledger:
+                oid = row["ops_document_id"]
+                if oid not in credit_amt_map:
+                    credit_amt_map[oid] = float(row.get("credit") or 0)
 
-            avail_cns = [
-                {**cn,
-                 "total": cn_amt_map.get(cn["id"], 0.0),
-                 "applied": cn_applied.get(cn["id"], 0.0),
-                 "available": max(0.0, cn_amt_map.get(cn["id"], 0.0) - cn_applied.get(cn["id"], 0.0))}
-                for cn in all_cns
-                if max(0.0, cn_amt_map.get(cn["id"], 0.0) - cn_applied.get(cn["id"], 0.0)) > 0
-            ]
-
-            # ── Fetch Freight for this stockist ───────────────────────
-            all_freight_docs = admin_supabase.table("ops_documents")                .select("id, ops_no, ops_date, narration")                .ilike("narration", "%freight%")                .eq("is_deleted", False)                .execute().data or []
-
-            # Filter by stockist via financial_ledger.party_id
-            freight_doc_ids = [d["id"] for d in all_freight_docs]
+            # Fetch the actual documents and split into CNs and Freight
+            avail_cns     = []
             freight_items = []
-            if freight_doc_ids:
-                fr_led = admin_supabase.table("financial_ledger")                    .select("ops_document_id, credit, party_id")                    .in_("ops_document_id", freight_doc_ids)                    .eq("party_id", sel_sid)                    .execute().data or []
-                freight_doc_map = {d["id"]: d for d in all_freight_docs}
-                for row in fr_led:
-                    oid = row["ops_document_id"]
-                    amt = float(row.get("credit") or 0)
-                    if amt <= 0:
+
+            if credit_doc_ids:
+                all_credit_docs = admin_supabase.table("ops_documents")                    .select("id, ops_no, ops_date, stock_as, narration, ops_type")                    .in_("id", credit_doc_ids)                    .eq("is_deleted", False)                    .order("ops_date")                    .execute().data or []
+
+                for doc in all_credit_docs:
+                    doc_id = doc["id"]
+                    total  = credit_amt_map.get(doc_id, 0.0)
+                    if total <= 0:
                         continue
-                    # Check already applied
-                    fr_sett = admin_supabase.table("payment_settlements")                        .select("amount").eq("payment_ops_id", oid)                        .execute().data or []
-                    fr_applied = sum(float(x["amount"]) for x in fr_sett)
-                    fr_avail = max(0.0, amt - fr_applied)
-                    if fr_avail > 0:
-                        doc = freight_doc_map.get(oid, {})
-                        freight_items.append({
-                            "id": oid,
-                            "ops_no": doc.get("ops_no", "—"),
-                            "ops_date": doc.get("ops_date", "—"),
-                            "narration": doc.get("narration", "Freight"),
-                            "total": amt,
-                            "applied": fr_applied,
-                            "available": fr_avail,
-                        })
+
+                    # How much already applied via payment_settlements
+                    setts = admin_supabase.table("payment_settlements")                        .select("amount")                        .eq("payment_ops_id", doc_id)                        .execute().data or []
+                    applied   = sum(float(s["amount"]) for s in setts)
+                    available = max(0.0, total - applied)
+                    if available <= 0:
+                        continue
+
+                    item = {
+                        "id":        doc_id,
+                        "ops_no":    doc.get("ops_no", "—"),
+                        "ops_date":  doc.get("ops_date", "—"),
+                        "narration": doc.get("narration", ""),
+                        "total":     total,
+                        "applied":   applied,
+                        "available": available,
+                    }
+
+                    stock_as = doc.get("stock_as", "")
+                    ops_no   = (doc.get("ops_no") or "").upper()
+                    narr     = (doc.get("narration") or "").lower()
+                    ops_type = doc.get("ops_type", "")
+
+                    if stock_as == "credit_note":
+                        avail_cns.append(item)
+                    elif "freight" in narr or "freight" in ops_no or ops_type == "FREIGHT":
+                        freight_items.append(item)
+                    # Exclude payments (ADJUSTMENT) and invoices — they are not credits to apply
 
             if not avail_cns and not freight_items:
                 st.info("No unallocated credit notes or freight found for this stockist.")
@@ -8190,7 +8182,9 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                 sel_inv_id = inv_opts[sel_inv_label]
                             with c4:
                                 if sel_inv_id:
-                                    inv_due = next((i["outstanding_balance"] for i in cnf_invoices if i["id"] == sel_inv_id), 0.0)
+                                    inv_due = next(
+                                        (i["outstanding_balance"] for i in cnf_invoices if i["id"] == sel_inv_id), 0.0
+                                    )
                                     max_amt = min(float(cn["available"]), float(inv_due))
                                     amt = st.number_input(
                                         "Amount ₹", min_value=0.0,
@@ -8214,7 +8208,8 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             with c1:
                                 st.write(f"**{fr['ops_no']}**")
                                 st.caption(f"Date: {fr['ops_date']}")
-                                st.caption(fr['narration'][:40])
+                                if fr["narration"]:
+                                    st.caption(fr["narration"][:50])
                             with c2:
                                 st.write(f"**Available:**")
                                 st.write(f"₹{fr['available']:,.2f}")
@@ -8227,7 +8222,9 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                 sel_inv_id = inv_opts[sel_inv_label]
                             with c4:
                                 if sel_inv_id:
-                                    inv_due = next((i["outstanding_balance"] for i in cnf_invoices if i["id"] == sel_inv_id), 0.0)
+                                    inv_due = next(
+                                        (i["outstanding_balance"] for i in cnf_invoices if i["id"] == sel_inv_id), 0.0
+                                    )
                                     max_amt = min(float(fr["available"]), float(inv_due))
                                     amt = st.number_input(
                                         "Amount ₹", min_value=0.0,
@@ -8251,13 +8248,23 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                         try:
                             uid = resolve_user_id()
                             for doc_id, (inv_id, amt) in cnf_allocations.items():
-                                # Record in payment_settlements
+
+                                # ── Step 1: Get CN/freight total from ledger ──
+                                doc_led = admin_supabase.table("financial_ledger")                                    .select("credit")                                    .eq("ops_document_id", doc_id)                                    .execute().data or []
+                                doc_total = sum(float(r.get("credit") or 0) for r in doc_led)
+
+                                # ── Step 2: Get already applied before this ───
+                                prev_setts = admin_supabase.table("payment_settlements")                                    .select("amount")                                    .eq("payment_ops_id", doc_id)                                    .execute().data or []
+                                prev_applied = sum(float(s["amount"]) for s in prev_setts)
+
+                                # ── Step 3: Record this settlement ───────────
                                 admin_supabase.table("payment_settlements").insert({
                                     "payment_ops_id": doc_id,
                                     "invoice_id": inv_id,
                                     "amount": amt
                                 }).execute()
-                                # Update invoice
+
+                                # ── Step 4: Update invoice outstanding ───────
                                 inv = admin_supabase.table("ops_documents")                                    .select("paid_amount, invoice_total")                                    .eq("id", inv_id).single().execute().data
                                 if inv:
                                     new_paid = float(inv.get("paid_amount") or 0) + amt
@@ -8268,22 +8275,40 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                         "outstanding_balance": max(0, new_out),
                                         "payment_status": new_st
                                     }).eq("id", inv_id).execute()
-                                # Mark CN/freight as allocated
+
+                                # ── Step 5: Set correct allocation status ────
+                                # Only FULLY_ALLOCATED if nothing remains
+                                total_applied_now = prev_applied + amt
+                                if doc_total > 0 and total_applied_now >= doc_total:
+                                    alloc_status = "FULLY_ALLOCATED"
+                                elif total_applied_now > 0:
+                                    alloc_status = "PARTIALLY_ALLOCATED"
+                                else:
+                                    alloc_status = "UNALLOCATED"
+
                                 admin_supabase.table("ops_documents").update({
-                                    "allocation_status": "FULLY_ALLOCATED"
+                                    "allocation_status": alloc_status
                                 }).eq("id", doc_id).execute()
-                                # Audit log
+
+                                # ── Step 6: Audit log ─────────────────────────
                                 admin_supabase.table("audit_logs").insert({
                                     "action": "ALLOCATE_PAYMENT",
                                     "target_type": "ops_documents",
                                     "target_id": doc_id,
                                     "performed_by": uid,
-                                    "message": f"Applied ₹{amt:,.2f} to invoice via CN/Freight allocation"
+                                    "message": (
+                                        f"Applied ₹{amt:,.2f} to invoice via CN/Freight. "
+                                        f"Status: {alloc_status}. "
+                                        f"Total CN/Freight: ₹{doc_total:,.2f}, "
+                                        f"Total applied: ₹{total_applied_now:,.2f}"
+                                    )
                                 }).execute()
+
                             st.success(f"✅ Applied {len(cnf_allocations)} item(s) — ₹{total_cnf:,.2f} total")
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Error: {e}")
+
 
         # ================================================================
         # TAB 3 — REVERSE ALLOCATIONS
