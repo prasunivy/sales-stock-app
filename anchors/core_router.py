@@ -909,13 +909,19 @@ def _dash_outstanding(stockist_ids, stockist_map, today):
         st.info("No stockists assigned.")
         return
 
-    # Fetch invoice headers — same approach as gross sales
+    # Use outstanding_balance directly — this is updated by:
+    # 1. Invoice creation (set to invoice_total)
+    # 2. Payment allocation (both old and new system update this field)
+    # 3. CN/freight allocation (our new tab updates this field)
+    # This is more reliable than financial_ledger - payment_settlements
+    # which misses old payments that didn't use payment_settlements
     inv_rows = safe_exec(
         admin_supabase.table("ops_documents")
-        .select("id, ops_no, ops_date, to_entity_id")
+        .select("id, ops_no, ops_date, outstanding_balance, to_entity_id")
         .eq("ops_type", "STOCK_OUT")
         .eq("stock_as", "normal")
         .eq("is_deleted", False)
+        .gt("outstanding_balance", 0)
         .in_("to_entity_id", stockist_ids),
         "Error loading outstanding"
     ) or []
@@ -924,44 +930,14 @@ def _dash_outstanding(stockist_ids, stockist_map, today):
         st.success("✅ No outstanding invoices.")
         return
 
-    # Get financial_ledger debit per invoice (same as gross sales)
-    inv_ids = [r["id"] for r in inv_rows]
-    ledger_rows = safe_exec(
-        admin_supabase.table("financial_ledger")
-        .select("ops_document_id, debit")
-        .in_("ops_document_id", inv_ids),
-        "Error loading ledger"
-    ) or []
-    invoice_total_map = {}  # ops_document_id → total invoice amount
-    for row in ledger_rows:
-        oid = row["ops_document_id"]
-        if oid not in invoice_total_map:
-            invoice_total_map[oid] = float(row.get("debit") or 0)
-
-    # Get payment settlements per invoice
-    settle_rows = safe_exec(
-        admin_supabase.table("payment_settlements")
-        .select("invoice_id, amount")
-        .in_("invoice_id", inv_ids),
-        "Error loading settlements"
-    ) or []
-    settled_map = {}  # invoice_id → total settled
-    for row in settle_rows:
-        iid = row["invoice_id"]
-        settled_map[iid] = settled_map.get(iid, 0.0) + float(row.get("amount") or 0)
-
-    # Build outstanding = invoice total - settled amount
     total_outstanding = 0.0
     total_over_45     = 0.0
     by_stockist       = {}
 
     for inv in inv_rows:
-        oid  = inv["id"]
-        inv_total = invoice_total_map.get(oid, 0.0)
-        settled   = settled_map.get(oid, 0.0)
-        bal = max(0.0, inv_total - settled)
+        bal = float(inv.get("outstanding_balance") or 0)
         if bal <= 0:
-            continue  # fully paid — skip
+            continue
 
         total_outstanding += bal
         try:
