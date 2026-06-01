@@ -8070,7 +8070,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
             st.info("""
             📌 **Apply Credit Notes and Freight charges directly to invoices — no payment needed.**
             - Select a stockist to see their CNs and freight credits
-            - Already-allocated ones are shown greyed out for reference
+            - Already-allocated ones shown for reference
             - Choose which invoice each available CN/freight applies to, then Confirm
             """)
 
@@ -8096,295 +8096,232 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 inv_opts_cnf[f"{inv['ops_no']} (Due: ₹{float(inv['outstanding_balance']):,.2f})"] = inv["id"]
 
             # ================================================================
-            # CREDIT NOTES — Comprehensive fetch
-            # Method A: ops_documents by from/to entity
-            # Method B: financial_ledger by party_id
-            # Merge both to catch all CNs regardless of how they were stored
+            # FETCH ALL CREDIT ENTRIES FOR THIS STOCKIST
+            # Uses financial_ledger.party_id — same source as Ledger Statement
+            # SUM all credit rows per document (not just first row)
             # ================================================================
-            cn_docs_a = admin_supabase.table("ops_documents")                .select("id, ops_no, ops_date, invoice_total")                .eq("stock_as", "credit_note")                .eq("is_deleted", False)                .eq("from_entity_id", sel_sid_cnf)                .execute().data or []
+            all_credit_ledger = admin_supabase.table("financial_ledger")                .select("ops_document_id, credit")                .eq("party_id", sel_sid_cnf)                .gt("credit", 0)                .execute().data or []
 
-            cn_docs_b = admin_supabase.table("ops_documents")                .select("id, ops_no, ops_date, invoice_total")                .eq("stock_as", "credit_note")                .eq("is_deleted", False)                .eq("to_entity_id", sel_sid_cnf)                .execute().data or []
+            # SUM all credit rows per document (matches ledger statement logic)
+            credit_sum_map = {}  # ops_document_id → total credit
+            for row in all_credit_ledger:
+                oid = row.get("ops_document_id")
+                if oid:
+                    credit_sum_map[oid] = credit_sum_map.get(oid, 0.0) + float(row.get("credit") or 0)
 
-            # Method C: via financial_ledger.party_id (first row per doc only)
-            fl_rows = admin_supabase.table("financial_ledger")                .select("ops_document_id, credit")                .eq("party_id", sel_sid_cnf)                .gt("credit", 0)                .execute().data or []
+            if not credit_sum_map:
+                st.info("No credit entries found for this stockist.")
+            else:
+                # Fetch all those ops_documents at once
+                all_credit_docs = admin_supabase.table("ops_documents")                    .select("id, ops_no, ops_date, stock_as, ops_type, narration, invoice_total, is_deleted")                    .in_("id", list(credit_sum_map.keys()))                    .eq("is_deleted", False)                    .execute().data or []
 
-            # First credit per document only (avoid summing product lines)
-            fl_first_credit = {}
-            fl_credit_doc_ids = set()
-            for r in fl_rows:
-                oid = r.get("ops_document_id")
-                if oid and oid not in fl_first_credit:
-                    fl_first_credit[oid] = float(r.get("credit") or 0)
-                    fl_credit_doc_ids.add(oid)
+                # Build credit amount per doc — use invoice_total if set, else ledger sum
+                doc_total_map = {}
+                for doc in all_credit_docs:
+                    doc_id  = doc["id"]
+                    inv_tot = float(doc.get("invoice_total") or 0)
+                    doc_total_map[doc_id] = inv_tot if inv_tot > 0 else credit_sum_map.get(doc_id, 0.0)
 
-            cn_docs_c = []
-            if fl_credit_doc_ids:
-                cn_docs_c = admin_supabase.table("ops_documents")                    .select("id, ops_no, ops_date, invoice_total")                    .eq("stock_as", "credit_note")                    .eq("is_deleted", False)                    .in_("id", list(fl_credit_doc_ids))                    .execute().data or []
+                # Get already applied from payment_settlements
+                doc_ids = [d["id"] for d in all_credit_docs]
+                sett_rows = admin_supabase.table("payment_settlements")                    .select("payment_ops_id, amount")                    .in_("payment_ops_id", doc_ids)                    .execute().data or []
+                applied_map = {}
+                for s in sett_rows:
+                    pid = s["payment_ops_id"]
+                    applied_map[pid] = applied_map.get(pid, 0.0) + float(s.get("amount") or 0)
 
-            # Merge all three, deduplicate
-            seen_cn = set()
-            all_cn_docs = []
-            for doc in cn_docs_a + cn_docs_b + cn_docs_c:
-                if doc["id"] not in seen_cn:
-                    seen_cn.add(doc["id"])
-                    all_cn_docs.append(doc)
-            all_cn_docs.sort(key=lambda x: x["ops_date"])
+                # Classify into CNs and Freight
+                cn_list      = []
+                freight_list = []
 
-            # Get CN amounts — prefer invoice_total from ops_documents
-            # (more reliable than summing financial_ledger lines)
-            cn_total_map = {}
-            for doc in all_cn_docs:
-                doc_id   = doc["id"]
-                inv_tot  = float(doc.get("invoice_total") or 0)
-                if inv_tot > 0:
-                    cn_total_map[doc_id] = inv_tot
-                elif doc_id in fl_first_credit:
-                    cn_total_map[doc_id] = fl_first_credit[doc_id]
-                else:
-                    # Last resort: fetch first ledger row for this doc
-                    led = admin_supabase.table("financial_ledger")                        .select("credit")                        .eq("ops_document_id", doc_id)                        .gt("credit", 0)                        .limit(1)                        .execute().data or []
-                    cn_total_map[doc_id] = float(led[0]["credit"]) if led else 0.0
+                for doc in sorted(all_credit_docs, key=lambda x: x["ops_date"]):
+                    doc_id   = doc["id"]
+                    stock_as = doc.get("stock_as", "")
+                    ops_type = doc.get("ops_type", "")
+                    ops_no   = (doc.get("ops_no") or "").upper()
+                    narr     = (doc.get("narration") or "").lower()
+                    total    = doc_total_map.get(doc_id, 0.0)
+                    applied  = applied_map.get(doc_id, 0.0)
+                    available = max(0.0, total - applied)
 
-            # Get already applied amounts from payment_settlements
-            cn_applied_map = {}
-            for doc in all_cn_docs:
-                setts = admin_supabase.table("payment_settlements")                    .select("amount")                    .eq("payment_ops_id", doc["id"])                    .execute().data or []
-                cn_applied_map[doc["id"]] = sum(float(s["amount"]) for s in setts)
+                    if total <= 0:
+                        continue
 
-            # Build full CN list with status
-            cn_full_list = []
-            for doc in all_cn_docs:
-                doc_id    = doc["id"]
-                total     = cn_total_map.get(doc_id, 0.0)
-                applied   = cn_applied_map.get(doc_id, 0.0)
-                available = max(0.0, total - applied)
-                if total <= 0:
-                    continue
-                if available <= 0:
-                    status = "✅ Fully Allocated"
-                elif applied > 0:
-                    status = "⚡ Partially Allocated"
-                else:
-                    status = "🔴 Unallocated"
-                cn_full_list.append({
-                    "id": doc_id, "ops_no": doc["ops_no"],
-                    "ops_date": doc["ops_date"],
-                    "total": total, "applied": applied,
-                    "available": available, "status": status
-                })
+                    item = {
+                        "id": doc_id, "ops_no": doc.get("ops_no", "—"),
+                        "ops_date": doc.get("ops_date", "—"),
+                        "total": total, "applied": applied, "available": available,
+                        "status": (
+                            "✅ Fully Allocated"   if available <= 0 and applied > 0 else
+                            "⚡ Partially Allocated" if applied > 0 else
+                            "🔴 Unallocated"
+                        )
+                    }
 
-            avail_cns = [c for c in cn_full_list if c["available"] > 0]
+                    if stock_as == "credit_note":
+                        cn_list.append(item)
+                    elif ops_type == "ADJUSTMENT":
+                        pass  # Skip payments — they're handled in Allocate Payments tab
+                    elif "freight" in ops_no or "freight" in narr:
+                        freight_list.append(item)
 
-            # ================================================================
-            # FREIGHT — via financial_ledger.party_id + ops_no filter
-            # ================================================================
-            freight_items = []
-            for oid, credit_amt in fl_first_credit.items():
-                # Skip docs already identified as CNs
-                if oid in seen_cn:
-                    continue
-                if credit_amt <= 0:
-                    continue
-                # Check if it's a freight document
-                fr_doc = admin_supabase.table("ops_documents")                    .select("id, ops_no, ops_date, narration, is_deleted")                    .eq("id", oid)                    .execute().data or []
-                if not fr_doc:
-                    continue
-                fr_doc = fr_doc[0]
-                if fr_doc.get("is_deleted"):
-                    continue
-                ops_no  = (fr_doc.get("ops_no") or "").upper()
-                narr    = (fr_doc.get("narration") or "").lower()
-                if "freight" not in ops_no and "freight" not in narr:
-                    continue
-                # Check applied
-                setts = admin_supabase.table("payment_settlements")                    .select("amount")                    .eq("payment_ops_id", oid)                    .execute().data or []
-                fr_applied  = sum(float(s["amount"]) for s in setts)
-                fr_available = max(0.0, credit_amt - fr_applied)
-                freight_items.append({
-                    "id": oid,
-                    "ops_no":    fr_doc.get("ops_no", "—"),
-                    "ops_date":  fr_doc.get("ops_date", "—"),
-                    "narration": fr_doc.get("narration", ""),
-                    "total":     credit_amt,
-                    "applied":   fr_applied,
-                    "available": fr_available,
-                })
+                cnf_allocations = {}  # {doc_id: (inv_id, amount)}
 
-            avail_freight = [f for f in freight_items if f["available"] > 0]
-
-            # ================================================================
-            # RENDER
-            # ================================================================
-            cnf_allocations = {}  # {doc_id: (inv_id, amount)}
-
-            # ── Credit Notes ──────────────────────────────────────────
-            if cn_full_list:
-                st.markdown("### 📝 Credit Notes")
-                for cn in cn_full_list:
-                    is_available = cn["available"] > 0
-                    with st.container():
-                        c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 2, 2])
-                        with c1:
-                            label = cn["ops_no"] if is_available else f"~~{cn['ops_no']}~~"
-                            st.write(f"**{cn['ops_no']}**")
-                            st.caption(f"📅 {cn['ops_date']}")
-                        with c2:
-                            st.write("**Total:**")
-                            st.write(f"₹{cn['total']:,.2f}")
-                        with c3:
-                            st.write("**Available:**")
-                            color = "green" if is_available else "grey"
-                            st.markdown(
-                                f"<span style='color:{color};font-weight:700'>₹{cn['available']:,.2f}</span>",
-                                unsafe_allow_html=True
-                            )
-                        with c4:
-                            st.caption(cn["status"])
-                            if cn["applied"] > 0:
-                                st.caption(f"Applied: ₹{cn['applied']:,.2f}")
-                        with c5:
-                            if is_available:
-                                sel_inv_label = st.selectbox(
-                                    "Apply to Invoice",
-                                    list(inv_opts_cnf.keys()),
-                                    key=f"cnf_cn_inv_{cn['id']}"
+                # ── Credit Notes ──────────────────────────────────────
+                if cn_list:
+                    st.markdown("### 📝 Credit Notes")
+                    for cn in cn_list:
+                        is_avail = cn["available"] > 0
+                        with st.container():
+                            c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 2, 2])
+                            with c1:
+                                st.write(f"**{cn['ops_no']}**")
+                                st.caption(f"📅 {cn['ops_date']}")
+                            with c2:
+                                st.write("**Total:**")
+                                st.write(f"₹{cn['total']:,.2f}")
+                            with c3:
+                                st.write("**Available:**")
+                                color = "green" if is_avail else "grey"
+                                st.markdown(
+                                    f"<span style='color:{color};font-weight:700'>₹{cn['available']:,.2f}</span>",
+                                    unsafe_allow_html=True
                                 )
-                                sel_inv_id = inv_opts_cnf[sel_inv_label]
-                                if sel_inv_id:
+                            with c4:
+                                st.caption(cn["status"])
+                                if cn["applied"] > 0:
+                                    st.caption(f"Applied: ₹{cn['applied']:,.2f}")
+                            with c5:
+                                if is_avail:
+                                    sel_lbl = st.selectbox(
+                                        "Apply to Invoice", list(inv_opts_cnf.keys()),
+                                        key=f"cnf_cn_inv_{cn['id']}"
+                                    )
+                                    sel_inv_id = inv_opts_cnf[sel_lbl]
+                                    if sel_inv_id:
+                                        inv_due = next(
+                                            (float(i["outstanding_balance"]) for i in cnf_invoices if i["id"] == sel_inv_id), 0.0
+                                        )
+                                        max_a = min(cn["available"], inv_due)
+                                        amt = st.number_input(
+                                            "Amount ₹", min_value=0.0,
+                                            max_value=float(max_a), value=float(max_a),
+                                            step=0.01, key=f"cnf_cn_amt_{cn['id']}"
+                                        )
+                                        if amt > 0:
+                                            cnf_allocations[cn["id"]] = (sel_inv_id, amt)
+                                else:
+                                    st.caption("—")
+                            st.divider()
+                else:
+                    st.info("No credit notes found for this stockist.")
+
+                # ── Freight ───────────────────────────────────────────
+                if freight_list:
+                    st.markdown("### 🚚 Freight Credits")
+                    for fr in freight_list:
+                        is_avail = fr["available"] > 0
+                        with st.container():
+                            c1, c2, c3, c4 = st.columns([2, 1, 2, 2])
+                            with c1:
+                                st.write(f"**{fr['ops_no']}**")
+                                st.caption(f"📅 {fr['ops_date']}")
+                            with c2:
+                                st.write("**Available:**")
+                                st.write(f"₹{fr['available']:,.2f}")
+                                if fr["applied"] > 0:
+                                    st.caption(f"Applied: ₹{fr['applied']:,.2f}")
+                            with c3:
+                                if is_avail:
+                                    sel_lbl = st.selectbox(
+                                        "Apply to Invoice", list(inv_opts_cnf.keys()),
+                                        key=f"cnf_fr_inv_{fr['id']}"
+                                    )
+                                    sel_inv_id = inv_opts_cnf[sel_lbl]
+                                else:
+                                    st.caption(fr["status"])
+                                    sel_inv_id = None
+                            with c4:
+                                if is_avail and sel_inv_id:
                                     inv_due = next(
                                         (float(i["outstanding_balance"]) for i in cnf_invoices if i["id"] == sel_inv_id), 0.0
                                     )
-                                    max_amt = min(cn["available"], inv_due)
+                                    max_a = min(fr["available"], inv_due)
                                     amt = st.number_input(
                                         "Amount ₹", min_value=0.0,
-                                        max_value=float(max_amt),
-                                        value=float(max_amt),
-                                        step=0.01,
-                                        key=f"cnf_cn_amt_{cn['id']}"
+                                        max_value=float(max_a), value=float(max_a),
+                                        step=0.01, key=f"cnf_fr_amt_{fr['id']}"
                                     )
                                     if amt > 0:
-                                        cnf_allocations[cn["id"]] = (sel_inv_id, amt)
-                            else:
-                                st.caption("—")
-                        st.divider()
-            elif not all_cn_docs:
-                st.info("No credit notes found for this stockist.")
+                                        cnf_allocations[fr["id"]] = (sel_inv_id, amt)
+                                else:
+                                    st.write("—")
+                            st.divider()
 
-            # ── Freight ───────────────────────────────────────────────
-            if freight_items:
-                st.markdown("### 🚚 Freight Credits")
-                for fr in freight_items:
-                    is_available = fr["available"] > 0
-                    with st.container():
-                        c1, c2, c3, c4 = st.columns([2, 1, 2, 2])
-                        with c1:
-                            st.write(f"**{fr['ops_no']}**")
-                            st.caption(f"📅 {fr['ops_date']}")
-                            if fr["narration"]:
-                                st.caption(fr["narration"][:50])
-                        with c2:
-                            st.write("**Available:**")
-                            st.write(f"₹{fr['available']:,.2f}")
-                        with c3:
-                            if is_available:
-                                sel_inv_label = st.selectbox(
-                                    "Apply to Invoice",
-                                    list(inv_opts_cnf.keys()),
-                                    key=f"cnf_fr_inv_{fr['id']}"
+                # ── Confirm ───────────────────────────────────────────
+                if cnf_allocations:
+                    total_cnf = sum(v[1] for v in cnf_allocations.values())
+                    st.metric("Total to Apply", f"₹{total_cnf:,.2f}")
+
+                    if st.button("✅ Confirm — Apply to Invoices", type="primary", key="cnf_confirm"):
+                        try:
+                            uid = resolve_user_id()
+                            for doc_id, (inv_id, amt) in cnf_allocations.items():
+                                # Total credit for this CN/freight from ledger
+                                doc_total   = credit_sum_map.get(doc_id, 0.0)
+                                prev_applied = applied_map.get(doc_id, 0.0)
+
+                                # Insert settlement
+                                admin_supabase.table("payment_settlements").insert({
+                                    "payment_ops_id": doc_id,
+                                    "invoice_id": inv_id,
+                                    "amount": amt
+                                }).execute()
+
+                                # Update invoice outstanding_balance
+                                inv = admin_supabase.table("ops_documents")                                    .select("outstanding_balance, invoice_total")                                    .eq("id", inv_id).single().execute().data
+                                if inv:
+                                    new_out  = max(0.0, float(inv.get("outstanding_balance") or 0) - amt)
+                                    inv_tot  = float(inv.get("invoice_total") or 0)
+                                    new_paid = inv_tot - new_out
+                                    new_st   = "PAID" if new_out <= 0 else ("PARTIAL" if new_paid > 0 else "UNPAID")
+                                    admin_supabase.table("ops_documents").update({
+                                        "paid_amount": max(0, new_paid),
+                                        "outstanding_balance": new_out,
+                                        "payment_status": new_st
+                                    }).eq("id", inv_id).execute()
+
+                                # Set allocation status on CN/freight
+                                total_applied_now = prev_applied + amt
+                                alloc_status = (
+                                    "FULLY_ALLOCATED"     if doc_total > 0 and total_applied_now >= doc_total else
+                                    "PARTIALLY_ALLOCATED" if total_applied_now > 0 else
+                                    "UNALLOCATED"
                                 )
-                                sel_inv_id = inv_opts_cnf[sel_inv_label]
-                            else:
-                                st.caption("✅ Fully Allocated")
-                                sel_inv_id = None
-                        with c4:
-                            if is_available and sel_inv_id:
-                                inv_due = next(
-                                    (float(i["outstanding_balance"]) for i in cnf_invoices if i["id"] == sel_inv_id), 0.0
-                                )
-                                max_amt = min(fr["available"], inv_due)
-                                amt = st.number_input(
-                                    "Amount ₹", min_value=0.0,
-                                    max_value=float(max_amt),
-                                    value=float(max_amt),
-                                    step=0.01,
-                                    key=f"cnf_fr_amt_{fr['id']}"
-                                )
-                                if amt > 0:
-                                    cnf_allocations[fr["id"]] = (sel_inv_id, amt)
-                            else:
-                                st.write("—")
-                        st.divider()
-
-            # ── Confirm ───────────────────────────────────────────────
-            if cnf_allocations:
-                total_cnf = sum(v[1] for v in cnf_allocations.values())
-                st.metric("Total to Apply", f"₹{total_cnf:,.2f}")
-
-                if st.button("✅ Confirm — Apply to Invoices", type="primary", key="cnf_confirm"):
-                    try:
-                        uid = resolve_user_id()
-                        for doc_id, (inv_id, amt) in cnf_allocations.items():
-                            # CN/freight total
-                            all_totals  = cn_total_map if doc_id in cn_total_map else {}
-                            doc_total   = cn_total_map.get(doc_id) or fl_first_credit.get(doc_id, 0.0)
-
-                            # Already applied before this action
-                            prev_setts  = admin_supabase.table("payment_settlements")                                .select("amount").eq("payment_ops_id", doc_id)                                .execute().data or []
-                            prev_applied = sum(float(s["amount"]) for s in prev_setts)
-
-                            # Record settlement
-                            admin_supabase.table("payment_settlements").insert({
-                                "payment_ops_id": doc_id,
-                                "invoice_id": inv_id,
-                                "amount": amt
-                            }).execute()
-
-                            # Update invoice
-                            inv = admin_supabase.table("ops_documents")                                .select("paid_amount, invoice_total")                                .eq("id", inv_id).single().execute().data
-                            if inv:
-                                new_paid = float(inv.get("paid_amount") or 0) + amt
-                                new_out  = float(inv.get("invoice_total") or 0) - new_paid
-                                new_st   = "PAID" if new_out <= 0 else ("PARTIAL" if new_paid > 0 else "UNPAID")
                                 admin_supabase.table("ops_documents").update({
-                                    "paid_amount": new_paid,
-                                    "outstanding_balance": max(0, new_out),
-                                    "payment_status": new_st
-                                }).eq("id", inv_id).execute()
+                                    "allocation_status": alloc_status
+                                }).eq("id", doc_id).execute()
 
-                            # Correct allocation status
-                            total_applied_now = prev_applied + amt
-                            if doc_total > 0 and total_applied_now >= doc_total:
-                                alloc_status = "FULLY_ALLOCATED"
-                            elif total_applied_now > 0:
-                                alloc_status = "PARTIALLY_ALLOCATED"
-                            else:
-                                alloc_status = "UNALLOCATED"
+                                # Audit log
+                                admin_supabase.table("audit_logs").insert({
+                                    "action": "ALLOCATE_PAYMENT",
+                                    "target_type": "ops_documents",
+                                    "target_id": doc_id,
+                                    "performed_by": uid,
+                                    "message": (
+                                        f"CN/Freight ₹{amt:,.2f} applied to invoice. "
+                                        f"Status: {alloc_status}. "
+                                        f"Total: ₹{doc_total:,.2f}, Applied: ₹{total_applied_now:,.2f}"
+                                    )
+                                }).execute()
 
-                            admin_supabase.table("ops_documents").update({
-                                "allocation_status": alloc_status
-                            }).eq("id", doc_id).execute()
+                            st.success(f"✅ Applied {len(cnf_allocations)} item(s) — ₹{total_cnf:,.2f} total")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
 
-                            admin_supabase.table("audit_logs").insert({
-                                "action": "ALLOCATE_PAYMENT",
-                                "target_type": "ops_documents",
-                                "target_id": doc_id,
-                                "performed_by": uid,
-                                "message": (
-                                    f"CN/Freight applied ₹{amt:,.2f} to invoice. "
-                                    f"Status: {alloc_status}. "
-                                    f"Total: ₹{doc_total:,.2f}, Applied so far: ₹{total_applied_now:,.2f}"
-                                )
-                            }).execute()
-
-                        st.success(f"✅ Applied {len(cnf_allocations)} item(s) successfully.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Error: {e}")
-            elif not avail_cns and not avail_freight:
-                if cn_full_list:
-                    st.success("✅ All credit notes for this stockist are already fully allocated.")
-                elif not all_cn_docs and not freight_items:
-                    st.info("No credit notes or freight found for this stockist.")
+                elif not cn_list and not freight_list:
+                    st.info("No credit notes or freight credits found for this stockist in financial ledger.")
 
         # ================================================================
         # TAB 3 — REVERSE ALLOCATIONS
