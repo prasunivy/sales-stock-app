@@ -2234,14 +2234,12 @@ This action will:
 
                         # ---------- UPDATE INVOICE TOTALS (FOR INVOICES ONLY) ----------
                         if ops_type_val == "STOCK_OUT" and stock_as_val == "normal":
-                            # Calculate total from ops_lines (not from session state)
-                            lines_total_resp = admin_supabase.table("ops_lines")\
-                                .select("net_amount")\
-                                .eq("ops_document_id", ops_document_id)\
-                                .execute()
-            
-                            invoice_total = sum(float(line.get("net_amount", 0)) for line in lines_total_resp.data)
-            
+                            # IMPORTANT: amounts are DOCUMENT-LEVEL (one total for the whole
+                            # invoice), but the same total is written into every ops_line.
+                            # So summing line net_amounts inflates by the number of products.
+                            # Use the single document-level net amount directly.
+                            invoice_total = float(st.session_state.ops_amounts.get("net", 0) or 0)
+
                             # This is an invoice, set invoice totals
                             admin_supabase.table("ops_documents").update({
                                 "invoice_total": invoice_total,
