@@ -996,6 +996,41 @@ def _dash_outstanding(stockist_ids, stockist_map, today):
         st.success("✅ No outstanding invoices.")
         return
 
+    # Summary metrics
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("📊 Total Outstanding", f"₹{total_outstanding:,.0f}")
+    with col2:
+        st.metric("⚠️ Outstanding > 45 Days", f"₹{total_over_45:,.0f}")
+
+    st.divider()
+
+    # Per stockist breakdown
+    for sname, data in sorted(by_stockist.items(), key=lambda x: -x[1]["over45"]):
+        has_old = data["over45"] > 0
+        header_color = "#fff5f5" if has_old else "#f0faf7"
+        border_color = "#c0392b" if has_old else "#1a6b5a"
+
+        st.markdown(
+            f"<div style='background:{header_color};border-left:4px solid {border_color};"
+            f"padding:0.55rem 0.8rem;border-radius:6px;margin-bottom:4px;font-size:0.88rem;'>"
+            f"<b>{sname}</b> &nbsp;|&nbsp; Total: ₹{data['total']:,.0f}"
+            + (f" &nbsp;|&nbsp; <span style='color:#c0392b;'>Over 45d: ₹{data['over45']:,.0f}</span>" if has_old else "")
+            + "</div>",
+            unsafe_allow_html=True
+        )
+        for inv in sorted(data["invoices"], key=lambda x: -x["days_old"]):
+            flag = " 🔴" if inv["over45"] else ""
+            st.markdown(
+                f"<div style='padding:0.3rem 0.8rem 0.3rem 1.5rem;"
+                f"font-size:0.8rem;color:#5a7268;'>"
+                f"{inv['ops_no']} &nbsp;·&nbsp; {inv['date']} "
+                f"&nbsp;·&nbsp; ₹{inv['bal']:,.0f} "
+                f"&nbsp;·&nbsp; {inv['days_old']}d{flag}"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
 def _dash_drafts(user_id, stockist_ids, stockist_map):
     found_any = False
 
