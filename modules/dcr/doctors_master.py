@@ -81,11 +81,15 @@ def show_doctors_list():
         search_query = st.text_input("🔍 Search doctors", placeholder="Doctor name...")
     
     with col2:
-        user_territories = get_user_territories(selected_user_id)
+        # Admin can filter by ANY territory; normal users only their own
+        if role == "admin":
+            filter_territories = get_all_territories()
+        else:
+            filter_territories = get_user_territories(selected_user_id)
         territory_filter = st.selectbox(
             "Filter by Territory",
-            options=[None] + [t['id'] for t in user_territories],
-            format_func=lambda x: "All Territories" if x is None else next((t['name'] for t in user_territories if t['id'] == x), x)
+            options=[None] + [t['id'] for t in filter_territories],
+            format_func=lambda x: "All Territories" if x is None else next((t['name'] for t in filter_territories if t['id'] == x), x)
         )
     
     with col3:
@@ -104,17 +108,23 @@ def show_doctors_list():
     st.write("---")
     
     # Get doctors
+    # Admin with no territory and no search would scan ALL doctors (slow) — guard it.
+    if role == "admin" and not territory_filter and not search_query:
+        st.info("ℹ️ Select a territory or type a name to view doctors.")
+        return
+
     doctors = get_doctors_list(
         user_id=selected_user_id,
         search=search_query,
         territory_id=territory_filter,
-        active_only=active_only
+        active_only=active_only,
+        all_territories=(role == "admin")
     )
     
     st.write(f"### 📋 Doctors ({len(doctors)} found)")
     
     if not doctors:
-        st.info("No doctors found. Click 'Add New Doctor' to create one.")
+        st.info("No doctors found for this territory/search.")
         return
     
     # Display doctors
