@@ -992,6 +992,64 @@ def _dash_outstanding(stockist_ids, stockist_map, today):
             total_over_45 += bal
             by_stockist[sname]["over45"] += bal
 
+    # ── Opening balances (the ledger always includes opening balance, so the
+    #    home page must too, or stockists with unpaid OB won't reconcile) ──
+    ob_rows = safe_exec(
+        admin_supabase.table("financial_ledger")
+        .select("ops_document_id, party_id, debit, credit")
+        .eq("narration", "Opening Balance")
+        .in_("party_id", stockist_ids),
+        "Error loading opening balances"
+    ) or []
+    ob_agg = {}
+    for r in ob_rows:
+        oid = r["ops_document_id"]
+        if oid not in ob_agg:
+            ob_agg[oid] = {"sid": r["party_id"], "net": 0.0}
+        ob_agg[oid]["net"] += float(r.get("debit") or 0) - float(r.get("credit") or 0)
+    if ob_agg:
+        ob_ids = list(ob_agg.keys())
+        ob_dates = {}
+        ob_doc_rows = safe_exec(
+            admin_supabase.table("ops_documents")
+            .select("id, ops_date").in_("id", ob_ids),
+            "Error loading OB dates"
+        ) or []
+        for r in ob_doc_rows:
+            ob_dates[r["id"]] = r.get("ops_date")
+        ob_settle = safe_exec(
+            admin_supabase.table("payment_settlements")
+            .select("invoice_id, amount").in_("invoice_id", ob_ids),
+            "Error loading OB settlements"
+        ) or []
+        ob_settled_map = {}
+        for r in ob_settle:
+            iid = r["invoice_id"]
+            ob_settled_map[iid] = ob_settled_map.get(iid, 0.0) + float(r.get("amount") or 0)
+        for oid, info in ob_agg.items():
+            bal = max(0.0, info["net"] - ob_settled_map.get(oid, 0.0))
+            if bal <= 0.01:
+                continue
+            sid   = info["sid"]
+            sname = stockist_map.get(sid, "Unknown")
+            try:
+                days_old = (today - date.fromisoformat(ob_dates.get(oid))).days
+            except Exception:
+                days_old = 0
+            total_outstanding += bal
+            by_stockist.setdefault(sname, {"total": 0.0, "over45": 0.0, "invoices": []})
+            by_stockist[sname]["total"] += bal
+            by_stockist[sname]["invoices"].append({
+                "ops_no":   "Opening Balance",
+                "date":     ob_dates.get(oid) or "—",
+                "bal":      bal,
+                "days_old": days_old,
+                "over45":   days_old > 45
+            })
+            if days_old > 45:
+                total_over_45 += bal
+                by_stockist[sname]["over45"] += bal
+
     if not by_stockist:
         st.success("✅ No outstanding invoices.")
         return
