@@ -909,40 +909,71 @@ def _dash_outstanding(stockist_ids, stockist_map, today):
         st.info("No stockists assigned.")
         return
 
-    # Use outstanding_balance directly — this is updated by:
-    # 1. Invoice creation (set to invoice_total)
-    # 2. Payment allocation (both old and new system update this field)
-    # 3. CN/freight allocation (our new tab updates this field)
-    # This is more reliable than financial_ledger - payment_settlements
-    # which misses old payments that didn't use payment_settlements
+    # ── Unified outstanding rule (Option B) ───────────────────────────────
+    # Per invoice: outstanding = true_total - SUM(all settlements: payment/CN/freight)
+    #   true_total = first financial_ledger.debit row (non-inflated)
+    #   settlements = payment_settlements rows tagged to that invoice
+    # Unallocated CN/freight stays in the pool (does NOT reduce outstanding until tagged),
+    # so aging is computed on each invoice's real remaining balance.
+
     inv_rows = safe_exec(
         admin_supabase.table("ops_documents")
-        .select("id, ops_no, ops_date, outstanding_balance, to_entity_id")
+        .select("id, ops_no, ops_date, to_entity_id")
         .eq("ops_type", "STOCK_OUT")
         .eq("stock_as", "normal")
         .eq("is_deleted", False)
-        .gt("outstanding_balance", 0)
         .in_("to_entity_id", stockist_ids),
-        "Error loading outstanding"
+        "Error loading invoices"
     ) or []
 
     if not inv_rows:
         st.success("✅ No outstanding invoices.")
         return
 
+    inv_ids = [r["id"] for r in inv_rows]
+
+    # True totals: first debit row per invoice from financial_ledger
+    ledger_rows = safe_exec(
+        admin_supabase.table("financial_ledger")
+        .select("ops_document_id, debit, created_at")
+        .in_("ops_document_id", inv_ids)
+        .gt("debit", 0)
+        .order("created_at"),
+        "Error loading ledger"
+    ) or []
+    true_total_map = {}
+    for row in ledger_rows:
+        oid = row["ops_document_id"]
+        if oid not in true_total_map:
+            true_total_map[oid] = float(row.get("debit") or 0)
+
+    # Settlements per invoice (payment + CN + freight all together)
+    settle_rows = safe_exec(
+        admin_supabase.table("payment_settlements")
+        .select("invoice_id, amount")
+        .in_("invoice_id", inv_ids),
+        "Error loading settlements"
+    ) or []
+    settled_map = {}
+    for row in settle_rows:
+        iid = row["invoice_id"]
+        settled_map[iid] = settled_map.get(iid, 0.0) + float(row.get("amount") or 0)
+
     total_outstanding = 0.0
     total_over_45     = 0.0
     by_stockist       = {}
 
     for inv in inv_rows:
-        bal = float(inv.get("outstanding_balance") or 0)
-        if bal <= 0:
+        oid = inv["id"]
+        true_total = true_total_map.get(oid, 0.0)
+        settled    = settled_map.get(oid, 0.0)
+        bal = max(0.0, true_total - settled)
+        if bal <= 0.01:
             continue
 
         total_outstanding += bal
         try:
-            inv_date = date.fromisoformat(inv["ops_date"])
-            days_old = (today - inv_date).days
+            days_old = (today - date.fromisoformat(inv["ops_date"])).days
         except Exception:
             days_old = 0
 
@@ -961,45 +992,10 @@ def _dash_outstanding(stockist_ids, stockist_map, today):
             total_over_45 += bal
             by_stockist[sname]["over45"] += bal
 
-    # Summary metrics
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("📊 Total Outstanding", f"₹{total_outstanding:,.0f}")
-    with col2:
-        st.metric("⚠️ Outstanding > 45 Days", f"₹{total_over_45:,.0f}")
+    if not by_stockist:
+        st.success("✅ No outstanding invoices.")
+        return
 
-    st.divider()
-
-    # Per stockist breakdown
-    for sname, data in sorted(by_stockist.items(), key=lambda x: -x[1]["over45"]):
-        has_old = data["over45"] > 0
-        header_color = "#fff5f5" if has_old else "#f0faf7"
-        border_color = "#c0392b" if has_old else "#1a6b5a"
-
-        st.markdown(
-            f"<div style='background:{header_color};border-left:4px solid {border_color};"
-            f"padding:0.55rem 0.8rem;border-radius:6px;margin-bottom:4px;font-size:0.88rem;'>"
-            f"<b>{sname}</b> &nbsp;|&nbsp; Total: ₹{data['total']:,.0f}"
-            + (f" &nbsp;|&nbsp; <span style='color:#c0392b;'>Over 45d: ₹{data['over45']:,.0f}</span>" if has_old else "")
-            + "</div>",
-            unsafe_allow_html=True
-        )
-        for inv in sorted(data["invoices"], key=lambda x: -x["days_old"]):
-            flag = " 🔴" if inv["over45"] else ""
-            st.markdown(
-                f"<div style='padding:0.3rem 0.8rem 0.3rem 1.5rem;"
-                f"font-size:0.8rem;color:#5a7268;'>"
-                f"{inv['ops_no']} &nbsp;·&nbsp; {inv['date']} "
-                f"&nbsp;·&nbsp; ₹{inv['bal']:,.0f} "
-                f"&nbsp;·&nbsp; {inv['days_old']}d{flag}"
-                f"</div>",
-                unsafe_allow_html=True
-            )
-
-
-# ──────────────────────────────────────────────────────────────────
-# SECTION 7 — DRAFTS & UNFINISHED
-# ──────────────────────────────────────────────────────────────────
 def _dash_drafts(user_id, stockist_ids, stockist_map):
     found_any = False
 
