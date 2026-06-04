@@ -30,7 +30,10 @@ def get_user_territories(user_id):
                 "id": r["territories"]["id"],
                 "name": r["territories"]["name"]
             })
-    
+
+    # Alphabetical by name (case-insensitive)
+    territories.sort(key=lambda t: (t.get("name") or "").lower())
+
     return territories
 
 
@@ -139,18 +142,40 @@ def get_chemists_by_territories(territory_ids):
 # DOCTORS CRUD
 # ======================================================
 
-def get_doctors_list(user_id, search=None, territory_id=None, active_only=True):
+def get_doctors_list(user_id, search=None, territory_id=None, active_only=True, all_territories=False):
     """
-    Get list of doctors for a user
-    Filtered by search, territory, active status
+    Get list of doctors.
+    - Normal user: scoped to the user's assigned territories.
+    - Admin (all_territories=True): NOT scoped to a user; can see every doctor,
+      optionally filtered by a specific territory or a name search.
+
+    Efficient paths:
+    - If territory_id is given, fetch only that territory's doctors via
+      doctor_territories (fast, e.g. BERHAMPORE HQ -> its doctors).
+    - If a search is given, the name filter limits the set.
     """
-    # Get user's territories
-    user_territory_ids = [t['id'] for t in get_user_territories(user_id)]
-    
-    if not user_territory_ids:
-        return []
-    
-    # Build query
+    # Determine user scoping
+    if all_territories:
+        scope_territory_ids = None          # admin: no user scoping
+    else:
+        scope_territory_ids = [t['id'] for t in get_user_territories(user_id)]
+        if not scope_territory_ids:
+            return []
+
+    # Territory-first: if a territory filter is set, get its doctor ids directly
+    candidate_ids = None
+    if territory_id:
+        dt_rows = safe_exec(
+            admin_supabase.table("doctor_territories")
+            .select("doctor_id")
+            .eq("territory_id", territory_id),
+            "Error loading doctor territories"
+        ) or []
+        candidate_ids = list({r['doctor_id'] for r in dt_rows})
+        if not candidate_ids:
+            return []
+
+    # Build the doctors query
     query = admin_supabase.table("doctors").select("""
         id,
         name,
@@ -159,60 +184,58 @@ def get_doctors_list(user_id, search=None, territory_id=None, active_only=True):
         clinic_address,
         is_active
     """)
-    
+
     if active_only:
         query = query.eq("is_active", True)
-    
+
     if search:
         query = query.ilike("name", f"%{search}%")
-    
-    doctors = safe_exec(query.order("name"), "Error loading doctors")
-    
-    # Filter by user's territories and enrich with territory/stockist info
+
+    if candidate_ids is not None:
+        query = query.in_("id", candidate_ids)
+
+    doctors = safe_exec(query.order("name"), "Error loading doctors") or []
+
+    # Enrich + filter
     result = []
     for doctor in doctors:
-        # Get doctor's territories
         doc_territories = safe_exec(
             admin_supabase.table("doctor_territories")
             .select("territory_id, territories(id, name)")
             .eq("doctor_id", doctor['id']),
             "Error loading doctor territories"
-        )
-        
+        ) or []
+
         doctor_territory_ids = [dt['territory_id'] for dt in doc_territories]
-        
-        # Check if doctor belongs to any of user's territories
-        if not any(tid in user_territory_ids for tid in doctor_territory_ids):
-            continue
-        
-        # If territory filter is set, check if doctor is in that territory
+
+        # User scoping (admin bypasses this)
+        if scope_territory_ids is not None:
+            if not any(tid in scope_territory_ids for tid in doctor_territory_ids):
+                continue
+
+        # Territory filter (already pre-filtered, but keep as safety)
         if territory_id and territory_id not in doctor_territory_ids:
             continue
-        
-        # Get territory names
+
         territory_names = [dt['territories']['name'] for dt in doc_territories if dt.get('territories')]
-        
-        # Get stockists
+
         doc_stockists = safe_exec(
             admin_supabase.table("doctor_stockists")
             .select("stockist_id, stockists(name)")
             .eq("doctor_id", doctor['id']),
             "Error loading doctor stockists"
-        )
+        ) or []
         stockist_names = [ds['stockists']['name'] for ds in doc_stockists if ds.get('stockists')]
-        
-        # Get chemist count
-        # Note: We'll need to create a doctor_chemists linking table
-        # For now, return 0
+
         chemist_ids = []  # TODO: Implement when table exists
-        
+
         doctor['territory_names'] = territory_names
         doctor['territory_ids'] = doctor_territory_ids
         doctor['stockist_names'] = stockist_names
         doctor['chemist_ids'] = chemist_ids
-        
+
         result.append(doctor)
-    
+
     return result
 
 
