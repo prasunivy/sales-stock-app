@@ -8055,6 +8055,10 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
     elif section == "ALLOCATE_PAYMENTS":
         st.subheader("🔗 Payment Allocation Manager")
 
+        # Persistent success banner (survives the rerun after a confirm)
+        if st.session_state.get("alloc_flash"):
+            st.success(st.session_state.pop("alloc_flash"))
+
         # ====================================================================
         # SHARED HELPERS — single source of truth for every tab + home page
         # ====================================================================
@@ -8282,7 +8286,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                         "target_id": selected_payment_id, "performed_by": uid,
                                         "message": f"Allocated \u20b9{total_alloc:,.2f} ({len(allocations)} invoice(s))"
                                     }).execute()
-                                    st.success(f"✅ Allocated ₹{total_alloc:,.2f}")
+                                    st.session_state["alloc_flash"] = f"✅ Allocation successful — ₹{total_alloc:,.2f} allocated."
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"❌ Failed: {e}")
@@ -8424,7 +8428,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                     "target_id": doc_id, "performed_by": uid,
                                     "message": f"{kind} ₹{amt:,.2f} applied to {inv_meta.get(inv_id, {}).get('ops_no', inv_id)}"
                                 }).execute()
-                            st.success(f"✅ Applied ₹{total_cnf:,.2f}")
+                            st.session_state["alloc_flash"] = f"✅ Allocation successful — ₹{total_cnf:,.2f} applied to invoices."
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ Failed: {e}")
@@ -8531,7 +8535,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                             "target_id": sel_inv_id, "performed_by": uid,
                                             "message": f"Reversed {kind} ₹{float(s['amount']):,.2f} ({src_no})"
                                         }).execute()
-                                        st.success(f"✅ Reversed ₹{float(s['amount']):,.2f}")
+                                        st.session_state["alloc_flash"] = f"✅ Reversal successful — ₹{float(s['amount']):,.2f} returned to pool."
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"❌ Reversal failed: {e}")
