@@ -8159,7 +8159,7 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 if remaining_to_allocate <= 0:
                     st.warning("This payment is fully allocated.")
                 else:
-                    # Resolve target stockist
+                    # Resolve target stockist — NEVER call st.stop() (it blanks the page)
                     from_id   = payment.get("from_entity_id")
                     from_type = payment.get("from_entity_type")
                     target_stockist_id = None
@@ -8171,121 +8171,121 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                         u_sids = [m["stockist_id"] for m in st.session_state.user_stockist_map if m["user_id"] == from_id]
                         u_opts = {s["name"]: s["id"] for s in st.session_state.stockists_master if s["id"] in u_sids}
                         if not u_opts:
-                            st.error("This user has no mapped stockists.")
-                            st.stop()
-                        sn = st.selectbox("Stockist", list(u_opts.keys()), key="alloc_target_stockist")
-                        target_stockist_id = u_opts[sn]
+                            st.error("This user has no mapped stockists. Pick another payment.")
+                        else:
+                            sn = st.selectbox("Stockist", list(u_opts.keys()), key="alloc_target_stockist")
+                            target_stockist_id = u_opts[sn]
                     else:
-                        st.error(f"Payments from {from_type} cannot be allocated to invoices.")
-                        st.stop()
+                        st.error(f"Payments from '{from_type}' cannot be allocated to invoices.")
 
-                    # Opening Balance
-                    ob_rows = admin_supabase.table("financial_ledger")\
-                        .select("ops_document_id, debit, credit")\
-                        .eq("party_id", target_stockist_id)\
-                        .eq("narration", "Opening Balance").execute().data or []
-                    ob_original = sum(float(r["debit"]) for r in ob_rows)
-                    ob_credited = sum(float(r["credit"]) for r in ob_rows)
-                    ob_doc_ids  = list({r["ops_document_id"] for r in ob_rows})
-                    ob_doc_id   = ob_doc_ids[0] if ob_doc_ids else None
-                    ob_paid     = _invoice_settled(ob_doc_id) if ob_doc_id else 0.0
-                    ob_outstanding = max(0.0, ob_original - ob_credited - ob_paid)
+                    if target_stockist_id:
+                        # Opening Balance
+                        ob_rows = admin_supabase.table("financial_ledger")\
+                            .select("ops_document_id, debit, credit")\
+                            .eq("party_id", target_stockist_id)\
+                            .eq("narration", "Opening Balance").execute().data or []
+                        ob_original = sum(float(r["debit"]) for r in ob_rows)
+                        ob_credited = sum(float(r["credit"]) for r in ob_rows)
+                        ob_doc_ids  = list({r["ops_document_id"] for r in ob_rows})
+                        ob_doc_id   = ob_doc_ids[0] if ob_doc_ids else None
+                        ob_paid     = _invoice_settled(ob_doc_id) if ob_doc_id else 0.0
+                        ob_outstanding = max(0.0, ob_original - ob_credited - ob_paid)
 
-                    # Invoices for this stockist
-                    raw_invoices = admin_supabase.table("ops_documents")\
-                        .select("id, ops_no, ops_date, reference_no")\
-                        .eq("ops_type", "STOCK_OUT").eq("stock_as", "normal")\
-                        .eq("to_entity_id", target_stockist_id)\
-                        .eq("is_deleted", False).order("ops_date").execute().data or []
+                        # Invoices for this stockist
+                        raw_invoices = admin_supabase.table("ops_documents")\
+                            .select("id, ops_no, ops_date, reference_no")\
+                            .eq("ops_type", "STOCK_OUT").eq("stock_as", "normal")\
+                            .eq("to_entity_id", target_stockist_id)\
+                            .eq("is_deleted", False).order("ops_date").execute().data or []
 
-                    inv_view = []
-                    for inv in raw_invoices:
-                        tt  = _true_invoice_total(inv["id"])
-                        out = _invoice_outstanding(inv["id"], tt)
-                        if out > 0.01:
-                            inv_view.append({**inv, "true_total": tt, "outstanding": out})
+                        inv_view = []
+                        for inv in raw_invoices:
+                            tt  = _true_invoice_total(inv["id"])
+                            out = _invoice_outstanding(inv["id"], tt)
+                            if out > 0.01:
+                                inv_view.append({**inv, "true_total": tt, "outstanding": out})
 
-                    if not inv_view and ob_outstanding <= 0:
-                        st.warning("No outstanding invoices or opening balance for this stockist.")
-                    else:
-                        st.subheader("📋 Outstanding Items")
-                        allocations   = {}
-                        ob_allocation = 0.0
-                        total_alloc   = 0.0
+                        if not inv_view and ob_outstanding <= 0:
+                            st.warning("No outstanding invoices or opening balance for this stockist. (Its dues may already be fully covered or auto-allocated.)")
+                        else:
+                            st.subheader("📋 Outstanding Items")
+                            allocations   = {}
+                            ob_allocation = 0.0
+                            total_alloc   = 0.0
 
-                        if ob_outstanding > 0 and ob_doc_id:
-                            with st.container():
-                                c1, c2, c3 = st.columns([3, 2, 2])
-                                with c1:
-                                    st.write("**💰 Opening Balance**")
-                                    st.caption("Legacy balance")
-                                with c2:
-                                    st.write(f"**Original:** ₹{ob_original:,.2f}")
-                                    st.write(f"**Due:** ₹{ob_outstanding:,.2f}")
-                                with c3:
-                                    max_ob = min(ob_outstanding, remaining_to_allocate - total_alloc)
-                                    ob_allocation = st.number_input("Allocate ₹", min_value=0.0,
-                                        max_value=float(max_ob), value=0.0, step=0.01, key="alloc_ob")
-                                    if ob_allocation > 0:
-                                        total_alloc += ob_allocation
-                                st.divider()
+                            if ob_outstanding > 0 and ob_doc_id:
+                                with st.container():
+                                    c1, c2, c3 = st.columns([3, 2, 2])
+                                    with c1:
+                                        st.write("**💰 Opening Balance**")
+                                        st.caption("Legacy balance")
+                                    with c2:
+                                        st.write(f"**Original:** ₹{ob_original:,.2f}")
+                                        st.write(f"**Due:** ₹{ob_outstanding:,.2f}")
+                                    with c3:
+                                        max_ob = min(ob_outstanding, remaining_to_allocate - total_alloc)
+                                        ob_allocation = st.number_input("Allocate ₹", min_value=0.0,
+                                            max_value=float(max_ob), value=0.0, step=0.01, key="alloc_ob")
+                                        if ob_allocation > 0:
+                                            total_alloc += ob_allocation
+                                    st.divider()
 
-                        for inv in inv_view:
-                            with st.container():
-                                c1, c2, c3 = st.columns([3, 2, 2])
-                                with c1:
-                                    st.write(f"**{inv['ops_no']}**")
-                                    st.caption(f"Date: {inv['ops_date']}")
-                                    if inv.get("reference_no"):
-                                        st.caption(f"Ref: {inv['reference_no']}")
-                                with c2:
-                                    st.write(f"**Total:** ₹{inv['true_total']:,.2f}")
-                                    st.write(f"**Due:** ₹{inv['outstanding']:,.2f}")
-                                with c3:
-                                    max_a = min(inv["outstanding"], remaining_to_allocate - total_alloc)
-                                    amt = st.number_input("Allocate ₹", min_value=0.0,
-                                        max_value=float(max_a), value=0.0, step=0.01, key=f"alloc_inv_{inv['id']}")
-                                    if amt > 0:
-                                        allocations[inv["id"]] = amt
-                                        total_alloc += amt
-                                st.divider()
+                            for inv in inv_view:
+                                with st.container():
+                                    c1, c2, c3 = st.columns([3, 2, 2])
+                                    with c1:
+                                        st.write(f"**{inv['ops_no']}**")
+                                        st.caption(f"Date: {inv['ops_date']}")
+                                        if inv.get("reference_no"):
+                                            st.caption(f"Ref: {inv['reference_no']}")
+                                    with c2:
+                                        st.write(f"**Total:** ₹{inv['true_total']:,.2f}")
+                                        st.write(f"**Due:** ₹{inv['outstanding']:,.2f}")
+                                    with c3:
+                                        max_a = min(inv["outstanding"], remaining_to_allocate - total_alloc)
+                                        amt = st.number_input("Allocate ₹", min_value=0.0,
+                                            max_value=float(max_a), value=0.0, step=0.01, key=f"alloc_inv_{inv['id']}")
+                                        if amt > 0:
+                                            allocations[inv["id"]] = amt
+                                            total_alloc += amt
+                                    st.divider()
 
-                        c1, c2 = st.columns(2)
-                        c1.metric("Total Allocating", f"₹{total_alloc:,.2f}")
-                        c2.metric("Remaining", f"₹{remaining_to_allocate - total_alloc:,.2f}")
+                            c1, c2 = st.columns(2)
+                            c1.metric("Total Allocating", f"₹{total_alloc:,.2f}")
+                            c2.metric("Remaining", f"₹{remaining_to_allocate - total_alloc:,.2f}")
 
-                        if total_alloc > remaining_to_allocate + 0.01:
-                            st.error("❌ Allocation exceeds available amount")
-                        elif total_alloc > 0 and st.button("✅ Confirm Allocation", type="primary", key="alloc_confirm"):
-                            try:
-                                uid = resolve_user_id()
-                                if ob_allocation > 0 and ob_doc_id:
-                                    admin_supabase.table("payment_settlements").insert({
-                                        "payment_ops_id": selected_payment_id,
-                                        "invoice_id": ob_doc_id, "amount": ob_allocation
+                            if total_alloc > remaining_to_allocate + 0.01:
+                                st.error("❌ Allocation exceeds available amount")
+                            elif total_alloc > 0 and st.button("✅ Confirm Allocation", type="primary", key="alloc_confirm"):
+                                try:
+                                    uid = resolve_user_id()
+                                    if ob_allocation > 0 and ob_doc_id:
+                                        admin_supabase.table("payment_settlements").insert({
+                                            "payment_ops_id": selected_payment_id,
+                                            "invoice_id": ob_doc_id, "amount": ob_allocation
+                                        }).execute()
+                                    for inv_id, amt in allocations.items():
+                                        admin_supabase.table("payment_settlements").insert({
+                                            "payment_ops_id": selected_payment_id,
+                                            "invoice_id": inv_id, "amount": amt
+                                        }).execute()
+                                        _recompute_invoice_after_change(inv_id)
+
+                                    new_alloc = already_allocated + total_alloc
+                                    new_status = "FULLY_ALLOCATED" if new_alloc >= total_payment - 0.01 else "PARTIALLY_ALLOCATED"
+                                    admin_supabase.table("ops_documents").update({
+                                        "allocation_status": new_status
+                                    }).eq("id", selected_payment_id).execute()
+
+                                    admin_supabase.table("audit_logs").insert({
+                                        "action": "ALLOCATE_PAYMENT", "target_type": "ops_documents",
+                                        "target_id": selected_payment_id, "performed_by": uid,
+                                        "message": f"Allocated \u20b9{total_alloc:,.2f} ({len(allocations)} invoice(s))"
                                     }).execute()
-                                for inv_id, amt in allocations.items():
-                                    admin_supabase.table("payment_settlements").insert({
-                                        "payment_ops_id": selected_payment_id,
-                                        "invoice_id": inv_id, "amount": amt
-                                    }).execute()
-                                    _recompute_invoice_after_change(inv_id)
-
-                                new_alloc = already_allocated + total_alloc
-                                new_status = "FULLY_ALLOCATED" if new_alloc >= total_payment - 0.01 else "PARTIALLY_ALLOCATED"
-                                admin_supabase.table("ops_documents").update({
-                                    "allocation_status": new_status
-                                }).eq("id", selected_payment_id).execute()
-
-                                admin_supabase.table("audit_logs").insert({
-                                    "action": "ALLOCATE_PAYMENT", "target_type": "ops_documents",
-                                    "target_id": selected_payment_id, "performed_by": uid,
-                                    "message": f"Allocated ₹{total_alloc:,.2f} ({len(allocations)} invoice(s))"
-                                }).execute()
-                                st.success(f"✅ Allocated ₹{total_alloc:,.2f}")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ Failed: {e}")
+                                    st.success(f"✅ Allocated ₹{total_alloc:,.2f}")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Failed: {e}")
 
         # ================================================================
         # TAB 2 — APPLY CREDIT NOTES & FREIGHT
