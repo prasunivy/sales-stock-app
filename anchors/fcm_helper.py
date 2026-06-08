@@ -34,14 +34,13 @@ def _get_fcm_token_for_user(user_id: str) -> str:
         result = admin_supabase.table("user_fcm_tokens") \
             .select("token") \
             .eq("user_id", user_id) \
-            .maybe_single() \
+            .limit(1) \
             .execute()
         if result.data:
-            return result.data.get("token", "")
+            return result.data[0].get("token", "")
     except Exception as e:
         st.error(f"FCM token fetch error: {e}")
     return ""
-
 
 def send_push_notification(
     user_id: str,
