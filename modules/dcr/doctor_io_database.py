@@ -441,7 +441,13 @@ def delete_output_record(record_id):
 
 def load_io_report(user_id, year, months=None):
     """
-    Load combined Input/Output report for a user.
+    Load combined Input/Output report scoped to the DOCTORS OWNED BY user_id
+    (via their territories), NOT by who entered each record.
+
+    This means a gift logged by the admin (or anyone) against one of this
+    user's doctors will correctly appear in this user's report. Ownership
+    flows by doctor → territory → user, matching the rest of the app.
+
     months: list of int, or None for all 12.
     """
     if months is None:
@@ -449,19 +455,35 @@ def load_io_report(user_id, year, months=None):
 
     report = {}
 
-    # --- Load admin_input ---
-    admin_rows = safe_exec(
-        admin_supabase.table("admin_input")
-        .select("*, doctors(name)")
-        .eq("user_id", user_id)
-        .eq("year", year)
-        .in_("month", months),
-        "Error loading input for report"
-    )
+    # ── Resolve the doctors owned by this user (via territories) ──
+    owned_doctors = get_doctors_for_user(user_id)
+    owned_doctor_ids = [d["id"] for d in owned_doctors]
+    if not owned_doctor_ids:
+        return report
+
+    # Doctor name lookup (so we never depend on the embedded join)
+    name_map = {d["id"]: d.get("name", "Unknown") for d in owned_doctors}
+
+    # Supabase .in_() can choke on very large lists — chunk by 100
+    def _chunks(lst, n=100):
+        for i in range(0, len(lst), n):
+            yield lst[i:i + n]
+
+    # --- Load admin_input (match by doctor, any user) ---
+    admin_rows = []
+    for batch in _chunks(owned_doctor_ids):
+        admin_rows += safe_exec(
+            admin_supabase.table("admin_input")
+            .select("*, doctors(name)")
+            .in_("doctor_id", batch)
+            .eq("year", year)
+            .in_("month", months),
+            "Error loading input for report"
+        )
 
     for r in admin_rows:
         did = r["doctor_id"]
-        dname = r["doctors"]["name"] if r.get("doctors") else "Unknown"
+        dname = name_map.get(did) or (r["doctors"]["name"] if r.get("doctors") else "Unknown")
         mo = r["month"]
         remarks = r.get("remarks") or ""
         amount = float(r.get("gift_amount", 0))
@@ -476,54 +498,66 @@ def load_io_report(user_id, year, months=None):
         else:
             report[did]["data"][key]["input_cash"] += amount
 
-    # --- Load DCR gifts ---
-    dcr_reports = safe_exec(
-        admin_supabase.table("dcr_reports")
-        .select("id, month")
-        .eq("user_id", user_id)
-        .eq("year", year)
-        .in_("month", months)
-        .eq("is_deleted", False),
-        "Error loading DCR reports for IO"
-    )
-
-    if dcr_reports:
-        rpt_ids = [r["id"] for r in dcr_reports]
-        month_map = {r["id"]: r["month"] for r in dcr_reports}
-
-        gifts = safe_exec(
+    # --- Load DCR gifts (match by doctor, any user) ---
+    # dcr_gifts has no date of its own, so pull gifts for owned doctors,
+    # then resolve month/year via the parent dcr_report.
+    dcr_gift_rows = []
+    for batch in _chunks(owned_doctor_ids):
+        dcr_gift_rows += safe_exec(
             admin_supabase.table("dcr_gifts")
-            .select("*, doctors(name)")
-            .in_("dcr_report_id", rpt_ids),
+            .select("doctor_id, gift_amount, dcr_report_id, doctors(name)")
+            .in_("doctor_id", batch),
             "Error loading DCR gifts for IO"
         )
 
-        for g in gifts:
-            did = g["doctor_id"]
-            dname = g["doctors"]["name"] if g.get("doctors") else "Unknown"
-            mo = month_map.get(g["dcr_report_id"], 0)
-            amount = float(g.get("gift_amount", 0))
+    parent_ids = list({g["dcr_report_id"] for g in dcr_gift_rows if g.get("dcr_report_id")})
+    parent_map = {}  # dcr_report_id -> (month, year)
+    for batch in _chunks(parent_ids):
+        prows = safe_exec(
+            admin_supabase.table("dcr_reports")
+            .select("id, month, year, is_deleted")
+            .in_("id", batch),
+            "Error loading DCR parents for IO"
+        )
+        for p in prows:
+            if p.get("is_deleted"):
+                continue
+            parent_map[p["id"]] = (p.get("month"), p.get("year"))
 
-            if did not in report:
-                report[did] = {"doctor_name": dname, "data": {}}
-            key = (mo, year)
-            if key not in report[did]["data"]:
-                report[did]["data"][key] = _empty_cell()
-            report[did]["data"][key]["dcr_gift"] += amount
+    for g in dcr_gift_rows:
+        pid = g.get("dcr_report_id")
+        mo_yr = parent_map.get(pid)
+        if not mo_yr:
+            continue  # deleted DCR or missing parent
+        mo, yr = mo_yr
+        if yr != year or mo not in months:
+            continue
+        did = g["doctor_id"]
+        dname = name_map.get(did) or (g["doctors"]["name"] if g.get("doctors") else "Unknown")
+        amount = float(g.get("gift_amount", 0))
 
-    # --- Load output ---
-    output_rows = safe_exec(
-        admin_supabase.table("input_output")
-        .select("*, doctors(name)")
-        .eq("user_id", user_id)
-        .eq("year", year)
-        .in_("month", months),
-        "Error loading output for report"
-    )
+        if did not in report:
+            report[did] = {"doctor_name": dname, "data": {}}
+        key = (mo, year)
+        if key not in report[did]["data"]:
+            report[did]["data"][key] = _empty_cell()
+        report[did]["data"][key]["dcr_gift"] += amount
+
+    # --- Load output (match by doctor, any user) ---
+    output_rows = []
+    for batch in _chunks(owned_doctor_ids):
+        output_rows += safe_exec(
+            admin_supabase.table("input_output")
+            .select("*, doctors(name)")
+            .in_("doctor_id", batch)
+            .eq("year", year)
+            .in_("month", months),
+            "Error loading output for report"
+        )
 
     for r in output_rows:
         did = r["doctor_id"]
-        dname = r["doctors"]["name"] if r.get("doctors") else "Unknown"
+        dname = name_map.get(did) or (r["doctors"]["name"] if r.get("doctors") else "Unknown")
         mo = r["month"]
         amount = float(r.get("sales_amount", 0))
 
@@ -541,7 +575,6 @@ def load_io_report(user_id, year, months=None):
             cell["total_input"] = cell["input_cash"] + cell["input_kind"] + cell["dcr_gift"]
 
     return report
-
 
 def _empty_cell():
     return {"input_cash": 0.0, "input_kind": 0.0, "dcr_gift": 0.0,
