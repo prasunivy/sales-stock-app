@@ -1097,8 +1097,12 @@ def run_admin_panel():
     role = st.session_state.get("role", "user")
     section = st.session_state.get("admin_section")
 
-    # If statement engine is active (admin edit), run it
-    if st.session_state.get("statement_id") and st.session_state.get("engine_stage") in ("edit", "preview", "view"):
+    # If an ADMIN-initiated statement edit is active, run the engine.
+    # Use a dedicated flag so stale view-state from the user Statement
+    # module does not hijack the Admin Dashboard.
+    if st.session_state.get("admin_engine_active") and \
+       st.session_state.get("statement_id") and \
+       st.session_state.get("engine_stage") in ("edit", "preview", "view"):
         run_statement()
         return
 
@@ -1130,6 +1134,7 @@ def run_admin_panel():
             if st.button("👁 View"):
                 st.session_state.statement_id = stmt["id"]
                 st.session_state.engine_stage = "view"
+                st.session_state.admin_engine_active = True
                 st.rerun()
         with col2:
             if st.button("✏️ Admin Edit"):
@@ -1147,6 +1152,7 @@ def run_admin_panel():
                 st.session_state.selected_stockist_id = stmt_ctx["stockist_id"]
                 st.session_state.product_index = 0
                 st.session_state.engine_stage = "edit"
+                st.session_state.admin_engine_active = True
                 st.rerun()
         with col3:
             if stmt["status"] == "final" and not stmt["locked"]:
