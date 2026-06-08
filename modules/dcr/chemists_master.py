@@ -132,12 +132,12 @@ def show_chemists_list():
                 if st.button("🗑️ Delete", key=f"delete_{chemist['id']}"):
                     if st.session_state.get(f"confirm_delete_{chemist['id']}"):
                         delete_chemist_soft(chemist['id'], current_user_id)
+                        st.session_state.pop(f"confirm_delete_{chemist['id']}", None)
                         st.success("Chemist deleted!")
                         st.rerun()
                     else:
                         st.session_state[f"confirm_delete_{chemist['id']}"] = True
                         st.warning("Click again to confirm")
-
 
 def show_add_chemist_form():
     """
