@@ -150,6 +150,7 @@ def show_doctors_list():
                     if st.button("🗑️ Delete", key=f"delete_{doctor['id']}"):
                         if st.session_state.get(f"confirm_delete_{doctor['id']}"):
                             delete_doctor_soft(doctor['id'], current_user_id)
+                            st.session_state.pop(f"confirm_delete_{doctor['id']}", None)
                             st.success("Doctor deleted!")
                             st.rerun()
                         else:
