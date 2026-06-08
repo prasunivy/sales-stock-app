@@ -63,8 +63,8 @@ def format_whatsapp_message(dcr_id):
     doctor_visits = dcr_data.get('doctor_visits', [])
     message += f"\n👨‍⚕️ Doctors Visited: {len(doctor_visits)}\n"
     for visit in doctor_visits:
-        message += f"• Dr. {visit['doctor_name']}\n"
-        message += f"  Products: {', '.join(visit['product_names'])}\n"
+        message += f"• Dr. {visit.get('doctor_name', 'N/A')}\n"
+        message += f"  Products: {', '.join(visit.get('product_names', []))}\n"
     
     # Chemists
     chemist_names = dcr_data.get('chemist_names', [])
@@ -75,10 +75,10 @@ def format_whatsapp_message(dcr_id):
     # Gifts
     gifts = dcr_data.get('gifts', [])
     if gifts:
-        total_gift = sum(g['gift_amount'] for g in gifts)
+        total_gift = sum(g.get('gift_amount', 0) for g in gifts)
         message += f"\n🎁 Gifts: ₹{total_gift}\n"
         for gift in gifts:
-            message += f"• Dr. {gift['doctor_name']}: {gift['gift_description']} (₹{gift['gift_amount']})\n"
+            message += f"• Dr. {gift.get('doctor_name', 'N/A')}: {gift.get('gift_description', '')} (₹{gift.get('gift_amount', 0)})\n"
     
     # Expenses
     message += f"\n💰 Expenses:\n"
