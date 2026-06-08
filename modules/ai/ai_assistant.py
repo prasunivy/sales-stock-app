@@ -13,7 +13,7 @@ from calendar import monthrange
 from anchors.supabase_client import admin_supabase, safe_exec
 
 
-MODEL      = "claude-sonnet-4-5"
+MODEL      = "claude-sonnet-4-20250514"
 MAX_TOKENS = 1000
 LIMIT_ADMIN = 300
 LIMIT_USER  = 200
