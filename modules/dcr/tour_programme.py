@@ -197,7 +197,8 @@ def show_tour_list():
                 if can_delete:
                     if st.button("🗑️ Delete", key=f"delete_{tour['id']}", use_container_width=True):
                         if st.session_state.get(f"confirm_delete_{tour['id']}"):
-                            delete_tour_programme(tour['id'])
+                            delete_tour_programme(tour['id'], current_user_id)
+                            st.session_state.pop(f"confirm_delete_{tour['id']}", None)
                             st.success("Tour deleted!")
                             st.rerun()
                         else:
@@ -665,7 +666,8 @@ def show_edit_tour_form():
                         doctor_ids=selected_doctor_ids,
                         chemist_ids=selected_chemist_ids,
                         notes=notes,
-                        status=status
+                        status=status,
+                        user_id=current_user_id
                     )
                     
                     st.success("✅ Tour programme updated!")
