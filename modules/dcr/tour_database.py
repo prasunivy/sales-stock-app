@@ -29,7 +29,10 @@ def get_tour_programmes_list(user_id, status_filter=None, search=None):
     for tour in tours:
         territory_ids = tour.get('territory_ids', [])
         if isinstance(territory_ids, str):
-            territory_ids = json.loads(territory_ids)
+            try:
+                territory_ids = json.loads(territory_ids) if territory_ids.strip() else []
+            except Exception:
+                territory_ids = []
         
         if territory_ids:
             territories = safe_exec(
@@ -68,7 +71,10 @@ def get_tour_by_id(tour_id):
     tour_data = tour[0]
     territory_ids = tour_data.get('territory_ids', [])
     if isinstance(territory_ids, str):
-        territory_ids = json.loads(territory_ids)
+        try:
+            territory_ids = json.loads(territory_ids) if territory_ids.strip() else []
+        except Exception:
+            territory_ids = []
     tour_data['territory_ids'] = territory_ids
     
     if territory_ids:
@@ -152,7 +158,7 @@ def create_tour_programme(user_id, tour_date, territory_ids, worked_with_type, d
     return tour_id
 
 
-def update_tour_programme(tour_id, tour_date, territory_ids, worked_with_type, doctor_ids, chemist_ids, notes, status):
+def update_tour_programme(tour_id, tour_date, territory_ids, worked_with_type, doctor_ids, chemist_ids, notes, status, user_id=None):
     """Update existing tour programme"""
     safe_exec(
         admin_supabase.table("tour_programmes").update({
@@ -183,13 +189,14 @@ def update_tour_programme(tour_id, tour_date, territory_ids, worked_with_type, d
             "action": "TOUR_UPDATED",
             "target_type": "tour_programmes",
             "target_id": tour_id,
+            "performed_by": user_id,
             "message": f"Tour programme updated for {tour_date} (status: {status})"
         }),
         "Error creating audit log"
     )
 
 
-def delete_tour_programme(tour_id):
+def delete_tour_programme(tour_id, user_id=None):
     """Soft delete tour programme"""
     safe_exec(
         admin_supabase.table("tour_programmes").update({"deleted_at": datetime.now().isoformat()}).eq("id", tour_id),
@@ -201,6 +208,7 @@ def delete_tour_programme(tour_id):
             "action": "TOUR_DELETED",
             "target_type": "tour_programmes",
             "target_id": tour_id,
+            "performed_by": user_id,
             "message": "Tour programme deleted"
         }),
         "Error creating audit log"
@@ -309,7 +317,10 @@ def get_all_tour_programmes_admin(status_filter=None, search=None):
     for tour in tours:
         territory_ids = tour.get('territory_ids', [])
         if isinstance(territory_ids, str):
-            territory_ids = json.loads(territory_ids)
+            try:
+                territory_ids = json.loads(territory_ids) if territory_ids.strip() else []
+            except Exception:
+                territory_ids = []
         
         if territory_ids:
             territories = safe_exec(
