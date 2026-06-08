@@ -258,7 +258,8 @@ def ofs_load_archive(user_id, role, stockist_filter=None,
     rows = _exec(query, "Error loading archive")
     for r in rows:
         r["stockist_name"] = r.get("stockists", {}).get("name", "Unknown") if r.get("stockists") else "Unknown"
-        r["username"]      = r.get("users!ofs_orders_user_id_fkey", {}).get("username", "Unknown") if r.get("users!ofs_orders_user_id_fkey") else "Unknown"
+        _u = r.get("users") or r.get("users!ofs_orders_user_id_fkey")
+        r["username"]      = _u.get("username", "Unknown") if _u else "Unknown"
     return rows
 
 
