@@ -369,9 +369,13 @@ def _render_user_statement_sidebar(user_id):
             returning="representation"
         ).execute()
 
+        if not res.data:
+            st.error("❌ Could not create or load the statement. Please try again.")
+            st.stop()
+
         stmt = res.data[0]
 
-        if stmt["locked"]:
+        if stmt.get("locked"):
             st.error("Statement is locked by admin")
             st.stop()
 
@@ -754,8 +758,9 @@ def run_reports():
                 selected_users = st.multiselect("Users", users, default=users, format_func=lambda x: x["username"])
                 visible_user_ids = [u["id"] for u in selected_users]
             else:
-                my_profile = supabase.table("users").select("id, designation").eq("id", user_id).limit(1).execute().data[0]
-                if my_profile["designation"] in ("manager", "senior_manager"):
+                _prof = supabase.table("users").select("id, designation").eq("id", user_id).limit(1).execute().data
+                my_profile = _prof[0] if _prof else {}
+                if my_profile.get("designation") in ("manager", "senior_manager"):
                     reps = supabase.table("users").select("id").eq("report_to", user_id).execute().data
                     visible_user_ids = [user_id] + [r["id"] for r in reps]
                 else:
