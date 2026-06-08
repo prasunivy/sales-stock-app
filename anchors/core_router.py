@@ -536,6 +536,7 @@ def _dash_last_dcr(user_id):
     rdate = r["report_date"]
     area  = r.get("area_type", "")
 
+    days = 999
     try:
         d    = date.fromisoformat(rdate)
         days = (date.today() - d).days
