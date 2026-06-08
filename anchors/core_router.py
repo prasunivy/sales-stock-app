@@ -206,6 +206,7 @@ def _set_module(name):
             st.session_state[k] = None
     if name != "ADMIN":
         st.session_state.admin_section = None
+        st.session_state.admin_engine_active = False
     st.rerun()
 
 
