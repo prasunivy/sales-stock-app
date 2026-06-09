@@ -8762,10 +8762,16 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
         if not payment_ids:
             ledger_data = []
         else:
-            ledger_data = admin_supabase.table("financial_ledger")\
-                .select("ops_document_id, credit, gross_amount, discount_amount, net_amount")\
-                .in_("ops_document_id", payment_ids)\
-                .execute().data
+            # Chunk the .in_() lookup — a large id list overflows the
+            # PostgREST request and raises APIError. Batches of 100 are safe.
+            ledger_data = []
+            for _i in range(0, len(payment_ids), 100):
+                _batch = payment_ids[_i:_i + 100]
+                _chunk = admin_supabase.table("financial_ledger")\
+                    .select("ops_document_id, credit, gross_amount, discount_amount, net_amount")\
+                    .in_("ops_document_id", _batch)\
+                    .execute().data or []
+                ledger_data.extend(_chunk)
         
         amount_lookup = {}
         for entry in ledger_data:
