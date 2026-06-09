@@ -881,8 +881,11 @@ def run_reports():
                         "Order": r["order_qty"],
                         "Difference": r["difference"]
                     })
-                _df_mx=pd.DataFrame(matrix).sort_values("Product")
-        _mobile_table(_df_mx, compact_cols=["Product","Issue","Closing","Order","Difference"], detail_title_col="Product", uid_prefix="mat_sum")
+                if matrix:
+                    _df_mx = pd.DataFrame(matrix).sort_values("Product")
+                    _mobile_table(_df_mx, compact_cols=["Product","Closing","Order","Difference"], detail_title_col="Product", uid_prefix="mat_sum")
+                else:
+                    st.info("No products in this statement to display.")
 
         st.subheader("📦 Matrix 1 — Product-wise Sales (Issue)")
         _pv=df.pivot_table(index="Product", columns="Year-Month", values="Issue", aggfunc="sum", fill_value=0).reset_index()
@@ -1084,8 +1087,11 @@ def run_reports():
                     "Order": r["order_qty"],
                     "Difference": r["difference"]
                 })
-            _df_mx=pd.DataFrame(matrix).sort_values("Product")
-        _mobile_table(_df_mx, compact_cols=["Product","Issue","Closing","Order","Difference"], detail_title_col="Product", uid_prefix="mat_sum")
+            if matrix:
+                _df_mx = pd.DataFrame(matrix).sort_values("Product")
+                _mobile_table(_df_mx, compact_cols=["Product","Closing","Order","Difference"], detail_title_col="Product", uid_prefix=f"mat_sum_{stockist_id}")
+            else:
+                st.info("No products in this statement to display.")
 
 
 # ======================================================
