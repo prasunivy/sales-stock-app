@@ -2,6 +2,98 @@ import streamlit as st
 from datetime import datetime, date, timedelta, timezone
 from anchors.supabase_client import admin_supabase, safe_exec
 
+
+# ══════════════════════════════════════════════════════════════════
+# SHARED MONEY-INTEGRITY HELPERS  (module-level — callable anywhere)
+# These guarantee that whenever a payment / credit note / freight /
+# invoice is cancelled or deleted, the payment_settlements that tie it
+# to invoices are reversed and every affected invoice is recomputed.
+# Without this, deleting one side leaves orphan settlements and the
+# invoice outstanding balance stays wrong forever.
+# ══════════════════════════════════════════════════════════════════
+
+def _true_invoice_total_mod(inv_id):
+    """Correct invoice total = first financial_ledger.debit row (non-inflated)."""
+    led = admin_supabase.table("financial_ledger") \
+        .select("debit").eq("ops_document_id", inv_id) \
+        .gt("debit", 0).order("created_at").limit(1) \
+        .execute().data or []
+    return float(led[0]["debit"]) if led else 0.0
+
+
+def _recompute_invoice_mod(inv_id):
+    """Recompute paid_amount / outstanding_balance / payment_status from the
+    invoice's true total and its CURRENT remaining settlements. Identical
+    formula to the Allocate-Payments _recompute_invoice_after_change."""
+    true_total = _true_invoice_total_mod(inv_id)
+    setts = admin_supabase.table("payment_settlements") \
+        .select("amount").eq("invoice_id", inv_id).execute().data or []
+    settled = sum(float(s["amount"]) for s in setts)
+    new_out  = max(0.0, true_total - settled)
+    new_paid = min(settled, true_total)
+    new_st   = "PAID" if new_out <= 0.01 else ("PARTIAL" if new_paid > 0 else "UNPAID")
+    admin_supabase.table("ops_documents").update({
+        "paid_amount": new_paid,
+        "outstanding_balance": new_out,
+        "payment_status": new_st
+    }).eq("id", inv_id).execute()
+
+
+def _reverse_settlements_for_doc(doc_id):
+    """
+    Reverse every payment_settlement that involves doc_id, then restore the
+    invoices those settlements touched.
+
+    Handles BOTH roles a document can play:
+      • doc_id acted as the money source (payment / CN / freight)  → payment_ops_id == doc_id
+      • doc_id IS an invoice that received allocations             → invoice_id    == doc_id
+
+    Returns a list of {invoice_id, amount} that were reversed (for audit).
+    Safe to call even if there are no settlements (returns []).
+    """
+    reversed_records = []
+
+    # 1. Settlements where this doc was the source (payment/CN/freight)
+    as_source = admin_supabase.table("payment_settlements") \
+        .select("id, invoice_id, amount").eq("payment_ops_id", doc_id) \
+        .execute().data or []
+
+    # 2. Settlements where this doc was the invoice being paid
+    as_invoice = admin_supabase.table("payment_settlements") \
+        .select("id, invoice_id, amount").eq("invoice_id", doc_id) \
+        .execute().data or []
+
+    # Collect every invoice that will need recomputation
+    affected_invoice_ids = set()
+    for s in as_source:
+        if s.get("invoice_id"):
+            affected_invoice_ids.add(s["invoice_id"])
+        reversed_records.append({"invoice_id": s.get("invoice_id"),
+                                 "amount": float(s.get("amount") or 0)})
+    for s in as_invoice:
+        affected_invoice_ids.add(doc_id)
+        reversed_records.append({"invoice_id": doc_id,
+                                 "amount": float(s.get("amount") or 0)})
+
+    # Delete the settlement rows (both roles)
+    for s in as_source:
+        admin_supabase.table("payment_settlements").delete().eq("id", s["id"]).execute()
+    for s in as_invoice:
+        admin_supabase.table("payment_settlements").delete().eq("id", s["id"]).execute()
+
+    # Recompute each affected invoice from its remaining settlements.
+    # (If the invoice itself is being deleted, recompute is harmless — the
+    #  doc row is removed afterward by the caller.)
+    for inv_id in affected_invoice_ids:
+        try:
+            _recompute_invoice_mod(inv_id)
+        except Exception:
+            # Never let a single recompute failure abort the whole reversal.
+            pass
+
+    return reversed_records
+
+
 def _mobile_table(df, compact_cols, detail_title_col, uid_prefix='tbl'):
     import json, uuid
     import streamlit.components.v1 as components
@@ -1459,6 +1551,11 @@ This action will:
                                         "metadata": {"ops_document_id": ops_id}
                                     }).execute()
                                     
+                                    # Reverse any settlements tied to this invoice
+                                    # (payments/CN/freight allocated to it) so those
+                                    # source docs are freed and no orphans remain.
+                                    _reverse_settlements_for_doc(ops_id)
+
                                     # Delete records
                                     admin_supabase.table("financial_ledger").delete().eq("ops_document_id", ops_id).execute()
                                     admin_supabase.table("stock_ledger").delete().eq("ops_document_id", ops_id).execute()
@@ -3613,6 +3710,10 @@ This action will:
                                     "message": "Payment deleted by admin",
                                     "metadata": {"ops_document_id": ops_id}
                                 }).execute()
+
+                                # Reverse any invoice allocations first so invoices
+                                # are restored and no orphan settlements remain.
+                                _reverse_settlements_for_doc(ops_id)
 
                                 admin_supabase.table("financial_ledger") \
                                     .delete().eq("ops_document_id", ops_id).execute()
@@ -7874,6 +7975,9 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                     "metadata": {"ops_document_id": ops_id}
                                 }).execute()
                                 
+                                # Reverse any invoice allocations made from this freight
+                                _reverse_settlements_for_doc(ops_id)
+
                                 # Delete records
                                 admin_supabase.table("financial_ledger").delete().eq("ops_document_id", ops_id).execute()
                                 admin_supabase.table("ops_documents").delete().eq("id", ops_id).execute()
@@ -8705,9 +8809,18 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 to_name = "Unknown"
             
             amounts = amount_lookup.get(payment["id"], {"gross": 0, "discount": 0, "net": 0})
-            
+
+            # Cancelled detection — narration prefix is the safe source of truth
+            _is_cancelled = (
+                (payment.get("narration") or "").startswith("[CANCELLED]")
+                or (payment.get("allocation_status") == "CANCELLED")
+            )
+
             status = payment.get("allocation_status") or "UNALLOCATED"
-            if status == "FULLY_ALLOCATED":
+            if _is_cancelled:
+                status = "CANCELLED"
+                status_color = "🚫"
+            elif status == "FULLY_ALLOCATED":
                 status_color = "🟢"
             elif status == "PARTIALLY_ALLOCATED":
                 status_color = "🟡"
@@ -8747,20 +8860,22 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             st.rerun()
 
                     with b2:
-                        if st.button("✏️ Edit Amounts", key=f"edit_amt_{payment['id']}"):
-                            st.session_state.pay_edit_amounts_id   = payment["id"]
-                            st.session_state.pay_edit_amounts_open = True
-                            st.session_state.pay_view_id   = None
-                            st.session_state.pay_view_open = False
-                            st.rerun()
+                        if not _is_cancelled:
+                            if st.button("✏️ Edit Amounts", key=f"edit_amt_{payment['id']}"):
+                                st.session_state.pay_edit_amounts_id   = payment["id"]
+                                st.session_state.pay_edit_amounts_open = True
+                                st.session_state.pay_view_id   = None
+                                st.session_state.pay_view_open = False
+                                st.rerun()
 
                     with b3:
-                        if st.button("👤 Edit Party", key=f"edit_pay_{payment['id']}"):
-                            st.session_state.pay_edit_id   = payment["id"]
-                            st.session_state.pay_edit_open = True
-                            st.session_state.pay_view_id   = None
-                            st.session_state.pay_view_open = False
-                            st.rerun()
+                        if not _is_cancelled:
+                            if st.button("👤 Edit Party", key=f"edit_pay_{payment['id']}"):
+                                st.session_state.pay_edit_id   = payment["id"]
+                                st.session_state.pay_edit_open = True
+                                st.session_state.pay_view_id   = None
+                                st.session_state.pay_view_open = False
+                                st.rerun()
 
                 # ── VIEW PANEL ────────────────────────────────────────────
                 if st.session_state.get("pay_view_open") and st.session_state.get("pay_view_id") == payment["id"]:
@@ -8780,6 +8895,99 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                             st.metric("Net Amount", f"₹{amounts['net']:,.2f}")
                         st.divider()
                         st.write(f"**Allocation Status:** {status_color} {status}")
+
+                        # ── CANCEL PAYMENT (soft, stays visible as CANCELLED) ──
+                        _pay_narr = (payment.get("narration") or "")
+                        _already_cancelled = (
+                            _pay_narr.startswith("[CANCELLED]")
+                            or (payment.get("allocation_status") == "CANCELLED")
+                        )
+
+                        if _already_cancelled:
+                            st.warning("🚫 This payment is already cancelled.")
+                        else:
+                            st.divider()
+                            st.markdown("##### 🚫 Cancel This Payment")
+                            st.caption(
+                                "Cancelling will reverse every invoice allocation made "
+                                "from this payment (restoring their outstanding balances), "
+                                "remove its ledger effect, and mark it CANCELLED. "
+                                "It stays visible in the register for audit."
+                            )
+
+                            _cancel_confirm_key = f"pay_cancel_confirm_{payment['id']}"
+                            if not st.session_state.get(_cancel_confirm_key):
+                                if st.button("🚫 Cancel Payment",
+                                             key=f"cancel_pay_btn_{payment['id']}"):
+                                    st.session_state[_cancel_confirm_key] = True
+                                    st.rerun()
+                            else:
+                                st.error(
+                                    "⚠️ Confirm cancellation? This reverses all allocations "
+                                    "and cannot be undone automatically."
+                                )
+                                cc1, cc2 = st.columns(2)
+                                with cc1:
+                                    if st.button("✅ Yes, Cancel Payment",
+                                                 key=f"cancel_pay_yes_{payment['id']}",
+                                                 type="primary"):
+                                        try:
+                                            _pid = payment["id"]
+                                            _uid = resolve_user_id()
+
+                                            # 1. Reverse settlements + restore invoices
+                                            _reversed = _reverse_settlements_for_doc(_pid)
+
+                                            # 2. Remove ledger effect of this payment
+                                            admin_supabase.table("financial_ledger") \
+                                                .delete().eq("ops_document_id", _pid).execute()
+
+                                            # 3. Mark CANCELLED (narration = safe source of
+                                            #    truth; status write wrapped so a column
+                                            #    constraint can never break the cancel)
+                                            _new_narr = _pay_narr
+                                            if not _new_narr.startswith("[CANCELLED]"):
+                                                _new_narr = "[CANCELLED] " + _new_narr
+                                            admin_supabase.table("ops_documents").update({
+                                                "narration": _new_narr
+                                            }).eq("id", _pid).execute()
+                                            try:
+                                                admin_supabase.table("ops_documents").update({
+                                                    "allocation_status": "CANCELLED"
+                                                }).eq("id", _pid).execute()
+                                            except Exception:
+                                                pass
+
+                                            # 4. Audit log
+                                            admin_supabase.table("audit_logs").insert({
+                                                "action":       "CANCEL_PAYMENT",
+                                                "target_type":  "ops_documents",
+                                                "target_id":    _pid,
+                                                "performed_by": _uid,
+                                                "message":      f"Payment {payment['ops_no']} cancelled — "
+                                                                f"{len(_reversed)} allocation(s) reversed",
+                                                "metadata":     {"reversed": _reversed}
+                                            }).execute()
+
+                                            st.success(
+                                                f"✅ Payment cancelled. "
+                                                f"{len(_reversed)} allocation(s) reversed and "
+                                                f"affected invoices restored."
+                                            )
+                                            st.session_state.pop(_cancel_confirm_key, None)
+                                            st.session_state.pay_view_open = False
+                                            st.session_state.pay_view_id   = None
+                                            st.rerun()
+
+                                        except Exception as e:
+                                            st.error("❌ Failed to cancel payment")
+                                            st.exception(e)
+                                with cc2:
+                                    if st.button("↩️ Keep Payment",
+                                                 key=f"cancel_pay_no_{payment['id']}"):
+                                        st.session_state.pop(_cancel_confirm_key, None)
+                                        st.rerun()
+
                         if st.button("✖️ Close", key=f"close_view_pay_{payment['id']}"):
                             st.session_state.pay_view_open = False
                             st.session_state.pay_view_id   = None
@@ -9053,6 +9261,8 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                 "message": f"Freight entry deleted",
                                 "metadata": {"ops_document_id": doc["id"]}
                             }).execute()
+                            # Reverse any invoice allocations made from this freight
+                            _reverse_settlements_for_doc(doc["id"])
                             admin_supabase.table("financial_ledger").delete().eq("ops_document_id", doc["id"]).execute()
                             admin_supabase.table("ops_documents").update({"is_deleted": True}).eq("id", doc["id"]).execute()
                             st.success("✅ Freight entry deleted")
