@@ -349,7 +349,7 @@ def _is_cancelled_doc(d):
 def _report1(role, user_id):
     st.markdown("#### Report 1 - Product x Month: Invoice & Credit Note Quantity")
     st.caption(
-        "Rows = Products.  Columns = Month -> Invoice qty | Credit Note qty.  "
+        "Rows = Products.  Columns = Month -> Invoice (Sale | Free | Total) | Credit Note.  "
         "Filter by User(s) -> Stockist(s)."
     )
 
@@ -419,7 +419,7 @@ def _report1(role, user_id):
             batch = doc_ids[i:i + 100]
             lines_raw += safe_exec(
                 admin_supabase.table("ops_lines")
-                .select("ops_document_id, sale_qty, product_id")
+                .select("ops_document_id, sale_qty, free_qty, product_id")
                 .in_("ops_document_id", batch)
             ) or []
 
@@ -438,7 +438,9 @@ def _report1(role, user_id):
             for p in prows:
                 prod_map[p["id"]] = p["name"]
 
-        # Aggregate: (product, period, kind) -> qty
+        # Aggregate: (product, period, column_label) -> qty
+        # Invoice -> three measures: Inv-Sale, Inv-Free, Inv-Total
+        # Credit Note -> single measure: CN (sale + free, i.e. total returned)
         agg = {}
         for ln in lines_raw:
             info = doc_info.get(ln["ops_document_id"])
@@ -446,9 +448,17 @@ def _report1(role, user_id):
                 continue
             (y, mo), kind = info
             product = prod_map.get(ln.get("product_id"), "Unknown")
-            qty = _safe_float(ln.get("sale_qty"))
-            k = (product, y, mo, kind)
-            agg[k] = agg.get(k, 0.0) + qty
+            sale = _safe_float(ln.get("sale_qty"))
+            free = _safe_float(ln.get("free_qty"))
+            if kind == "Invoice":
+                for measure, val in (("Inv-Sale", sale),
+                                     ("Inv-Free", free),
+                                     ("Inv-Total", sale + free)):
+                    k = (product, y, mo, measure)
+                    agg[k] = agg.get(k, 0.0) + val
+            else:  # Credit Note
+                k = (product, y, mo, "CN")
+                agg[k] = agg.get(k, 0.0) + (sale + free)
 
     if not agg:
         st.info("No data to display after aggregation.")
@@ -461,7 +471,8 @@ def _report1(role, user_id):
     df_raw = pd.DataFrame(rows_list)
 
     period_labels = [_mlabel(y, m) for y, m in periods]
-    type_order    = ["Invoice", "Credit Note"]
+    # Order within each month: Inv-Sale, Inv-Free, Inv-Total, then CN
+    type_order    = ["Inv-Sale", "Inv-Free", "Inv-Total", "CN"]
 
     pivot = df_raw.pivot_table(
         index="Product", columns=["Period", "Type"],
