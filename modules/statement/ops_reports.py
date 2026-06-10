@@ -30,8 +30,8 @@ def _mobile_table(df, compact_cols, detail_title_col, uid_prefix='tbl'):
     rows = df.fillna('').astype(str).to_dict(orient='records')
     all_cols = list(df.columns)
     rj = json.dumps(rows); cj = json.dumps(compact_cols); aj = json.dumps(all_cols); dtc = detail_title_col
-    css = ('<style>#{t} .ivy-desk {{width:100%;border-collapse:collapse;font-size:.83rem;border:1px solid #e2ece9;overflow:hidden;}}#{t} .ivy-desk th {{background:#1a6b5a;color:white;font-weight:600;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;padding:.65rem 1rem;text-align:left;}}#{t} .ivy-desk td {{padding:.5rem 1rem;border-bottom:1px solid #e2ece9;color:#1c2b27;font-size:.83rem;white-space:nowrap;}}#{t} .ivy-desk tr:nth-child(even) td {{background:#f0faf7;}}#{t} .ivy-desk tr:hover td {{background:#e8f5f1;cursor:pointer;}}#{t} .ivy-mob {{display:none;}}#{t} .ivy-ctbl {{width:100%;border-collapse:collapse;table-layout:fixed;}}#{t} .ivy-ctbl th {{background:#1a6b5a;color:white;font-size:.7rem;font-weight:600;padding:5px 4px;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}#{t} .ivy-ctbl td {{padding:5px 4px;border-bottom:1px solid #e2ece9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1c2b27;font-size:.78rem;}}#{t} .ivy-ctbl tr:nth-child(even) td {{background:#f0faf7;}}#{t} .ivy-ctbl tr {{cursor:pointer;}}#{t} .ivy-ctbl tr:active td {{background:#e8f5f1;}}#{t} .ivy-hint {{text-align:center;font-size:.7rem;color:#9ab4ad;padding:4px 0 2px;}}#{t} .ivy-tip {{color:#9ab4ad;font-size:.7rem;}}#{t} .ivy-dtl {{display:none;}}#{t} .ivy-bk {{display:flex;align-items:center;gap:6px;background:#1a6b5a;color:white;border:none;padding:8px 12px;font-size:.8rem;font-weight:600;cursor:pointer;width:100%;}}#{t} .ivy-db {{padding:10px 10px 16px;background:#f7f9f8;}}#{t} .ivy-dt {{font-size:.85rem;font-weight:700;color:#1c2b27;margin-bottom:8px;word-break:break-word;}}#{t} .ivy-dr {{display:flex;justify-content:space-between;align-items:flex-start;padding:5px 0;border-bottom:1px solid #e2ece9;}}#{t} .ivy-dl {{font-size:.7rem;color:#5a7268;font-weight:600;text-transform:uppercase;letter-spacing:.04em;min-width:40%;padding-right:8px;}}#{t} .ivy-dv {{font-size:.78rem;color:#1c2b27;font-weight:500;text-align:right;word-break:break-word;}}@media (max-width:768px) {{#{t} .ivy-desk {{display:none;}} #{t} .ivy-mob {{display:block;}} }}</style>').replace('{t}', table_id)
-    body = ('<div id="{t}"><div class="ivy-desk"><table><thead><tr id="{t}_dh"></tr></thead><tbody id="{t}_db"></tbody></table></div><div class="ivy-mob"><div class="ivy-list" id="{t}_ls"><div class="ivy-hint">Tap any row for full details</div><table class="ivy-ctbl"><thead><tr id="{t}_mh"></tr></thead><tbody id="{t}_mb"></tbody></table></div><div class="ivy-dtl" id="{t}_dtl"><button class="ivy-bk" onclick="ivy_bk_{t}()">&#8592; Back</button><div class="ivy-db"><div class="ivy-dt" id="{t}_dtt"></div><div id="{t}_dr"></div></div></div></div></div>').replace('{t}', table_id)
+    css = ('<style>#{t} .ivy-desk {{width:100%;border-collapse:collapse;font-size:.83rem;border:1px solid #e2ece9;overflow:hidden;}}#{t} .ivy-desk th {{background:#1a6b5a;color:white;font-weight:600;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;padding:.65rem 1rem;text-align:left;}}#{t} .ivy-desk td {{padding:.5rem 1rem;border-bottom:1px solid #e2ece9;color:#1c2b27;font-size:.83rem;white-space:nowrap;}}#{t} .ivy-desk tr:nth-child(even) td {{background:#f0faf7;}}#{t} .ivy-desk tr:hover td {{background:#e8f5f1;cursor:pointer;}}#{t} .ivy-mob {{display:none;}}#{t} .ivy-ctbl {{width:100%;border-collapse:collapse;table-layout:fixed;}}#{t} .ivy-ctbl th {{background:#1a6b5a;color:white;font-size:.7rem;font-weight:600;padding:5px 4px;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}#{t} .ivy-ctbl td {{padding:5px 4px;border-bottom:1px solid #e2ece9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1c2b27;font-size:.78rem;}}#{t} .ivy-ctbl tr:nth-child(even) td {{background:#f0faf7;}}#{t} .ivy-ctbl tr {{cursor:pointer;}}#{t} .ivy-ctbl tr:active td {{background:#e8f5f1;}}#{t} .ivy-hint {{text-align:center;font-size:.7rem;color:#9ab4ad;padding:4px 0 2px;}}#{t} .ivy-tip {{color:#9ab4ad;font-size:.7rem;}}#{t} .ivy-dtl {{display:none;}}#{t} .ivy-bk {{display:flex;align-items:center;gap:6px;background:#1a6b5a;color:white;border:none;padding:8px 12px;font-size:.8rem;font-weight:600;cursor:pointer;width:100%;}}#{t} .ivy-db {{padding:10px 10px 16px;background:#f7f9f8;}}#{t} .ivy-dt {{font-size:.85rem;font-weight:700;color:#1c2b27;margin-bottom:8px;word-break:break-word;}}#{t} .ivy-dr {{display:flex;justify-content:space-between;align-items:flex-start;padding:5px 0;border-bottom:1px solid #e2ece9;}}#{t} .ivy-dl {{font-size:.7rem;color:#5a7268;font-weight:600;text-transform:uppercase;letter-spacing:.04em;min-width:40%;padding-right:8px;}}#{t} .ivy-dv {{font-size:.78rem;color:#1c2b27;font-weight:500;text-align:right;word-break:break-word;}}#{t} .ivy-scroll {{overflow-x:auto;-webkit-overflow-scrolling:touch;}}#{t} .ivy-desk th:first-child, #{t} .ivy-desk td:first-child {{position:sticky;left:0;z-index:3;box-shadow:2px 0 4px rgba(0,0,0,0.06);}}#{t} .ivy-desk th:first-child {{background:#1a6b5a;z-index:4;}}#{t} .ivy-desk td:first-child {{background:#ffffff;}}#{t} .ivy-desk tr:nth-child(even) td:first-child {{background:#f0faf7;}}@media (max-width:768px) {{#{t} .ivy-desk {{display:none;}} #{t} .ivy-mob {{display:block;}} }}</style>').replace('{t}', table_id)
+    body = ('<div id="{t}"><div class="ivy-scroll"><div class="ivy-desk"><table><thead><tr id="{t}_dh"></tr></thead><tbody id="{t}_db"></tbody></table></div></div><div class="ivy-mob"><div class="ivy-list" id="{t}_ls"><div class="ivy-hint">Tap any row for full details</div><table class="ivy-ctbl"><thead><tr id="{t}_mh"></tr></thead><tbody id="{t}_mb"></tbody></table></div><div class="ivy-dtl" id="{t}_dtl"><button class="ivy-bk" onclick="ivy_bk_{t}()">&#8592; Back</button><div class="ivy-db"><div class="ivy-dt" id="{t}_dtt"></div><div id="{t}_dr"></div></div></div></div></div>').replace('{t}', table_id)
     js = ('<script>(function(){var R={rj},C={cj},A={aj},T="{t}",D="{d}",W=window;var dh=document.getElementById(T+"_dh");A.forEach(function(c){var e=document.createElement("th");e.textContent=c;dh.appendChild(e);});var db=document.getElementById(T+"_db");R.forEach(function(r,i){var tr=document.createElement("tr");tr.style.cursor="pointer";A.forEach(function(c){var td=document.createElement("td");td.textContent=r[c]||"";tr.appendChild(td);});tr.onclick=function(){W["ivs_"+T](i);};db.appendChild(tr);});var mh=document.getElementById(T+"_mh");C.forEach(function(c){var e=document.createElement("th");e.textContent=c;mh.appendChild(e);});var te=document.createElement("th");te.style.width="14px";mh.appendChild(te);var mb=document.getElementById(T+"_mb");R.forEach(function(r,i){var tr=document.createElement("tr");C.forEach(function(c){var td=document.createElement("td");td.textContent=r[c]||"";tr.appendChild(td);});var ti=document.createElement("td");ti.innerHTML="<span class=\\"ivy-tip\\">&#8250;</span>";tr.appendChild(ti);tr.onclick=function(){W["ivs_"+T](i);};mb.appendChild(tr);});W["ivs_"+T]=function(i){var r=R[i];document.getElementById(T+"_dtt").textContent=r[D]||("Row "+(i+1));var dr=document.getElementById(T+"_dr");dr.innerHTML="";A.forEach(function(c){if(r[c]===""||r[c]==null)return;var d=document.createElement("div");d.className="ivy-dr";d.innerHTML="<span class=\\"ivy-dl\\">"+ c +"</span><span class=\\"ivy-dv\\">"+(r[c]||"\u2014")+"</span>";dr.appendChild(d);});document.getElementById(T+"_ls").style.display="none";document.getElementById(T+"_dtl").style.display="block";};W["ivy_bk_"+T]=function(){document.getElementById(T+"_dtl").style.display="none";document.getElementById(T+"_ls").style.display="block";};})();</script>').replace('{rj}', rj).replace('{cj}', cj).replace('{aj}', aj).replace('{t}', table_id).replace('{d}', dtc)
     return components.html(css + body + js, height=max(250, len(rows)*34+120), scrolling=True)
 
@@ -772,15 +772,262 @@ def _report5(role, user_id):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# USER-ONLY SELECTOR (for R6) — multi-select incl. All; role-aware
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _user_only_selector(key, role, current_user_id):
+    """Returns (selected_user_ids, label). Admin sees all users; manager sees
+    self + direct reports; plain user is scoped to self."""
+    if role == "admin":
+        all_users = _load_all_users()
+        sel = st.multiselect(
+            "Select User(s)", all_users, default=all_users,
+            format_func=lambda x: x["username"], key=f"{key}_users",
+        )
+        ids = [u["id"] for u in sel]
+        label = "All Users" if len(sel) == len(all_users) else ", ".join(u["username"] for u in sel[:3])
+        if 0 < len(sel) - 3:
+            label += f" +{len(sel) - 3} more"
+        return ids, label
+
+    _ui = safe_exec(
+        admin_supabase.table("users")
+        .select("id, username, designation")
+        .eq("id", current_user_id).limit(1)
+    )
+    info = _ui[0] if _ui else {}
+    if (info.get("designation") or "") in ("manager", "senior_manager"):
+        reports = safe_exec(
+            admin_supabase.table("users")
+            .select("id, username")
+            .eq("report_to", current_user_id).eq("is_active", True)
+        ) or []
+        team = [{"id": current_user_id, "username": (info.get("username") or "Me") + " (You)"}] + reports
+        sel = st.multiselect(
+            "Select Team Member(s)", team, default=team,
+            format_func=lambda x: x["username"], key=f"{key}_users",
+        )
+        ids = [u["id"] for u in sel]
+        st.caption(f"Manager view — {len(reports)} direct report(s).")
+        return ids, ("All (You + Team)" if len(sel) == len(team) else f"{len(sel)} user(s)")
+
+    st.caption("Showing your own movement.")
+    return [current_user_id], (info.get("username") or "Me")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPORT 6 - Stock Movement : Product (rows) x Month
+#   Sub-cols: Saleable | Free | Sample | Lot | Credit Note |
+#             Total (excl CN) | Net (excl CN minus CN)
+#   Saleable/Free/CN  -> via the selected users' allotted stockists
+#   Sample/Lot        -> directly to the selected users (Company/CNF -> User)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _report6(role, user_id):
+    st.markdown("#### Report 6 - Stock Movement: Product x Month (by User)")
+    st.caption(
+        "Rows = Products.  Per month: Saleable | Free | Sample | Lot | "
+        "Credit Note | Total (excl CN) | Net (Total − CN).  "
+        "Saleable/Free/CN come from the user's allotted stockists; "
+        "Sample/Lot come directly to the user."
+    )
+
+    yf, mf, yt, mt = _period_selectors("r6")
+
+    sel_user_ids, user_label = _user_only_selector("r6", role, user_id)
+    if not sel_user_ids:
+        st.info("Select at least one user.")
+        return
+
+    # Allotted stockists across all selected users (deduplicated — Option A)
+    avail_stockists = _load_stockists_for_users(sel_user_ids)
+    stockist_ids = [s["id"] for s in avail_stockists]
+
+    if not st.button("Generate Report 6", key="r6_btn", type="primary"):
+        return
+
+    with st.spinner("Fetching data..."):
+        from_date = date(yf, mf, 1)
+        to_date   = date(yt, 12, 31) if mt == 12 else date(yt, mt + 1, 1)
+        periods   = _period_range(yf, mf, yt, mt)
+        period_set = {(y, m) for y, m in periods}
+
+        # ---- Invoices (saleable + free) — to the allotted stockists ----
+        inv_docs = []
+        if stockist_ids:
+            inv_docs = safe_exec(
+                admin_supabase.table("ops_documents")
+                .select("id, ops_date, stock_as, narration, allocation_status, to_entity_id")
+                .eq("stock_as", "normal").eq("is_deleted", False)
+                .in_("to_entity_id", stockist_ids)
+                .gte("ops_date", from_date.isoformat())
+                .lt("ops_date", to_date.isoformat())
+            ) or []
+            inv_docs = [d for d in inv_docs if not _is_cancelled_doc(d)]
+
+        # ---- Credit notes — from the allotted stockists ----
+        cn_docs = []
+        if stockist_ids:
+            cn_docs = safe_exec(
+                admin_supabase.table("ops_documents")
+                .select("id, ops_date, stock_as, narration, allocation_status, from_entity_id")
+                .eq("stock_as", "credit_note").eq("is_deleted", False)
+                .in_("from_entity_id", stockist_ids)
+                .gte("ops_date", from_date.isoformat())
+                .lt("ops_date", to_date.isoformat())
+            ) or []
+            cn_docs = [d for d in cn_docs if not _is_cancelled_doc(d)]
+
+        # ---- Samples & Lots — directly TO the selected users ----
+        sl_docs = safe_exec(
+            admin_supabase.table("ops_documents")
+            .select("id, ops_date, stock_as, narration, allocation_status, to_entity_id")
+            .in_("stock_as", ["sample", "lot"]).eq("is_deleted", False)
+            .in_("to_entity_id", sel_user_ids)
+            .gte("ops_date", from_date.isoformat())
+            .lt("ops_date", to_date.isoformat())
+        ) or []
+        sl_docs = [d for d in sl_docs if not _is_cancelled_doc(d)]
+
+        # Map each doc id -> (period, kind)
+        doc_kind = {}
+        for d in inv_docs:
+            y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
+            if (y, mo) in period_set:
+                doc_kind[d["id"]] = ((y, mo), "INVOICE")
+        for d in cn_docs:
+            y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
+            if (y, mo) in period_set:
+                doc_kind[d["id"]] = ((y, mo), "CN")
+        for d in sl_docs:
+            y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
+            if (y, mo) in period_set:
+                doc_kind[d["id"]] = ((y, mo), (d.get("stock_as") or "").upper())  # SAMPLE / LOT
+
+        if not doc_kind:
+            st.info("No stock movement found for this period.")
+            return
+
+        all_ids = list(doc_kind.keys())
+
+        # Lines — chunked
+        lines_raw = []
+        for i in range(0, len(all_ids), 100):
+            batch = all_ids[i:i + 100]
+            lines_raw += safe_exec(
+                admin_supabase.table("ops_lines")
+                .select("ops_document_id, sale_qty, free_qty, product_id")
+                .in_("ops_document_id", batch)
+            ) or []
+
+        if not lines_raw:
+            st.info("No product lines found for the matching documents.")
+            return
+
+        # Product names
+        prod_ids = list({ln["product_id"] for ln in lines_raw if ln.get("product_id")})
+        prod_map = {}
+        for i in range(0, len(prod_ids), 100):
+            batch = prod_ids[i:i + 100]
+            for p in (safe_exec(
+                admin_supabase.table("products").select("id, name").in_("id", batch)
+            ) or []):
+                prod_map[p["id"]] = p["name"]
+
+        # Aggregate: (product, period, measure) -> qty
+        agg = {}
+        def _add(product, ym, measure, val):
+            k = (product, ym, measure)
+            agg[k] = agg.get(k, 0.0) + val
+
+        for ln in lines_raw:
+            info = doc_kind.get(ln["ops_document_id"])
+            if not info:
+                continue
+            ym, kind = info
+            product = prod_map.get(ln.get("product_id"), "Unknown")
+            sale = _safe_float(ln.get("sale_qty"))
+            free = _safe_float(ln.get("free_qty"))
+            if kind == "INVOICE":
+                _add(product, ym, "Saleable", sale)
+                _add(product, ym, "Free", free)
+            elif kind == "SAMPLE":
+                _add(product, ym, "Sample", sale)        # sample/lot has no free
+            elif kind == "LOT":
+                _add(product, ym, "Lot", sale)
+            elif kind == "CN":
+                _add(product, ym, "CreditNote", sale + free)
+
+    if not agg:
+        st.info("No data to display after aggregation.")
+        return
+
+    # Build per-(product, period) measure dict, then compute totals
+    measures = ["Saleable", "Free", "Sample", "Lot", "CreditNote"]
+    cell = {}  # (product, period_label) -> {measure: qty}
+    products = set()
+    for (product, (y, mo), measure), val in agg.items():
+        plabel = _mlabel(y, mo)
+        products.add(product)
+        cell.setdefault((product, plabel), {m: 0.0 for m in measures})
+        cell[(product, plabel)][measure] += val
+
+    period_labels = [_mlabel(y, m) for y, m in periods]
+    # Column order per month
+    sub_order = ["Saleable", "Free", "Sample", "Lot", "Credit Note",
+                 "Total (excl CN)", "Net"]
+
+    # Build a flat row per product with all month*subcol values
+    rows = []
+    for product in sorted(products):
+        row = {"Product": product}
+        for plabel in period_labels:
+            c = cell.get((product, plabel), {m: 0.0 for m in measures})
+            total_excl = c["Saleable"] + c["Free"] + c["Sample"] + c["Lot"]
+            net = total_excl - c["CreditNote"]
+            vals = {
+                "Saleable":        c["Saleable"],
+                "Free":            c["Free"],
+                "Sample":          c["Sample"],
+                "Lot":             c["Lot"],
+                "Credit Note":     c["CreditNote"],
+                "Total (excl CN)": total_excl,
+                "Net":             net,
+            }
+            for sub in sub_order:
+                row[f"{plabel} {sub}"] = int(vals[sub])
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    _mobile_table(
+        df,
+        compact_cols=[df.columns[0]] + list(df.columns[1:4]),
+        detail_title_col=df.columns[0],
+        uid_prefix="r6_move"
+    )
+
+    subtitle = (f"Users: {user_label}  |  Stockists allotted: {len(stockist_ids)}  |  "
+                f"Period: {_mlabel(yf, mf)} - {_mlabel(yt, mt)}")
+    # PDF uses the same flat frame (Product as index)
+    pdf_bytes = _build_pdf("Report 6 - Stock Movement (by User)", subtitle, df.set_index("Product"))
+    st.download_button(
+        "Download PDF", data=pdf_bytes,
+        file_name="r6_stock_movement.pdf",
+        mime="application/pdf", key="r6_pdf",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # MAIN ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_ops_reports():
-    """Entry point. Renders 4 sub-tabs inside the OPS Reports tab."""
+    """Entry point. Renders sub-tabs inside the OPS Reports tab."""
     user_id = st.session_state.auth_user.id
     role    = st.session_state.get("role", "user")
 
-    st.markdown("##### OPS matrix reports drawn from invoices, payments, and credit notes.")
+    st.markdown("##### OPS matrix reports drawn from invoices, payments, credit notes, samples and lots.")
     if role != "admin":
         st.caption("You can see data for your own stockists only.")
 
@@ -789,6 +1036,7 @@ def run_ops_reports():
         "R2 - Payment & Credit Note",
         "R4 - Gross Invoice & Credit Note",
         "R5 - Full Financial Summary",
+        "R6 - Stock Movement",
     ])
 
     with tabs[0]:
@@ -799,3 +1047,6 @@ def run_ops_reports():
         _report4(role, user_id)
     with tabs[3]:
         _report5(role, user_id)
+    with tabs[4]:
+        _report6(role, user_id)
+
