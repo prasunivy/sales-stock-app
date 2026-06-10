@@ -1,25 +1,22 @@
 """
 OPS Reports Module — modules/statement/ops_reports.py
-5 matrix reports built from ops_documents + ops_lines.
+4 matrix reports built from ops_documents + ops_lines + financial_ledger.
 Called from run_reports() in statement_main.py via tab2.
 
-Report 1 : Product x Month  ->  Invoice qty | Sample qty | Lot qty
-           Filter by: Company / CNF / User (multi-select)
+All reports filter by: User(s) -> Stockist(s) -> Month From/To.
+Documents are matched to stockists by entity_id (invoices: to_entity_id,
+credit notes & payments: from_entity_id). Cancelled payments are excluded.
 
-Report 2 : Month x (Payment | Credit Note amount)
-           Filter by: User -> Stockist
-
-Report 3 : Same layout as R2 (separate stockist selection)
-
-Report 4 : Month x (Gross Invoice | Credit Note amount)
-           Filter by: User -> Stockist
-
-Report 5 : Month x (Gross Invoice | Net Invoice | Payment | Freight | Credit Note)
-           Filter by: User -> Stockist
+Report 1 : Product (rows) x Month -> Invoice qty | Credit Note qty
+Report 2 : Payment | Credit Note (rows) x Month (cols)
+Report 4 : Gross Invoice | Credit Note (rows) x Month (cols)
+Report 5 : Gross Invoice | Net Invoice | Credit Note | Payment Gross |
+           Discount | Payment Net (rows) x Month (cols)
 
 Access control:
-  admin  -> can select any user / any stockist
-  user   -> sees only own stockists, no user selector shown
+  admin   -> can select any user / any stockist
+  manager -> own + direct reports
+  user    -> own stockists only
 """
 
 import streamlit as st
@@ -280,12 +277,13 @@ def _user_and_stockist_selectors(key, role, current_user_id):
         sel_user_ids = [u["id"] for u in sel_users]
     else:
         # Check if this user is a manager or senior_manager
-        user_info = safe_exec(
+        _ui = safe_exec(
             admin_supabase.table("users")
             .select("id, username, designation")
             .eq("id", current_user_id)
-            .single()
+            .limit(1)
         )
+        user_info = _ui[0] if _ui else {}
         designation = (user_info or {}).get("designation", "")
         is_manager = designation in ("manager", "senior_manager")
 
@@ -336,78 +334,31 @@ def _user_and_stockist_selectors(key, role, current_user_id):
     return sel_user_ids, stockist_ids, label
 
 
+
+def _is_cancelled_doc(d):
+    """A payment/doc is cancelled if its narration starts with [CANCELLED]
+    or its allocation_status is CANCELLED. Matches the Cancel Payment marker."""
+    narr = (d.get("narration") or "")
+    return narr.startswith("[CANCELLED]") or (d.get("allocation_status") == "CANCELLED")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# REPORT 1 - Product x Month  (Invoice / Sample / Lot quantities)
+# REPORT 1 - Product x Month : Invoice qty | Credit Note qty  (per stockist)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _report1(role, user_id):
-    st.markdown("#### Report 1 - Product x Month: Invoice / Sample / Lot Quantities")
+    st.markdown("#### Report 1 - Product x Month: Invoice & Credit Note Quantity")
     st.caption(
-        "Rows = Products.  Columns = Month -> Invoice qty | Sample qty | Lot qty.  "
-        "Filter by Company, CNF, or User."
+        "Rows = Products.  Columns = Month -> Invoice qty | Credit Note qty.  "
+        "Filter by User(s) -> Stockist(s)."
     )
 
     yf, mf, yt, mt = _period_selectors("r1")
 
-    entity_type = st.selectbox("Filter By", ["Company", "CNF", "User"], key="r1_etype")
-
-    entity_ids   = []
-    entity_label = ""
-
-    if entity_type == "Company":
-        entity_ids   = ["company"]
-        entity_label = "Company"
-
-    elif entity_type == "CNF":
-        cnfs = _load_all_cnfs()
-        if not cnfs:
-            st.warning("No CNFs found in the system.")
-            return
-        sel = st.multiselect("Select CNF(s)", cnfs, default=cnfs,
-                             format_func=lambda x: x["name"], key="r1_cnf")
-        entity_ids   = [c["id"] for c in sel]
-        entity_label = ", ".join(c["name"] for c in sel) or "-"
-
-    else:  # User
-        if role == "admin":
-            all_users = _load_all_users()
-            sel = st.multiselect("Select User(s)", all_users, default=all_users,
-                                 format_func=lambda x: x["username"], key="r1_users")
-            entity_ids   = [u["id"] for u in sel]
-            entity_label = ", ".join(u["username"] for u in sel) or "-"
-        else:
-            # Check if manager — if so show team selector
-            user_info_r1 = safe_exec(
-                admin_supabase.table("users")
-                .select("id, username, designation")
-                .eq("id", user_id)
-                .single()
-            )
-            designation_r1 = (user_info_r1 or {}).get("designation", "")
-            if designation_r1 in ("manager", "senior_manager"):
-                reports_r1 = safe_exec(
-                    admin_supabase.table("users")
-                    .select("id, username")
-                    .eq("report_to", user_id)
-                    .eq("is_active", True)
-                ) or []
-                team_r1 = [{"id": user_id,
-                             "username": (user_info_r1 or {}).get("username", "Me") + " (You)"}]
-                team_r1 += reports_r1
-                sel = st.multiselect(
-                    "Select Team Member(s)", team_r1, default=team_r1,
-                    format_func=lambda x: x["username"], key="r1_users"
-                )
-                entity_ids   = [u["id"] for u in sel]
-                entity_label = ", ".join(u["username"] for u in sel) or "-"
-                st.caption(f"Manager view — {len(reports_r1)} direct report(s) shown.")
-            else:
-                entity_ids   = [user_id]
-                entity_label = st.session_state.get("username", "Me")
-                st.caption("Showing your own transactions.")
-
-    if not entity_ids:
-        st.info("Select at least one entity to generate the report.")
+    sel_user_ids, stockist_ids, stockist_label = _user_and_stockist_selectors(
+        "r1", role, user_id
+    )
+    if not stockist_ids:
         return
 
     if not st.button("Generate Report 1", key="r1_btn", type="primary"):
@@ -416,82 +367,88 @@ def _report1(role, user_id):
     with st.spinner("Fetching data..."):
         from_date = date(yf, mf, 1)
         to_date   = date(yt, 12, 31) if mt == 12 else date(yt, mt + 1, 1)
+        periods   = _period_range(yf, mf, yt, mt)
+        period_set = {(y, m) for y, m in periods}
 
-        docs_raw = safe_exec(
+        # Invoices: stockist is the recipient (to_entity_id)
+        inv_docs = safe_exec(
             admin_supabase.table("ops_documents")
-            .select("id, ops_date, stock_as, direction,"
-                    "from_entity_type, from_entity_id,"
-                    "to_entity_type,   to_entity_id")
-            .in_("stock_as", ["normal", "sample", "lot"])
-            .gte("ops_date", from_date.isoformat())
-            .lt("ops_date",  to_date.isoformat())
+            .select("id, ops_date, stock_as, narration, allocation_status, to_entity_id")
+            .eq("stock_as", "normal")
             .eq("is_deleted", False)
+            .in_("to_entity_id", stockist_ids)
+            .gte("ops_date", from_date.isoformat())
+            .lt("ops_date", to_date.isoformat())
         ) or []
 
-    if not docs_raw:
-        st.info("No Invoice / Sample / Lot documents found for this period.")
-        return
-
-    def _matches(doc):
-        if entity_type == "Company":
-            return (
-                (doc.get("from_entity_type") or "").lower() == "company" or
-                (doc.get("to_entity_type")   or "").lower() == "company"
-            )
-        else:
-            return (
-                doc.get("from_entity_id") in entity_ids or
-                doc.get("to_entity_id")   in entity_ids
-            )
-
-    filtered_docs = [d for d in docs_raw if _matches(d)]
-    if not filtered_docs:
-        st.info("No documents match the selected entity filter.")
-        return
-
-    doc_id_to_info = {
-        d["id"]: (d["ops_date"], d["stock_as"])
-        for d in filtered_docs
-    }
-    doc_ids = list(doc_id_to_info.keys())
-
-    with st.spinner("Fetching product lines..."):
-        lines_raw = safe_exec(
-            admin_supabase.table("ops_lines")
-            .select("ops_document_id, sale_qty, product_id")
-            .in_("ops_document_id", doc_ids)
+        # Credit notes: stockist is the source (from_entity_id)
+        cn_docs = safe_exec(
+            admin_supabase.table("ops_documents")
+            .select("id, ops_date, stock_as, narration, allocation_status, from_entity_id")
+            .eq("stock_as", "credit_note")
+            .eq("is_deleted", False)
+            .in_("from_entity_id", stockist_ids)
+            .gte("ops_date", from_date.isoformat())
+            .lt("ops_date", to_date.isoformat())
         ) or []
 
-    if not lines_raw:
-        st.info("No product lines found for the matching documents.")
-        return
+        # Drop cancelled, build id -> (period, kind)
+        doc_info = {}
+        for d in inv_docs:
+            if _is_cancelled_doc(d):
+                continue
+            y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
+            if (y, mo) in period_set:
+                doc_info[d["id"]] = ((y, mo), "Invoice")
+        for d in cn_docs:
+            if _is_cancelled_doc(d):
+                continue
+            y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
+            if (y, mo) in period_set:
+                doc_info[d["id"]] = ((y, mo), "Credit Note")
 
-    # Build product_id -> name lookup
-    all_product_ids = list({ln["product_id"] for ln in lines_raw if ln.get("product_id")})
-    products_raw = safe_exec(
-        admin_supabase.table("products")
-        .select("id, name")
-        .in_("id", all_product_ids)
-    ) or []
-    product_name_map = {p["id"]: p["name"] for p in products_raw}
+        if not doc_info:
+            st.info("No Invoice / Credit Note documents found for this period.")
+            return
 
-    periods    = _period_range(yf, mf, yt, mt)
-    period_set = {(y, m) for y, m in periods}
+        doc_ids = list(doc_info.keys())
 
-    agg = {}
-    for ln in lines_raw:
-        doc_id = ln["ops_document_id"]
-        if doc_id not in doc_id_to_info:
-            continue
-        ops_date, stock_as = doc_id_to_info[doc_id]
-        y, mo = int(ops_date[:4]), int(ops_date[5:7])
-        if (y, mo) not in period_set:
-            continue
-        product  = product_name_map.get(ln.get("product_id"), "Unknown")
-        qty      = _safe_float(ln.get("sale_qty"))
-        type_key = "Invoice" if stock_as == "normal" else stock_as.capitalize()
-        k        = (product, y, mo, type_key)
-        agg[k]   = agg.get(k, 0.0) + qty
+        # Lines (quantity) — chunk the .in_() to avoid oversized requests
+        lines_raw = []
+        for i in range(0, len(doc_ids), 100):
+            batch = doc_ids[i:i + 100]
+            lines_raw += safe_exec(
+                admin_supabase.table("ops_lines")
+                .select("ops_document_id, sale_qty, product_id")
+                .in_("ops_document_id", batch)
+            ) or []
+
+        if not lines_raw:
+            st.info("No product lines found for the matching documents.")
+            return
+
+        # Product names
+        prod_ids = list({ln["product_id"] for ln in lines_raw if ln.get("product_id")})
+        prod_map = {}
+        for i in range(0, len(prod_ids), 100):
+            batch = prod_ids[i:i + 100]
+            prows = safe_exec(
+                admin_supabase.table("products").select("id, name").in_("id", batch)
+            ) or []
+            for p in prows:
+                prod_map[p["id"]] = p["name"]
+
+        # Aggregate: (product, period, kind) -> qty
+        agg = {}
+        for ln in lines_raw:
+            info = doc_info.get(ln["ops_document_id"])
+            if not info:
+                continue
+            (y, mo), kind = info
+            product = prod_map.get(ln.get("product_id"), "Unknown")
+            qty = _safe_float(ln.get("sale_qty"))
+            k = (product, y, mo, kind)
+            agg[k] = agg.get(k, 0.0) + qty
 
     if not agg:
         st.info("No data to display after aggregation.")
@@ -504,20 +461,19 @@ def _report1(role, user_id):
     df_raw = pd.DataFrame(rows_list)
 
     period_labels = [_mlabel(y, m) for y, m in periods]
-    type_order    = ["Invoice", "Sample", "Lot"]
+    type_order    = ["Invoice", "Credit Note"]
 
     pivot = df_raw.pivot_table(
         index="Product", columns=["Period", "Type"],
         values="Qty", aggfunc="sum", fill_value=0,
     )
-
     ordered_cols = [
         (p, t) for p in period_labels for t in type_order
         if (p, t) in pivot.columns
     ]
     pivot = pivot.reindex(columns=ordered_cols, fill_value=0).astype(int)
 
-    # Flatten MultiIndex for mobile table
+    # Flatten for mobile table
     pivot_flat = pivot.copy()
     pivot_flat.columns = [' '.join(str(c) for c in col).strip() if isinstance(col, tuple) else str(col) for col in pivot_flat.columns]
     pivot_flat = pivot_flat.reset_index()
@@ -529,34 +485,35 @@ def _report1(role, user_id):
         uid_prefix="r1_pivot"
     )
 
-    subtitle  = (f"Entity: {entity_label}  |  "
+    subtitle  = (f"Stockists: {stockist_label}  |  "
                  f"Period: {_mlabel(yf, mf)} - {_mlabel(yt, mt)}")
-    pdf_bytes = _build_pdf("Report 1 - Product x Month (Invoice / Sample / Lot)", subtitle, pivot)
+    pdf_bytes = _build_pdf("Report 1 - Product x Month (Invoice / Credit Note Qty)", subtitle, pivot)
     st.download_button(
         "Download PDF", data=pdf_bytes,
-        file_name="r1_product_month_matrix.pdf",
+        file_name="r1_product_month_qty.pdf",
         mime="application/pdf", key="r1_pdf",
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SHARED ENGINE - Stockist financial matrix (Reports 2-5)
+# SHARED ENGINE - Month-column financial matrix (Reports 2,4,5)
+# Layout: rows = metrics, columns = months  (transposed)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _stockist_financial_matrix(key, role, user_id, col_specs, report_title):
+def _stockist_financial_matrix(key, role, user_id, row_specs, report_title):
     """
-    col_specs: ordered list of (col_key, col_label) pairs.
-    col_key values: PAYMENT | CREDIT_NOTE | INVOICE_GROSS | INVOICE_NET | FREIGHT
-
-    Fetches ops_documents + ops_lines for the selected stockists in the date range,
-    aggregates into a Month x col_label matrix, adds TOTAL row, shows PDF download.
+    row_specs: ordered list of (row_key, row_label).
+    row_key values:
+      INVOICE_GROSS | INVOICE_NET | CREDIT_NOTE |
+      PAYMENT_GROSS | PAYMENT_DISCOUNT | PAYMENT_NET
+    Months run across the columns. A TOTAL column is appended.
+    Cancelled payments are excluded.
     """
     yf, mf, yt, mt = _period_selectors(key)
 
     _user_ids, stockist_ids, stockist_label = _user_and_stockist_selectors(
         key, role, user_id
     )
-
     if not stockist_ids:
         return
 
@@ -567,98 +524,136 @@ def _stockist_financial_matrix(key, role, user_id, col_specs, report_title):
         from_date = date(yf, mf, 1)
         to_date   = date(yt, 12, 31) if mt == 12 else date(yt, mt + 1, 1)
         periods   = _period_range(yf, mf, yt, mt)
-
-        docs_raw = safe_exec(
-            admin_supabase.table("ops_documents")
-            .select("id, ops_date, ops_type, stock_as, narration,"
-                    "invoice_total, paid_amount,"
-                    "from_entity_type, from_entity_id,"
-                    "to_entity_type,   to_entity_id")
-            .gte("ops_date", from_date.isoformat())
-            .lt("ops_date",  to_date.isoformat())
-            .eq("is_deleted", False)
-        ) or []
-
-        def _involves_stockist(d):
-            return (
-                (d.get("from_entity_type") or "").lower() == "stockist"
-                and d.get("from_entity_id") in stockist_ids
-            ) or (
-                (d.get("to_entity_type") or "").lower() == "stockist"
-                and d.get("to_entity_id") in stockist_ids
-            )
-
-        docs = [d for d in docs_raw if _involves_stockist(d)]
-
-        if not docs:
-            st.info("No transactions found for the selected stockists in this period.")
-            return
-
-        doc_ids  = [d["id"] for d in docs]
-        col_keys = [ck for ck, _ in col_specs]
-
-        # Fetch lines only when gross/net/credit columns are required
-        lines_map = {}
-        need_lines = any(c in col_keys for c in ("INVOICE_GROSS", "INVOICE_NET", "CREDIT_NOTE"))
-        if need_lines:
-            lines_raw = safe_exec(
-                admin_supabase.table("ops_lines")
-                .select("ops_document_id, gross_amount, net_amount")
-                .in_("ops_document_id", doc_ids)
-            ) or []
-            for ln in lines_raw:
-                oid = ln["ops_document_id"]
-                if oid not in lines_map:
-                    lines_map[oid] = {"gross": 0.0, "net": 0.0}
-                lines_map[oid]["gross"] += _safe_float(ln.get("gross_amount"))
-                lines_map[oid]["net"]   += _safe_float(ln.get("net_amount"))
-
-        # Aggregate by period
         period_set = {(y, m) for y, m in periods}
-        agg = {(y, m): {ck: 0.0 for ck, _ in col_specs} for y, m in periods}
+        row_keys = [rk for rk, _ in row_specs]
 
-        for d in docs:
-            ops_date  = d["ops_date"]
-            y, mo     = int(ops_date[:4]), int(ops_date[5:7])
-            if (y, mo) not in period_set:
-                continue
-            stock_as  = (d.get("stock_as")  or "").lower()
-            ops_type  = (d.get("ops_type")  or "").upper()
-            narration = (d.get("narration") or "").lower()
-            ld        = lines_map.get(d["id"], {"gross": 0.0, "net": 0.0})
+        need_invoice = any(k in row_keys for k in ("INVOICE_GROSS", "INVOICE_NET"))
+        need_cn      = "CREDIT_NOTE" in row_keys
+        need_payment = any(k in row_keys for k in ("PAYMENT_GROSS", "PAYMENT_DISCOUNT", "PAYMENT_NET"))
 
-            if "PAYMENT" in col_keys and ops_type in ("PAYMENT", "RECEIPT"):
-                agg[(y, mo)]["PAYMENT"] += _safe_float(
-                    d.get("invoice_total") or d.get("paid_amount")
-                )
+        agg = {(y, m): {rk: 0.0 for rk, _ in row_specs} for y, m in periods}
 
-            if "CREDIT_NOTE" in col_keys and stock_as == "credit_note":
-                amt = ld["net"] if ld["net"] > 0 else _safe_float(d.get("invoice_total"))
+        # ---- Invoices (to_entity_id = stockist) ----
+        if need_invoice:
+            inv_docs = safe_exec(
+                admin_supabase.table("ops_documents")
+                .select("id, ops_date, stock_as, narration, allocation_status, invoice_total, to_entity_id")
+                .eq("stock_as", "normal").eq("is_deleted", False)
+                .in_("to_entity_id", stockist_ids)
+                .gte("ops_date", from_date.isoformat())
+                .lt("ops_date", to_date.isoformat())
+            ) or []
+            inv_docs = [d for d in inv_docs if not _is_cancelled_doc(d)]
+            inv_ids  = [d["id"] for d in inv_docs]
+            inv_lines = {}
+            for i in range(0, len(inv_ids), 100):
+                batch = inv_ids[i:i + 100]
+                for ln in (safe_exec(
+                    admin_supabase.table("ops_lines")
+                    .select("ops_document_id, gross_amount, net_amount")
+                    .in_("ops_document_id", batch)
+                ) or []):
+                    oid = ln["ops_document_id"]
+                    rec = inv_lines.setdefault(oid, {"gross": 0.0, "net": 0.0})
+                    rec["gross"] += _safe_float(ln.get("gross_amount"))
+                    rec["net"]   += _safe_float(ln.get("net_amount"))
+            for d in inv_docs:
+                y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
+                if (y, mo) not in period_set:
+                    continue
+                ld = inv_lines.get(d["id"], {"gross": 0.0, "net": 0.0})
+                if "INVOICE_GROSS" in row_keys:
+                    agg[(y, mo)]["INVOICE_GROSS"] += ld["gross"] if ld["gross"] > 0 else _safe_float(d.get("invoice_total"))
+                if "INVOICE_NET" in row_keys:
+                    agg[(y, mo)]["INVOICE_NET"] += ld["net"] if ld["net"] > 0 else _safe_float(d.get("invoice_total"))
+
+        # ---- Credit notes (from_entity_id = stockist) ----
+        if need_cn:
+            cn_docs = safe_exec(
+                admin_supabase.table("ops_documents")
+                .select("id, ops_date, stock_as, narration, allocation_status, invoice_total, from_entity_id")
+                .eq("stock_as", "credit_note").eq("is_deleted", False)
+                .in_("from_entity_id", stockist_ids)
+                .gte("ops_date", from_date.isoformat())
+                .lt("ops_date", to_date.isoformat())
+            ) or []
+            cn_docs = [d for d in cn_docs if not _is_cancelled_doc(d)]
+            cn_ids  = [d["id"] for d in cn_docs]
+            cn_net  = {}
+            for i in range(0, len(cn_ids), 100):
+                batch = cn_ids[i:i + 100]
+                for ln in (safe_exec(
+                    admin_supabase.table("ops_lines")
+                    .select("ops_document_id, net_amount")
+                    .in_("ops_document_id", batch)
+                ) or []):
+                    oid = ln["ops_document_id"]
+                    cn_net[oid] = cn_net.get(oid, 0.0) + _safe_float(ln.get("net_amount"))
+            for d in cn_docs:
+                y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
+                if (y, mo) not in period_set:
+                    continue
+                amt = cn_net.get(d["id"], 0.0)
+                if amt <= 0:
+                    amt = _safe_float(d.get("invoice_total"))
                 agg[(y, mo)]["CREDIT_NOTE"] += amt
 
-            if "INVOICE_GROSS" in col_keys and stock_as == "normal":
-                amt = ld["gross"] if ld["gross"] > 0 else _safe_float(d.get("invoice_total"))
-                agg[(y, mo)]["INVOICE_GROSS"] += amt
+        # ---- Payments (from_entity_id = stockist, ops_type ADJUSTMENT) ----
+        if need_payment:
+            pay_docs = safe_exec(
+                admin_supabase.table("ops_documents")
+                .select("id, ops_date, ops_type, narration, allocation_status, from_entity_id")
+                .eq("ops_type", "ADJUSTMENT").eq("is_deleted", False)
+                .in_("from_entity_id", stockist_ids)
+                .gte("ops_date", from_date.isoformat())
+                .lt("ops_date", to_date.isoformat())
+            ) or []
+            # Exclude cancelled AND the REV-DEL reversal placeholders
+            pay_docs = [d for d in pay_docs
+                        if not _is_cancelled_doc(d)
+                        and not (d.get("narration") or "").startswith("REV-DEL")]
+            pay_ids  = [d["id"] for d in pay_docs]
+            pay_amt  = {}  # ops_document_id -> {gross, discount, net}
+            for i in range(0, len(pay_ids), 100):
+                batch = pay_ids[i:i + 100]
+                for row in (safe_exec(
+                    admin_supabase.table("financial_ledger")
+                    .select("ops_document_id, gross_amount, discount_amount, net_amount, credit")
+                    .in_("ops_document_id", batch)
+                ) or []):
+                    oid = row["ops_document_id"]
+                    rec = pay_amt.setdefault(oid, {"gross": 0.0, "discount": 0.0, "net": 0.0})
+                    # Prefer explicit gross/discount/net; fall back to credit as net
+                    g = _safe_float(row.get("gross_amount"))
+                    dsc = _safe_float(row.get("discount_amount"))
+                    n = _safe_float(row.get("net_amount"))
+                    if g == 0 and n == 0:
+                        n = _safe_float(row.get("credit"))
+                    rec["gross"]    += g
+                    rec["discount"] += dsc
+                    rec["net"]      += n
+            for d in pay_docs:
+                y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
+                if (y, mo) not in period_set:
+                    continue
+                rec = pay_amt.get(d["id"], {"gross": 0.0, "discount": 0.0, "net": 0.0})
+                if "PAYMENT_GROSS" in row_keys:
+                    agg[(y, mo)]["PAYMENT_GROSS"] += rec["gross"] if rec["gross"] > 0 else rec["net"]
+                if "PAYMENT_DISCOUNT" in row_keys:
+                    agg[(y, mo)]["PAYMENT_DISCOUNT"] += rec["discount"]
+                if "PAYMENT_NET" in row_keys:
+                    agg[(y, mo)]["PAYMENT_NET"] += rec["net"]
 
-            if "INVOICE_NET" in col_keys and stock_as == "normal":
-                amt = ld["net"] if ld["net"] > 0 else _safe_float(d.get("invoice_total"))
-                agg[(y, mo)]["INVOICE_NET"] += amt
+    # Build DataFrame: rows = metrics, columns = months
+    period_labels = [_mlabel(y, m) for y, m in periods]
+    data = {}
+    for rk, rl in row_specs:
+        data[rl] = [round(agg[(y, m)][rk], 2) for y, m in periods]
+    df = pd.DataFrame(data, index=period_labels).T  # metrics as rows, months as cols
+    df.columns = period_labels
+    df["TOTAL"] = df.sum(axis=1)
 
-            if "FREIGHT" in col_keys and "freight" in narration:
-                agg[(y, mo)]["FREIGHT"] += _safe_float(d.get("invoice_total"))
-
-    # Build DataFrame
-    table_rows = []
-    for y, mo in periods:
-        row = {"Month": _mlabel(y, mo)}
-        for ck, cl in col_specs:
-            row[cl] = round(agg[(y, mo)][ck], 2)
-        table_rows.append(row)
-
-    df = pd.DataFrame(table_rows).set_index("Month")
-    df.loc["TOTAL"] = df.sum()
-
-    df_display = df.reset_index()
+    df_display = df.reset_index().rename(columns={"index": "Metric"})
     first_col = df_display.columns[0]
     _mobile_table(
         df_display,
@@ -678,105 +673,82 @@ def _stockist_financial_matrix(key, role, user_id, col_specs, report_title):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REPORT 2
+# REPORT 2 - Payment & Credit Note (rows) x Month (cols)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _report2(role, user_id):
     st.markdown("#### Report 2 - Payment & Credit Note by Month")
-    st.caption("Rows = Month.  Columns = Payment amount | Credit Note amount.")
+    st.caption("Rows = Payment, Credit Note.  Columns = Months.")
     _stockist_financial_matrix(
         key="r2", role=role, user_id=user_id,
-        col_specs=[("PAYMENT", "Payment"), ("CREDIT_NOTE", "Credit Note")],
+        row_specs=[("PAYMENT_NET", "Payment"), ("CREDIT_NOTE", "Credit Note")],
         report_title="Report 2 - Payment & Credit Note by Month",
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REPORT 3
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _report3(role, user_id):
-    st.markdown("#### Report 3 - Payment & Credit Note (Alternate Selection)")
-    st.caption("Same columns as Report 2. Use for a different stockist grouping.")
-    _stockist_financial_matrix(
-        key="r3", role=role, user_id=user_id,
-        col_specs=[("PAYMENT", "Payment"), ("CREDIT_NOTE", "Credit Note")],
-        report_title="Report 3 - Payment & Credit Note (Alt Selection)",
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# REPORT 4
+# REPORT 4 - Gross Invoice & Credit Note (rows) x Month (cols)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _report4(role, user_id):
     st.markdown("#### Report 4 - Gross Invoice & Credit Note by Month")
-    st.caption("Rows = Month.  Columns = Gross Invoice amount | Credit Note amount.")
+    st.caption("Rows = Gross Invoice, Credit Note.  Columns = Months.")
     _stockist_financial_matrix(
         key="r4", role=role, user_id=user_id,
-        col_specs=[("INVOICE_GROSS", "Gross Invoice"), ("CREDIT_NOTE", "Credit Note")],
+        row_specs=[("INVOICE_GROSS", "Gross Invoice"), ("CREDIT_NOTE", "Credit Note")],
         report_title="Report 4 - Gross Invoice & Credit Note by Month",
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# REPORT 5
+# REPORT 5 - Full financial picture (rows) x Month (cols)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _report5(role, user_id):
     st.markdown("#### Report 5 - Full Financial Summary by Month")
     st.caption(
-        "Rows = Month.  "
-        "Columns = Gross Invoice | Net Invoice | Payment | Freight | Credit Note."
+        "Rows = Gross Invoice, Net Invoice, Credit Note, "
+        "Payment (Gross), Discount, Payment (Net).  Columns = Months."
     )
     _stockist_financial_matrix(
         key="r5", role=role, user_id=user_id,
-        col_specs=[
-            ("INVOICE_GROSS", "Gross Invoice"),
-            ("INVOICE_NET",   "Net Invoice"),
-            ("PAYMENT",       "Payment"),
-            ("FREIGHT",       "Freight"),
-            ("CREDIT_NOTE",   "Credit Note"),
+        row_specs=[
+            ("INVOICE_GROSS",    "Gross Invoice"),
+            ("INVOICE_NET",      "Net Invoice"),
+            ("CREDIT_NOTE",      "Credit Note"),
+            ("PAYMENT_GROSS",    "Payment (Gross)"),
+            ("PAYMENT_DISCOUNT", "Discount"),
+            ("PAYMENT_NET",      "Payment (Net)"),
         ],
         report_title="Report 5 - Full Financial Summary by Month",
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN ENTRY POINT - called from statement_main.py -> run_reports() -> tab2
+# MAIN ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_ops_reports():
-    """
-    Entry point. Renders 5 sub-tabs inside the OPS Reports tab.
-    Called from run_reports() in statement_main.py.
-    """
+    """Entry point. Renders 4 sub-tabs inside the OPS Reports tab."""
     user_id = st.session_state.auth_user.id
     role    = st.session_state.get("role", "user")
 
-    st.markdown("##### OPS matrix reports drawn from invoices, payments, credit notes, samples and lots.")
+    st.markdown("##### OPS matrix reports drawn from invoices, payments, and credit notes.")
     if role != "admin":
         st.caption("You can see data for your own stockists only.")
 
     tabs = st.tabs([
         "R1 - Product x Month",
         "R2 - Payment & Credit Note",
-        "R3 - Payment & Credit Note (Alt)",
         "R4 - Gross Invoice & Credit Note",
         "R5 - Full Financial Summary",
     ])
 
     with tabs[0]:
         _report1(role, user_id)
-
     with tabs[1]:
         _report2(role, user_id)
-
     with tabs[2]:
-        _report3(role, user_id)
-
-    with tabs[3]:
         _report4(role, user_id)
-
-    with tabs[4]:
+    with tabs[3]:
         _report5(role, user_id)
