@@ -568,6 +568,10 @@ def _stockist_financial_matrix(key, role, user_id, row_specs, report_title):
                     agg[(y, mo)]["INVOICE_NET"] += ld["net"] if ld["net"] > 0 else _safe_float(d.get("invoice_total"))
 
         # ---- Credit notes (from_entity_id = stockist) ----
+        # stock_as = "credit_note" catches BOTH stock-movement and financial-only
+        # credit notes. The reliable amount is financial_ledger.credit (this is the
+        # same figure that was previously (wrongly) landing in the Payment row).
+        # Fall back to ops_lines.net_amount, then invoice_total, if no ledger row.
         if need_cn:
             cn_docs = safe_exec(
                 admin_supabase.table("ops_documents")
@@ -579,7 +583,21 @@ def _stockist_financial_matrix(key, role, user_id, row_specs, report_title):
             ) or []
             cn_docs = [d for d in cn_docs if not _is_cancelled_doc(d)]
             cn_ids  = [d["id"] for d in cn_docs]
-            cn_net  = {}
+
+            # Primary source: financial_ledger.credit (one figure per CN)
+            cn_ledger = {}
+            for i in range(0, len(cn_ids), 100):
+                batch = cn_ids[i:i + 100]
+                for row in (safe_exec(
+                    admin_supabase.table("financial_ledger")
+                    .select("ops_document_id, credit")
+                    .in_("ops_document_id", batch)
+                ) or []):
+                    oid = row["ops_document_id"]
+                    cn_ledger[oid] = cn_ledger.get(oid, 0.0) + _safe_float(row.get("credit"))
+
+            # Fallback source: ops_lines.net_amount (for stock-movement CNs)
+            cn_net = {}
             for i in range(0, len(cn_ids), 100):
                 batch = cn_ids[i:i + 100]
                 for ln in (safe_exec(
@@ -589,29 +607,36 @@ def _stockist_financial_matrix(key, role, user_id, row_specs, report_title):
                 ) or []):
                     oid = ln["ops_document_id"]
                     cn_net[oid] = cn_net.get(oid, 0.0) + _safe_float(ln.get("net_amount"))
+
             for d in cn_docs:
                 y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
                 if (y, mo) not in period_set:
                     continue
-                amt = cn_net.get(d["id"], 0.0)
+                amt = cn_ledger.get(d["id"], 0.0)
+                if amt <= 0:
+                    amt = cn_net.get(d["id"], 0.0)
                 if amt <= 0:
                     amt = _safe_float(d.get("invoice_total"))
                 agg[(y, mo)]["CREDIT_NOTE"] += amt
 
         # ---- Payments (from_entity_id = stockist, ops_type ADJUSTMENT) ----
+        # IMPORTANT: a doc with stock_as = "credit_note" is ALWAYS a credit note,
+        # even when its ops_type is ADJUSTMENT (financial-only credit notes).
+        # Those must NOT count as payments — they belong only to the Credit Note row.
         if need_payment:
             pay_docs = safe_exec(
                 admin_supabase.table("ops_documents")
-                .select("id, ops_date, ops_type, narration, allocation_status, from_entity_id")
+                .select("id, ops_date, ops_type, stock_as, narration, allocation_status, from_entity_id")
                 .eq("ops_type", "ADJUSTMENT").eq("is_deleted", False)
                 .in_("from_entity_id", stockist_ids)
                 .gte("ops_date", from_date.isoformat())
                 .lt("ops_date", to_date.isoformat())
             ) or []
-            # Exclude cancelled AND the REV-DEL reversal placeholders
+            # Exclude cancelled, REV-DEL reversals, AND any credit-note docs
             pay_docs = [d for d in pay_docs
                         if not _is_cancelled_doc(d)
-                        and not (d.get("narration") or "").startswith("REV-DEL")]
+                        and not (d.get("narration") or "").startswith("REV-DEL")
+                        and (d.get("stock_as") or "") != "credit_note"]
             pay_ids  = [d["id"] for d in pay_docs]
             pay_amt  = {}  # ops_document_id -> {gross, discount, net}
             for i in range(0, len(pay_ids), 100):
