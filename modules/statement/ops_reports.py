@@ -545,27 +545,35 @@ def _stockist_financial_matrix(key, role, user_id, row_specs, report_title):
             ) or []
             inv_docs = [d for d in inv_docs if not _is_cancelled_doc(d)]
             inv_ids  = [d["id"] for d in inv_docs]
-            inv_lines = {}
+
+            # GROSS = financial_ledger.debit (ONE true total per invoice).
+            # ops_lines.gross_amount is the document total stamped on EVERY line,
+            # so summing lines inflates by the product count (N products = N x).
+            # NET = ops_documents.invoice_total (document-level, non-inflated).
+            inv_gross = {}
             for i in range(0, len(inv_ids), 100):
                 batch = inv_ids[i:i + 100]
-                for ln in (safe_exec(
-                    admin_supabase.table("ops_lines")
-                    .select("ops_document_id, gross_amount, net_amount")
+                for row in (safe_exec(
+                    admin_supabase.table("financial_ledger")
+                    .select("ops_document_id, debit, created_at")
                     .in_("ops_document_id", batch)
+                    .gt("debit", 0)
+                    .order("created_at")
                 ) or []):
-                    oid = ln["ops_document_id"]
-                    rec = inv_lines.setdefault(oid, {"gross": 0.0, "net": 0.0})
-                    rec["gross"] += _safe_float(ln.get("gross_amount"))
-                    rec["net"]   += _safe_float(ln.get("net_amount"))
+                    oid = row["ops_document_id"]
+                    if oid not in inv_gross:          # first debit row per invoice
+                        inv_gross[oid] = _safe_float(row.get("debit"))
             for d in inv_docs:
                 y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
                 if (y, mo) not in period_set:
                     continue
-                ld = inv_lines.get(d["id"], {"gross": 0.0, "net": 0.0})
                 if "INVOICE_GROSS" in row_keys:
-                    agg[(y, mo)]["INVOICE_GROSS"] += ld["gross"] if ld["gross"] > 0 else _safe_float(d.get("invoice_total"))
+                    g = inv_gross.get(d["id"], 0.0)
+                    if g <= 0:
+                        g = _safe_float(d.get("invoice_total"))
+                    agg[(y, mo)]["INVOICE_GROSS"] += g
                 if "INVOICE_NET" in row_keys:
-                    agg[(y, mo)]["INVOICE_NET"] += ld["net"] if ld["net"] > 0 else _safe_float(d.get("invoice_total"))
+                    agg[(y, mo)]["INVOICE_NET"] += _safe_float(d.get("invoice_total"))
 
         # ---- Credit notes (from_entity_id = stockist) ----
         # stock_as = "credit_note" catches BOTH stock-movement and financial-only
@@ -596,7 +604,9 @@ def _stockist_financial_matrix(key, role, user_id, row_specs, report_title):
                     oid = row["ops_document_id"]
                     cn_ledger[oid] = cn_ledger.get(oid, 0.0) + _safe_float(row.get("credit"))
 
-            # Fallback source: ops_lines.net_amount (for stock-movement CNs)
+            # Fallback source: ops_lines.net_amount. The same document total is
+            # stamped on every line, so take MAX (the single true total), not SUM,
+            # to avoid inflating by product count.
             cn_net = {}
             for i in range(0, len(cn_ids), 100):
                 batch = cn_ids[i:i + 100]
@@ -606,7 +616,8 @@ def _stockist_financial_matrix(key, role, user_id, row_specs, report_title):
                     .in_("ops_document_id", batch)
                 ) or []):
                     oid = ln["ops_document_id"]
-                    cn_net[oid] = cn_net.get(oid, 0.0) + _safe_float(ln.get("net_amount"))
+                    val = _safe_float(ln.get("net_amount"))
+                    cn_net[oid] = max(cn_net.get(oid, 0.0), val)
 
             for d in cn_docs:
                 y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
