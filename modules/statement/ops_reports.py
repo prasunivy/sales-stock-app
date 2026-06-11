@@ -557,23 +557,22 @@ def _stockist_financial_matrix(key, role, user_id, row_specs, report_title):
             inv_docs = [d for d in inv_docs if not _is_cancelled_doc(d)]
             inv_ids  = [d["id"] for d in inv_docs]
 
-            # GROSS = financial_ledger.debit (ONE true total per invoice).
-            # ops_lines.gross_amount is the document total stamped on EVERY line,
-            # so summing lines inflates by the product count (N products = N x).
-            # NET = ops_documents.invoice_total (document-level, non-inflated).
+            # GROSS = first ops_lines.gross_amount (the document-level gross,
+            # stamped identically on EVERY line — so read the FIRST line, never
+            # sum, which would inflate by the product count). financial_ledger
+            # .debit is the NET (it equals invoice_total), so it must NOT be used
+            # for gross. NET = ops_documents.invoice_total (document-level).
             inv_gross = {}
             for i in range(0, len(inv_ids), 100):
                 batch = inv_ids[i:i + 100]
                 for row in (safe_exec(
-                    admin_supabase.table("financial_ledger")
-                    .select("ops_document_id, debit, created_at")
+                    admin_supabase.table("ops_lines")
+                    .select("ops_document_id, gross_amount")
                     .in_("ops_document_id", batch)
-                    .gt("debit", 0)
-                    .order("created_at")
                 ) or []):
                     oid = row["ops_document_id"]
-                    if oid not in inv_gross:          # first debit row per invoice
-                        inv_gross[oid] = _safe_float(row.get("debit"))
+                    if oid not in inv_gross:          # first line per invoice
+                        inv_gross[oid] = _safe_float(row.get("gross_amount"))
             for d in inv_docs:
                 y, mo = int(d["ops_date"][:4]), int(d["ops_date"][5:7])
                 if (y, mo) not in period_set:
@@ -1049,4 +1048,3 @@ def run_ops_reports():
         _report5(role, user_id)
     with tabs[4]:
         _report6(role, user_id)
-
