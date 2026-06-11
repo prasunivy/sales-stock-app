@@ -4805,18 +4805,21 @@ This action will:
                 st.info("No movements in or before this period.")
                 st.stop()
 
-            _sorted_pids = sorted(
-                _all_pids,
-                key=lambda p: (_pmap.get(p, {}).get("sort_order", 9999),
-                               _pmap.get(p, {}).get("name", ""))
-            )
+            def _ss_sortkey(p):
+                _pi = _pmap.get(p, {})
+                _so = _pi.get("sort_order")
+                if _so is None:
+                    _so = 9999
+                return (_so, _pi.get("name") or "")
+
+            _sorted_pids = sorted(_all_pids, key=_ss_sortkey)
 
             # ── Build the table + column metadata for drill-down ──────────────
             _colmeta = {}                              # col name -> (ym, cat|CLOSING)
             _table_rows, _row_pids = [], []
             for pid in _sorted_pids:
                 running = _opening[pid]
-                row = {"Product": _pmap.get(pid, {}).get("name", "Unknown")}
+                row = {"Product": _pmap.get(pid, {}).get("name") or "Unknown"}
                 for ym in _months:
                     running += _net[(pid, ym)]
                     lbl = _ss_mlabel(ym)
@@ -4882,7 +4885,7 @@ This action will:
                     st.info("Click a figure column header (not the Product column).")
                 else:
                     _ym, _cat = _meta
-                    _pname = _pmap.get(_pid, {}).get("name", "Unknown")
+                    _pname = _pmap.get(_pid, {}).get("name") or "Unknown"
 
                     if _cat == "CLOSING":
                         st.markdown(
