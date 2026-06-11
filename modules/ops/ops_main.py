@@ -3760,7 +3760,7 @@ This action will:
         # Main selection: Closing Balance, Closing Stock, or Damaged/Destroyed
         report_type = st.radio(
             "Select Report Type",
-            ["Closing Balance", "Closing Stock", "Damaged / Destroyed"],
+            ["Closing Balance", "Closing Stock", "Stock Statement", "Damaged / Destroyed"],
             horizontal=True,
             key="party_balance_report_type"
         )
@@ -4426,27 +4426,37 @@ This action will:
                      if u["id"] == eid), str(eid)[:8]
                 )
 
+            # ── Paginated fetch: Supabase caps a single query at 1000 rows ────
+            def _sl_fetch_all(build_q):
+                _rows, _start = [], 0
+                while True:
+                    _batch = build_q().range(_start, _start + 999).execute().data or []
+                    _rows.extend(_batch)
+                    if len(_batch) < 1000:
+                        return _rows
+                    _start += 1000
+
             # ── 1. Opening stock = all ledger rows BEFORE from_date ───────────
             with st.spinner("Fetching opening stock..."):
-                open_rows_raw = (
+                open_rows_raw = _sl_fetch_all(lambda: (
                     admin_supabase.table("stock_ledger")
-                    .select("product_id, entity_id, qty_in, qty_out")
+                    .select("id, product_id, entity_id, qty_in, qty_out")
                     .eq("entity_type", cs_entity_type)
                     .lt("txn_date", cs_from.isoformat())
-                    .execute().data or []
-                )
+                    .order("id")
+                ))
             open_rows = _filter_entity(open_rows_raw)
 
             # ── 2. Period rows = ledger rows WITHIN from_date to to_date ──────
             with st.spinner("Fetching period movements..."):
-                period_rows_raw = (
+                period_rows_raw = _sl_fetch_all(lambda: (
                     admin_supabase.table("stock_ledger")
-                    .select("product_id, entity_id, qty_in, qty_out")
+                    .select("id, product_id, entity_id, qty_in, qty_out")
                     .eq("entity_type", cs_entity_type)
                     .gte("txn_date", cs_from.isoformat())
                     .lte("txn_date", cs_to.isoformat())
-                    .execute().data or []
-                )
+                    .order("id")
+                ))
             period_rows = _filter_entity(period_rows_raw)
 
             if not open_rows and not period_rows:
@@ -4617,6 +4627,347 @@ This action will:
                     )
                 except Exception as _pdf_err:
                     st.error(f"PDF generation failed: {_pdf_err}")
+# ─────────── START COPYING FROM THE NEXT LINE ───────────
+        # =========================
+        # STOCK STATEMENT (ADMIN ONLY)
+        # =========================
+        elif report_type == "Stock Statement":
+            if st.session_state.get("role") != "admin":
+                st.error("❌ This report can only be accessed by the admin.")
+                st.stop()
+
+            st.markdown("### 📑 Stock Statement — Month-wise Stock OUT & Closing")
+            st.caption(
+                "Rows = products. Columns = months, each split into Stock OUT categories "
+                "(Invoice to Stockist, Replace, Damage, Sample, Lot, Other Out) and the "
+                "running Closing Stock. To drill into a figure: tick the product's row "
+                "checkbox, then click the column header — details appear below."
+            )
+
+            import pandas as _pd
+            from collections import defaultdict as _defaultdict
+            from datetime import datetime as _dt
+
+            if "ss_selkey" not in st.session_state:
+                st.session_state.ss_selkey = 0
+
+            # ── Filters ───────────────────────────────────────────────────────
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                ss_from = st.date_input("From Date", key="ss_from",
+                                        value=_dt.now().date().replace(day=1))
+            with c2:
+                ss_to = st.date_input("To Date", key="ss_to",
+                                      value=_dt.now().date())
+            with c3:
+                _ss_opts = [("ALL", None, "All")]
+                _ss_opts.append(("Company", None, "Company"))
+                for c in st.session_state.get("cnfs_master", []):
+                    _ss_opts.append(("CNF", c["id"], f"CNF: {c['name']}"))
+                for u in st.session_state.get("users_master", []):
+                    _ss_opts.append(("User", u["id"], f"User: {u['username']}"))
+                ss_scope = st.selectbox(
+                    "Entity", _ss_opts, format_func=lambda x: x[2], key="ss_scope"
+                )
+
+            if ss_from > ss_to:
+                st.warning("From Date must be on or before To Date.")
+                st.stop()
+
+            # ── Generate (results cached so drill-down clicks don't wipe them) ─
+            if st.button("Generate Stock Statement", key="ss_gen", type="primary"):
+                _scope_type, _scope_id, _scope_lbl = ss_scope
+
+                def _ss_fetch_all(build_q):
+                    _rows, _start = [], 0
+                    while True:
+                        _batch = build_q().range(_start, _start + 999).execute().data or []
+                        _rows.extend(_batch)
+                        if len(_batch) < 1000:
+                            return _rows
+                        _start += 1000
+
+                _sel = ("id, ops_document_id, product_id, entity_type, entity_id, "
+                        "txn_date, qty_in, qty_out, narration")
+
+                def _ss_build():
+                    q = (admin_supabase.table("stock_ledger")
+                         .select(_sel)
+                         .lte("txn_date", ss_to.isoformat())
+                         .order("id"))
+                    if _scope_type == "ALL":
+                        q = q.in_("entity_type", ["Company", "CNF", "User"])
+                    elif _scope_type == "Company":
+                        q = q.eq("entity_type", "Company")
+                    else:
+                        q = q.eq("entity_type", _scope_type).eq("entity_id", _scope_id)
+                    return q
+
+                with st.spinner("Fetching stock ledger..."):
+                    _raw = _ss_fetch_all(_ss_build)
+
+                # Company rows must have no entity_id (safety, mirrors Closing Stock)
+                if _scope_type == "Company":
+                    _raw = [r for r in _raw if not r.get("entity_id")]
+
+                # Product names
+                _pids = list({r["product_id"] for r in _raw if r.get("product_id")})
+                _pmap = {}
+                for _i in range(0, len(_pids), 200):
+                    _chunk = (admin_supabase.table("products")
+                              .select("id, name, sort_order")
+                              .in_("id", _pids[_i:_i + 200])
+                              .execute().data or [])
+                    for _p in _chunk:
+                        _pmap[_p["id"]] = _p
+
+                st.session_state.ss_cache = {
+                    "rows": _raw,
+                    "from": ss_from.isoformat(),
+                    "to": ss_to.isoformat(),
+                    "scope_lbl": _scope_lbl,
+                    "pmap": _pmap,
+                }
+                st.session_state.ss_selkey += 1  # reset any old cell selection
+
+            _cache = st.session_state.get("ss_cache")
+            if not _cache:
+                st.info("Set the filters and click **Generate Stock Statement**.")
+                st.stop()
+
+            _rows_all = _cache["rows"]
+            _from_s, _to_s = _cache["from"], _cache["to"]
+            _pmap = _cache["pmap"]
+            st.caption(f"Showing: **{_cache['scope_lbl']}** | {_from_s} → {_to_s}")
+
+            if not _rows_all:
+                st.info("No stock data found for this selection.")
+                st.stop()
+
+            # ── Month list within the range ───────────────────────────────────
+            def _ss_months(d1, d2):
+                y, m = int(d1[:4]), int(d1[5:7])
+                y2, m2 = int(d2[:4]), int(d2[5:7])
+                out = []
+                while (y, m) <= (y2, m2):
+                    out.append(f"{y:04d}-{m:02d}")
+                    m += 1
+                    if m == 13:
+                        m, y = 1, y + 1
+                return out
+
+            _MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+            def _ss_mlabel(ym):
+                return f"{_MON[int(ym[5:7])]}-{ym[2:4]}"
+
+            _months = _ss_months(_from_s, _to_s)
+            _cats = ["Invoice", "Replace", "Damage", "Sample", "Lot", "Other Out"]
+
+            # ── Categorise an OUT movement from its narration ─────────────────
+            def _ss_cat(nar):
+                n = (nar or "")
+                if n.startswith("Stock OUT - Invoice") and "To Stockist" in n:
+                    return "Invoice"
+                if n.startswith("Stock OUT - Sample"):
+                    return "Sample"
+                if n.startswith("Stock OUT - Lot"):
+                    return "Lot"
+                if n.startswith("Stock OUT - Damage"):
+                    return "Damage"
+                if n.startswith("Replacement to"):
+                    return "Replace"
+                return "Other Out"
+
+            # ── Aggregate ─────────────────────────────────────────────────────
+            _opening = _defaultdict(float)            # pid -> net before From
+            _net     = _defaultdict(float)            # (pid, ym) -> in - out
+            _outcat  = _defaultdict(float)            # (pid, ym, cat) -> qty_out
+
+            for r in _rows_all:
+                pid = r.get("product_id")
+                if not pid:
+                    continue
+                t = (r.get("txn_date") or "")[:10]
+                qi = float(r.get("qty_in") or 0)
+                qo = float(r.get("qty_out") or 0)
+                if t < _from_s:
+                    _opening[pid] += qi - qo
+                elif t <= _to_s:
+                    ym = t[:7]
+                    _net[(pid, ym)] += qi - qo
+                    if qo > 0:
+                        _outcat[(pid, ym, _ss_cat(r.get("narration")))] += qo
+
+            _all_pids = set(_opening.keys()) | {k[0] for k in _net.keys()}
+            if not _all_pids:
+                st.info("No movements in or before this period.")
+                st.stop()
+
+            _sorted_pids = sorted(
+                _all_pids,
+                key=lambda p: (_pmap.get(p, {}).get("sort_order", 9999),
+                               _pmap.get(p, {}).get("name", ""))
+            )
+
+            # ── Build the table + column metadata for drill-down ──────────────
+            _colmeta = {}                              # col name -> (ym, cat|CLOSING)
+            _table_rows, _row_pids = [], []
+            for pid in _sorted_pids:
+                running = _opening[pid]
+                row = {"Product": _pmap.get(pid, {}).get("name", "Unknown")}
+                for ym in _months:
+                    running += _net[(pid, ym)]
+                    lbl = _ss_mlabel(ym)
+                    for cat in _cats:
+                        cn = f"{lbl} {cat}"
+                        _colmeta[cn] = (ym, cat)
+                        row[cn] = int(_outcat[(pid, ym, cat)])
+                    cn = f"{lbl} Closing"
+                    _colmeta[cn] = (ym, "CLOSING")
+                    row[cn] = int(running)
+                _table_rows.append(row)
+                _row_pids.append(pid)
+
+            df_ss = _pd.DataFrame(_table_rows)
+
+            # TOTAL row (closing totals sum across products)
+            _tot = {"Product": "TOTAL"}
+            for c in df_ss.columns:
+                if c != "Product":
+                    _tot[c] = int(df_ss[c].sum())
+            df_ss = _pd.concat([df_ss, _pd.DataFrame([_tot])], ignore_index=True)
+            _row_pids.append(None)
+
+            st.session_state.ss_colmeta  = _colmeta
+            st.session_state.ss_row_pids = _row_pids
+
+            # ── Display with row + column selection (= a cell) ────────────────
+            _ev = st.dataframe(
+                df_ss,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode=["single-row", "single-column"],
+                key=f"ss_tbl_{st.session_state.ss_selkey}",
+            )
+
+            try:
+                _sel_rows = list(_ev.selection["rows"])
+                _sel_cols = list(_ev.selection["columns"])
+            except Exception:
+                try:
+                    _sel_rows = list(_ev.selection.rows)
+                    _sel_cols = list(_ev.selection.columns)
+                except Exception:
+                    _sel_rows, _sel_cols = [], []
+
+            # ── Drill-down panel ──────────────────────────────────────────────
+            if _sel_rows and _sel_cols and _sel_cols[0] != "Product":
+                _ridx  = _sel_rows[0]
+                _cname = _sel_cols[0]
+                _pid   = st.session_state.ss_row_pids[_ridx]
+                _meta  = st.session_state.ss_colmeta.get(_cname)
+
+                st.divider()
+                if st.button("⬅️ Back to statement", key="ss_back"):
+                    st.session_state.ss_selkey += 1
+                    st.rerun()
+
+                if _pid is None:
+                    st.info("Drill-down works on product rows — please select a "
+                            "product row, not the TOTAL row.")
+                elif not _meta:
+                    st.info("Click a figure column header (not the Product column).")
+                else:
+                    _ym, _cat = _meta
+                    _pname = _pmap.get(_pid, {}).get("name", "Unknown")
+
+                    if _cat == "CLOSING":
+                        st.markdown(
+                            f"#### 🔎 {_pname} — all movements up to "
+                            f"{_ss_mlabel(_ym)} (closing breakdown)"
+                        )
+                        _dets = [r for r in _rows_all
+                                 if r.get("product_id") == _pid
+                                 and (r.get("txn_date") or "")[:10] <= _ym + "-31"]
+                    else:
+                        st.markdown(
+                            f"#### 🔎 {_pname} — {_cat} OUT in {_ss_mlabel(_ym)}"
+                        )
+                        _dets = [r for r in _rows_all
+                                 if r.get("product_id") == _pid
+                                 and (r.get("txn_date") or "")[:7] == _ym
+                                 and float(r.get("qty_out") or 0) > 0
+                                 and _ss_cat(r.get("narration")) == _cat]
+
+                    if not _dets:
+                        st.info("No underlying entries for this figure.")
+                    else:
+                        _dets = sorted(_dets,
+                                       key=lambda r: (r.get("txn_date") or "",
+                                                      r.get("id") or ""))
+
+                        # Fetch document numbers for the involved entries
+                        _doc_ids = list({r["ops_document_id"] for r in _dets
+                                         if r.get("ops_document_id")})
+                        _doc_map = {}
+                        for _i in range(0, len(_doc_ids), 200):
+                            _dchunk = (admin_supabase.table("ops_documents")
+                                       .select("id, ops_no, reference_no, ops_date, "
+                                               "stock_as, narration")
+                                       .in_("id", _doc_ids[_i:_i + 200])
+                                       .execute().data or [])
+                            for _d in _dchunk:
+                                _doc_map[_d["id"]] = _d
+
+                        def _ss_ename(etype, eid):
+                            if etype == "Company" or not eid:
+                                return etype or "—"
+                            if etype == "CNF":
+                                return "CNF: " + next(
+                                    (c["name"] for c in
+                                     st.session_state.get("cnfs_master", [])
+                                     if c["id"] == eid), str(eid)[:8])
+                            if etype == "User":
+                                return "User: " + next(
+                                    (u["username"] for u in
+                                     st.session_state.get("users_master", [])
+                                     if u["id"] == eid), str(eid)[:8])
+                            return f"{etype}: {str(eid)[:8]}"
+
+                        _det_rows = []
+                        for r in _dets:
+                            _doc = _doc_map.get(r.get("ops_document_id"), {})
+                            _det_rows.append({
+                                "Date":      (r.get("txn_date") or "")[:10],
+                                "Doc No":    _doc.get("ops_no", "—"),
+                                "Ref No":    _doc.get("reference_no") or "—",
+                                "Entity":    _ss_ename(r.get("entity_type"),
+                                                       r.get("entity_id")),
+                                "Qty In":    int(float(r.get("qty_in") or 0)),
+                                "Qty Out":   int(float(r.get("qty_out") or 0)),
+                                "Narration": r.get("narration") or
+                                             _doc.get("narration", ""),
+                            })
+
+                        df_det = _pd.DataFrame(_det_rows)
+                        d1, d2, d3 = st.columns(3)
+                        d1.metric("Entries",   len(df_det))
+                        d2.metric("Total In",  int(df_det["Qty In"].sum()))
+                        d3.metric("Total Out", int(df_det["Qty Out"].sum()))
+                        st.dataframe(df_det, use_container_width=True,
+                                     hide_index=True)
+                        st.caption(
+                            "Press **Back to statement** above, then select "
+                            "another row + column to inspect a different figure."
+                        )
+
+            st.stop()
+# ─────────── STOP COPYING AT THE LINE ABOVE ───────────
+
+
 
         # =========================
         # DAMAGED / DESTROYED REPORT
