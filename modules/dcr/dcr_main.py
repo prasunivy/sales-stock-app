@@ -1233,18 +1233,31 @@ def show_expense_report():
                     if vid and vid != "single":
                         visited_with_set.add(vid)
 
-        if visited_with_set:
+        # Keep only values that look like real UUIDs — older DCRs may have
+        # stored role words like "manager" in visited_with, which would
+        # crash a uuid column query.
+        def _is_uuid(s):
+            import re
+            return bool(re.fullmatch(
+                r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", str(s)))
+
+        uuid_ids = [vid for vid in visited_with_set if _is_uuid(vid)]
+        non_uuid = [vid for vid in visited_with_set if not _is_uuid(vid)]
+
+        if uuid_ids:
             mgr_rows = safe_exec(
                 admin_supabase.table("users")
                 .select("id, username")
-                .in_("id", list(visited_with_set)),
+                .in_("id", uuid_ids),
                 "Error loading managers"
             )
             name_map = {m["id"]: m["username"] for m in mgr_rows}
-            visited_with_str = ", ".join(name_map.get(vid, vid) for vid in visited_with_set) or "Self"
         else:
-            visited_with_str = "Self"
+            name_map = {}
 
+        labels = [name_map.get(vid, vid) for vid in uuid_ids] + non_uuid
+        visited_with_str = ", ".join(labels) if labels else "Self"
         # Pull KM from Let's Go tracking_sessions for this date
         tracking = safe_exec(
             admin_supabase.table("tracking_sessions")
