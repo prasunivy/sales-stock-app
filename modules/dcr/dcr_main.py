@@ -1386,13 +1386,13 @@ def show_expense_report():
             wa_lines.append(
                 f"\U0001f4c6 {row['Date']} | {row['Territories']} | "
                 f"Docs: {row['Doctors Visited']} | "
-                f"KM: {row['KM Travelled']} | "
+                f"KM: {row['KM (DCR)']} | "
                 f"Exp: \u20b9{row['Misc Expense (\u20b9)']} | "
                 f"Gifts: \u20b9{row['Gifts Given (\u20b9)']}"
             )
         wa_lines += [
             f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
-            f"\U0001f4ca Days: {len(rows)} | KM: {df['KM Travelled'].sum():.1f} | "
+            f"\U0001f4ca Days: {len(rows)} | KM: {df['KM (DCR)'].sum():.1f} | "
             f"Expense: \u20b9{df['Misc Expense (\u20b9)'].sum():.2f} | "
             f"Gifts: \u20b9{df['Gifts Given (\u20b9)'].sum():.2f} | "
             f"Doctors: {int(df['Doctors Visited'].sum())}"
