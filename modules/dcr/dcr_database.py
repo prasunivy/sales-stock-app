@@ -422,7 +422,11 @@ def get_dcr_by_id(dcr_id):
     
     doctor_visits = []
     for visit in visits:
-        product_ids = json.loads(visit.get("product_ids") or "[]")
+        _pids_raw = visit.get("product_ids") or []
+        if isinstance(_pids_raw, str):
+            product_ids = json.loads(_pids_raw or "[]")
+        else:
+            product_ids = _pids_raw
         
         # Get product names
         product_names = []
