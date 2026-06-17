@@ -4792,13 +4792,22 @@ This action will:
                 t = (r.get("txn_date") or "")[:10]
                 qi = float(r.get("qty_in") or 0)
                 qo = float(r.get("qty_out") or 0)
+                _nar = r.get("narration") or ""
+                # A cancellation / edit reversal puts the reversed qty into qty_in
+                # with a "Cancellation of ..." or "Reversal of ..." narration.
+                # It must CANCEL OUT the original OUT figure, not add to stock IN.
+                _is_reversal = (_nar.startswith("Cancellation of")
+                                or _nar.startswith("Reversal of"))
                 if t < _from_s:
                     _opening[pid] += qi - qo
                 elif t <= _to_s:
                     ym = t[:7]
                     _net[(pid, ym)] += qi - qo
                     if qo > 0:
-                        _outcat[(pid, ym, _ss_cat(r.get("narration")))] += qo
+                        _outcat[(pid, ym, _ss_cat(_nar))] += qo
+                    if qi > 0 and _is_reversal:
+                        # subtract reversal from the Invoice OUT category
+                        _outcat[(pid, ym, "Invoice")] -= qi
 
             _all_pids = set(_opening.keys()) | {k[0] for k in _net.keys()}
             if not _all_pids:
@@ -4846,26 +4855,39 @@ This action will:
             st.session_state.ss_colmeta  = _colmeta
             st.session_state.ss_row_pids = _row_pids
 
-            # ── Display with row + column selection (= a cell) ────────────────
+            # ── Display table with ROW selection only (column picked below) ───
             _ev = st.dataframe(
                 df_ss,
                 use_container_width=True,
                 hide_index=True,
                 on_select="rerun",
-                selection_mode=["single-row", "single-column"],
+                selection_mode=["single-row"],
                 key=f"ss_tbl_{st.session_state.ss_selkey}",
             )
 
             try:
                 _sel_rows = list(_ev.selection["rows"])
-                _sel_cols = list(_ev.selection["columns"])
             except Exception:
                 try:
                     _sel_rows = list(_ev.selection.rows)
-                    _sel_cols = list(_ev.selection.columns)
                 except Exception:
-                    _sel_rows, _sel_cols = [], []
+                    _sel_rows = []
 
+            # ── Column chosen via dropdown (avoids Streamlit header-menu clash) ─
+            _sel_cols = []
+            if _sel_rows:
+                _figure_cols = [c for c in df_ss.columns if c != "Product"]
+                st.markdown("**Now pick the figure to inspect:**")
+                _picked_col = st.selectbox(
+                    "Column",
+                    _figure_cols,
+                    key=f"ss_colpick_{st.session_state.ss_selkey}",
+                    label_visibility="collapsed",
+                )
+                if _picked_col:
+                    _sel_cols = [_picked_col]
+            else:
+                st.caption("👆 Tick a product row above, then choose a column to drill in.")
             # ── Drill-down panel ──────────────────────────────────────────────
             if _sel_rows and _sel_cols and _sel_cols[0] != "Product":
                 _ridx  = _sel_rows[0]
