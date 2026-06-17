@@ -946,6 +946,13 @@ This action will:
                         "metadata": {"reverse_ops_id": reverse_ops_id}
                     }).execute()
 
+                    # Mark the ORIGINAL invoice as cancelled so every report and
+                    # party balance stops counting it. Stock ledger reversal rows
+                    # already keep closing stock correct.
+                    admin_supabase.table("ops_documents").update({
+                        "is_deleted": True
+                    }).eq("id", ops_id).execute()
+
                     st.success("✅ Invoice cancelled successfully with reverse entry")
                     st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
                     st.rerun()
@@ -4780,6 +4787,29 @@ This action will:
                     return "Replace"
                 return "Other Out"
 
+            # ── Identify CANCELLED invoice documents (so their OUT is excluded) ─
+            # Cancellation reversal rows carry narration "Cancellation of <ops_no>".
+            # We map those original ops_no values to their document ids, then drop
+            # BOTH the original OUT rows and the reversal rows from the OUT columns.
+            # Closing stock is unaffected (reversal still nets the original there).
+            _cancelled_ops_nos = set()
+            for r in _rows_all:
+                _n = r.get("narration") or ""
+                if _n.startswith("Cancellation of "):
+                    _cancelled_ops_nos.add(_n.replace("Cancellation of ", "").strip())
+
+            _cancelled_doc_ids = set()
+            if _cancelled_ops_nos:
+                _con = list(_cancelled_ops_nos)
+                for _i in range(0, len(_con), 200):
+                    _crows = (admin_supabase.table("ops_documents")
+                              .select("id, ops_no")
+                              .in_("ops_no", _con[_i:_i + 200])
+                              .execute().data or [])
+                    for _c in _crows:
+                        _cancelled_doc_ids.add(_c["id"])
+            st.session_state.ss_cancelled_doc_ids = _cancelled_doc_ids
+
             # ── Aggregate ─────────────────────────────────────────────────────
             _opening = _defaultdict(float)            # pid -> net before From
             _net     = _defaultdict(float)            # (pid, ym) -> in - out
@@ -4789,25 +4819,27 @@ This action will:
                 pid = r.get("product_id")
                 if not pid:
                     continue
-                t = (r.get("txn_date") or "")[:10]
-                qi = float(r.get("qty_in") or 0)
-                qo = float(r.get("qty_out") or 0)
+                t    = (r.get("txn_date") or "")[:10]
+                qi   = float(r.get("qty_in") or 0)
+                qo   = float(r.get("qty_out") or 0)
                 _nar = r.get("narration") or ""
-                # A cancellation / edit reversal puts the reversed qty into qty_in
-                # with a "Cancellation of ..." or "Reversal of ..." narration.
-                # It must CANCEL OUT the original OUT figure, not add to stock IN.
-                _is_reversal = (_nar.startswith("Cancellation of")
-                                or _nar.startswith("Reversal of"))
+                _did = r.get("ops_document_id")
+
+                # Row belongs to a cancelled invoice if it IS a reversal row, or
+                # it's the original OUT of a document that was cancelled.
+                _is_reversal       = _nar.startswith("Cancellation of ")
+                _is_cancelled_orig = _did in _cancelled_doc_ids
+                _excluded_from_out = _is_reversal or _is_cancelled_orig
+
+                # Closing / net ALWAYS uses every row.
                 if t < _from_s:
                     _opening[pid] += qi - qo
                 elif t <= _to_s:
                     ym = t[:7]
                     _net[(pid, ym)] += qi - qo
-                    if qo > 0:
+                    # OUT columns skip cancelled originals AND their reversals.
+                    if qo > 0 and not _excluded_from_out:
                         _outcat[(pid, ym, _ss_cat(_nar))] += qo
-                    if qi > 0 and _is_reversal:
-                        # subtract reversal from the Invoice OUT category
-                        _outcat[(pid, ym, "Invoice")] -= qi
 
             _all_pids = set(_opening.keys()) | {k[0] for k in _net.keys()}
             if not _all_pids:
@@ -4921,11 +4953,14 @@ This action will:
                         st.markdown(
                             f"#### 🔎 {_pname} — {_cat} OUT in {_ss_mlabel(_ym)}"
                         )
+                        _ss_canc = st.session_state.get("ss_cancelled_doc_ids", set())
                         _dets = [r for r in _rows_all
                                  if r.get("product_id") == _pid
                                  and (r.get("txn_date") or "")[:7] == _ym
                                  and float(r.get("qty_out") or 0) > 0
-                                 and _ss_cat(r.get("narration")) == _cat]
+                                 and _ss_cat(r.get("narration")) == _cat
+                                 and not (r.get("narration") or "").startswith("Cancellation of ")
+                                 and r.get("ops_document_id") not in _ss_canc]
 
                     if not _dets:
                         st.info("No underlying entries for this figure.")
