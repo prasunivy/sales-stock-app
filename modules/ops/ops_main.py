@@ -2363,6 +2363,14 @@ This action will:
                         for p in st.session_state.ops_products:
                             a = st.session_state.ops_amounts
 
+                            # Skip blank/padding rows (no product, or zero qty).
+                            # The product engine can leave empty trailing rows
+                            # which must not reach the master lookup.
+                            _pname = (p.get("product") or "").strip()
+                            _sq = int(p.get("sale_qty", 0) or 0)
+                            _fq = int(p.get("free_qty", 0) or 0)
+                            if not _pname or (_sq + _fq) <= 0:
+                                continue
 
                             # 🔎 Resolve product_id from products master
                             product_resp = admin_supabase.table("products") \
