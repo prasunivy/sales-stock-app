@@ -1061,6 +1061,21 @@ This action will:
             "net":      _num(_first.get("net_amount"),      float),
         }
         if st.button("➡️ Continue to Edit"):
+            # Drive the STOCK_FLOW wizard straight to the final (ready-to-save)
+            # stage with the entity binding already completed, so the step-by-step
+            # entity selection is skipped and prefilled values are not reset.
+            st.session_state.ops_flow_stage      = "LINE1"
+            st.session_state.ops_line1_from_type = old_invoice.get("from_entity_type")
+            st.session_state.ops_line1_to_type   = old_invoice.get("to_entity_type")
+            st.session_state.ops_line2_phase     = 1
+            st.session_state.ops_line2_complete  = True
+            st.session_state.ops_line3_complete  = True
+            st.session_state.ops_master_confirmed = False
+            st.session_state.ops_products_done    = False
+            st.session_state.ops_submit_done      = False
+            st.session_state.ops_product_index    = 0
+            st.session_state.edit_mode            = True
+
             st.session_state.ops_section = "STOCK_FLOW"
             st.session_state._force_section = "STOCK_FLOW"
             st.rerun()
@@ -1685,7 +1700,9 @@ This action will:
 
 
         # 🔁 RESET LINE-2 ONLY WHEN LINE-1 TYPE CHANGES
-        if (
+        # During an edit the entity binding is already complete and prefilled,
+        # so we must NOT let the (unkeyed) selectbox default trigger a reset.
+        if not st.session_state.get("edit_mode", False) and (
             st.session_state.ops_line1_from_type != from_entity
             or st.session_state.ops_line1_to_type != to_entity
         ):
@@ -1700,7 +1717,6 @@ This action will:
             st.session_state.ops_from_entity_type = None
             st.session_state.ops_to_entity_id = None
             st.session_state.ops_to_entity_type = None
-
         # ✅ RESTRICT STOCK AS OPTIONS FOR INTERNAL TRANSFER ROUTES
         # Company↔CNF, Company↔User, CNF↔User — no Invoice, no Return to Purchaser
         _INTERNAL_ROUTES = {
