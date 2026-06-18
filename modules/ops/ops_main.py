@@ -504,6 +504,15 @@ def run_ops():
         "📊 OPS Insights":                  "OPS_INSIGHTS",
     }
 
+    # If a flow explicitly forced a section (e.g. Continue to Edit → STOCK_FLOW),
+    # honor it and clear the stale selectbox widget value BEFORE the widget is
+    # drawn, so it can't bounce us back to the previous menu item.
+    _forced = st.session_state.pop("_force_section", None)
+    if _forced:
+        st.session_state.ops_section = _forced
+        if "ops_section_selectbox" in st.session_state:
+            del st.session_state["ops_section_selectbox"]
+
     current_section = st.session_state.ops_section
 
     # Sub-sections that are NOT in the menu (view/edit/delete flows).
@@ -1051,8 +1060,7 @@ This action will:
         }
         if st.button("➡️ Continue to Edit"):
             st.session_state.ops_section = "STOCK_FLOW"
-            # Sync the menu widget so its stale value can't bounce us back
-            st.session_state.ops_section_selectbox = "🔁 Stock In / Stock Out"
+            st.session_state._force_section = "STOCK_FLOW"
             st.rerun()
     
     # =========================
@@ -6823,8 +6831,7 @@ This action:
         with col1:
             if st.button("➡️ Continue to Edit"):
                 st.session_state.ops_section = "STOCK_FLOW"
-                # Sync the menu widget so its stale value can't bounce us back
-                st.session_state.ops_section_selectbox = "🔁 Stock In / Stock Out"
+                st.session_state._force_section = "STOCK_FLOW"
                 st.rerun()
         with col2:
             if st.button("⬅ Back to Transfers"):
