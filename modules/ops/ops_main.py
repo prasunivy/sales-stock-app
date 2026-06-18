@@ -974,23 +974,32 @@ This action will:
             st.error("No invoice selected for edit")
             st.stop()
 
-        # ---- Load original invoice ----
-        old_invoice = admin_supabase.table("ops_documents") \
-            .select("*") \
-            .eq("id", source_ops_id) \
-            .eq("is_deleted", False) \
-            .single() \
-            .execute().data
+        # ---- Load original invoice (crash-proof) ----
+        try:
+            _inv_resp = admin_supabase.table("ops_documents") \
+                .select("*") \
+                .eq("id", source_ops_id) \
+                .eq("is_deleted", False) \
+                .limit(1) \
+                .execute()
+            old_invoice = (_inv_resp.data or [None])[0]
+        except Exception as _e:
+            st.error("Could not load this invoice for editing.")
+            st.exception(_e)
+            if st.button("⬅️ Back to invoices"):
+                st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+                st.rerun()
+            st.stop()
 
         if not old_invoice:
-            st.error("Invoice not found or already deleted")
+            st.error("Invoice not found or already locked/deleted.")
+            if st.button("⬅️ Back to invoices"):
+                st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+                st.rerun()
             st.stop()
 
         st.subheader(f"✏️ Edit Invoice — {old_invoice['ops_no']}")
-
-        st.info(
-            "Editing will create a NEW invoice and lock this one for audit safety."
-        )
+        st.info("Editing will create a NEW invoice and lock this one for audit safety.")
 
         # ---- Load invoice lines ----
         old_lines = admin_supabase.table("ops_lines") \
@@ -998,38 +1007,48 @@ This action will:
             .eq("ops_document_id", source_ops_id) \
             .execute().data or []
 
-        st.subheader(f"✏️ Edit Invoice — {old_invoice['ops_no']}")
-
-        st.info("This will create a new invoice and lock the old one.")
+        if not old_lines:
+            st.error("This invoice has no product lines to edit.")
+            if st.button("⬅️ Back to invoices"):
+                st.session_state.ops_section = "DOCUMENT_BROWSER_INVOICES"
+                st.rerun()
+            st.stop()
 
         # =========================
         # PREFILL OPS SESSION STATE
         # =========================
         st.session_state.ops_from_entity_type = old_invoice.get("from_entity_type")
-        st.session_state.ops_from_entity_id = old_invoice.get("from_entity_id")
+        st.session_state.ops_from_entity_id   = old_invoice.get("from_entity_id")
+        st.session_state.ops_to_entity_type   = old_invoice.get("to_entity_type")
+        st.session_state.ops_to_entity_id     = old_invoice.get("to_entity_id")
 
-        st.session_state.ops_to_entity_type = old_invoice.get("to_entity_type")
-        st.session_state.ops_to_entity_id = old_invoice.get("to_entity_id")
+        # Convert database types to Python native types (null-safe)
+        def _num(v, cast=int):
+            try:
+                return cast(v) if v is not None else cast(0)
+            except (TypeError, ValueError):
+                return cast(0)
 
-        # ✅ Convert database types to Python native types
         st.session_state.ops_products = [
             {
-                "product": l.get("product", ""),
-                "product_id": l["product_id"],
-                "sale_qty": int(l.get("sale_qty", 0)),
-                "free_qty": int(l.get("free_qty", 0)),
-                "total_qty": int(l.get("sale_qty", 0)) + int(l.get("free_qty", 0))
+                "product": l.get("product", "") or "",
+                "product_id": l.get("product_id"),
+                "sale_qty": _num(l.get("sale_qty")),
+                "free_qty": _num(l.get("free_qty")),
+                "total_qty": _num(l.get("sale_qty")) + _num(l.get("free_qty")),
             }
             for l in old_lines
         ]
 
+        # IMPORTANT: gross/tax/discount/net are stamped as the DOCUMENT TOTAL on
+        # every line, so use the FIRST line only — summing inflates by line count.
+        _first = old_lines[0]
         st.session_state.ops_amounts = {
-            "gross": float(sum(l["gross_amount"] for l in old_lines)),
-            "tax": float(sum(l["tax_amount"] for l in old_lines)),
-            "discount": float(sum(l["discount_amount"] for l in old_lines)),
-            "net": float(sum(l["net_amount"] for l in old_lines)),
+            "gross":    _num(_first.get("gross_amount"),    float),
+            "tax":      _num(_first.get("tax_amount"),      float),
+            "discount": _num(_first.get("discount_amount"), float),
+            "net":      _num(_first.get("net_amount"),      float),
         }
-
         if st.button("➡️ Continue to Edit"):
             st.session_state.ops_section = "STOCK_FLOW"
             st.rerun()
