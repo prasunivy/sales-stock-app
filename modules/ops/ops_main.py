@@ -1886,7 +1886,12 @@ This action will:
             st.rerun()
         ops_txn_date = st.date_input("Date")
 
-        stock_as = st.selectbox("Stock As", stock_as_options)
+        if st.session_state.get("edit_mode", False):
+            stock_as = "Invoice"
+            st.selectbox("Stock As", ["Invoice"], disabled=True,
+                         key="edit_stock_as_locked")
+        else:
+            stock_as = st.selectbox("Stock As", stock_as_options)
 
         # STOCK HANDLING FOR CREDIT NOTES
         if stock_as == "Credit Note":
@@ -1915,6 +1920,16 @@ This action will:
 
         if preview_clicked:
             st.session_state.ops_master_confirmed = True
+            st.session_state._just_previewed = True
+
+        # TEMP DIAGNOSTIC — remove after debugging
+        if st.session_state.get("_just_previewed"):
+            st.warning(
+                f"DEBUG · section={st.session_state.get('ops_section')} · "
+                f"menu={st.session_state.get('ops_section_selectbox')} · "
+                f"master_confirmed={st.session_state.get('ops_master_confirmed')} · "
+                f"edit_mode={st.session_state.get('edit_mode')}"
+            )
 
         
         # =========================
