@@ -1861,7 +1861,16 @@ This action will:
             st.warning("⛔ Complete entity binding (From → To) to continue")
             st.stop()
 
-        if st.button("🔄 Reset Entity Selection"):
+        if st.session_state.get("edit_mode", False):
+            _ef = resolve_entity_name(st.session_state.ops_from_entity_type,
+                                      st.session_state.ops_from_entity_id)
+            _et = resolve_entity_name(st.session_state.ops_to_entity_type,
+                                      st.session_state.ops_to_entity_id)
+            st.success(f"✏️ Editing — Entity binding locked: **{_ef} → {_et}**")
+            st.caption("Entity cannot be changed while editing. Adjust date, "
+                       "products and amounts below, then Preview.")
+
+        if not st.session_state.get("edit_mode", False) and st.button("🔄 Reset Entity Selection"):
             st.session_state.ops_line2_complete = False
             st.session_state.ops_line3_complete = False
             st.session_state.ops_from_entity_type = None
@@ -1869,8 +1878,12 @@ This action will:
             st.session_state.ops_to_entity_type = None
             st.session_state.ops_to_entity_id = None
             st.session_state.ops_master_confirmed = False
+            # Leaving edit mode: a manual reset means the user wants to rebind
+            # entities from scratch, so drop the edit lock and prefill.
+            st.session_state.edit_mode = False
+            st.session_state.ops_line1_from_type = None
+            st.session_state.ops_line1_to_type = None
             st.rerun()
-
         ops_txn_date = st.date_input("Date")
 
         stock_as = st.selectbox("Stock As", stock_as_options)
