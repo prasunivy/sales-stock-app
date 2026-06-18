@@ -550,10 +550,16 @@ def run_ops():
     labels = list(OPS_OPTIONS.keys())
     current_index = labels.index(current_label)
 
-    # Remember what label the menu is SUPPOSED to show this run. We compare the
-    # widget's returned value against this to detect a *real* user pick, rather
-    # than against current_section (which caused edit flows to bounce back).
-    _expected_label = current_label
+    # Drive the menu from ops_section. We detect a REAL user change by comparing
+    # the widget's new value against the label we last drove it to (stored in a
+    # plain key, not the widget key). This avoids the widget's stale-value
+    # persistence bouncing edit/sub-section flows back to the previous menu item.
+    _prev_driven = st.session_state.get("_ops_menu_driven_label")
+
+    # Keep the widget's stored value in sync with where we actually are, BEFORE
+    # the widget is drawn (legal because we only delete/reset, never set-after-draw).
+    if _prev_driven != current_label and "ops_section_selectbox" in st.session_state:
+        del st.session_state["ops_section_selectbox"]
 
     selected_label = st.selectbox(
         "⚙ OPS Menu",
@@ -563,17 +569,16 @@ def run_ops():
     )
     selected_section = OPS_OPTIONS[selected_label]
 
-    # Navigate ONLY when the user actually changed the menu away from what it
-    # was showing this run. If the label still matches what we expected, the
-    # rerun came from something else on the page (e.g. picking an entity), so
-    # we must NOT touch ops_section.
-    _user_changed_menu = (selected_label != _expected_label)
+    # Record what the menu is now showing, so next run we can tell whether a
+    # change came from the user or from us navigating programmatically.
+    st.session_state._ops_menu_driven_label = selected_label
 
-    if _user_changed_menu and selected_section is not None:
+    # A real user pick = the widget value differs from the label that matches
+    # the current section this run.
+    if selected_label != current_label and selected_section is not None:
         st.session_state.ops_section = selected_section
         st.rerun()
     section = st.session_state.ops_section
-
     if not section:
         st.info("☝️ Select an OPS function from the menu above")
         return
