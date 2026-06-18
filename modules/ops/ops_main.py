@@ -1678,10 +1678,18 @@ This action will:
 
         col1, col2 = st.columns(2)
 
+        # During edit, default the displayed type to the invoice's actual type.
+        _ef_idx = 0
+        if st.session_state.get("edit_mode", False):
+            _ef_type = st.session_state.get("ops_from_entity_type")
+            if _ef_type in from_options:
+                _ef_idx = from_options.index(_ef_type)
+
         with col1:
             from_entity = st.selectbox(
                 "From Entity Type",
                 from_options,
+                index=_ef_idx,
                 disabled=line1_locked
             )
 
@@ -1691,10 +1699,18 @@ This action will:
         else:
             to_options = STOCK_IN_ROUTES.get(from_entity, [])
 
+        # During edit, default the displayed type to the invoice's actual type.
+        _et_idx = 0
+        if st.session_state.get("edit_mode", False):
+            _et_type = st.session_state.get("ops_to_entity_type")
+            if _et_type in to_options:
+                _et_idx = to_options.index(_et_type)
+
         with col2:
             to_entity = st.selectbox(
                 "To Entity Type",
                 to_options,
+                index=_et_idx,
                 disabled=line1_locked
             )
 
@@ -2008,9 +2024,16 @@ This action will:
                 for p in st.session_state.products_master
             }
 
+            _prod_names = list(product_map.keys())
+            # Default the dropdown to the product already on this line (so an
+            # edit shows the invoice's real product, not the first in the list).
+            _cur_prod = current.get("product", "")
+            _prod_idx = _prod_names.index(_cur_prod) if _cur_prod in _prod_names else 0
+
             selected_product = st.selectbox(
                 "Product",
-                list(product_map.keys()),
+                _prod_names,
+                index=_prod_idx,
                 key=f"product_select_{st.session_state.ops_product_index}"
             )
 
@@ -2020,7 +2043,7 @@ This action will:
                 "Saleable Quantity",
                 min_value=0,
                 step=1,
-                value=current["sale_qty"],
+                value=int(current.get("sale_qty", 0) or 0),
                 key=f"sale_{idx}"
             )
 
@@ -2029,7 +2052,7 @@ This action will:
                     "Free Quantity",
                     min_value=0,
                     step=1,
-                    value=current["free_qty"],
+                    value=int(current.get("free_qty", 0) or 0),
                     key=f"free_{idx}"
                 )
             else:
