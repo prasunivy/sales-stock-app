@@ -1051,8 +1051,9 @@ This action will:
         }
         if st.button("➡️ Continue to Edit"):
             st.session_state.ops_section = "STOCK_FLOW"
+            # Sync the menu widget so its stale value can't bounce us back
+            st.session_state.ops_section_selectbox = "🔁 Stock In / Stock Out"
             st.rerun()
-
     
     # =========================
     # DOCUMENT BROWSER — INVOICE DELETE (CONFIRM)
@@ -6822,6 +6823,8 @@ This action:
         with col1:
             if st.button("➡️ Continue to Edit"):
                 st.session_state.ops_section = "STOCK_FLOW"
+                # Sync the menu widget so its stale value can't bounce us back
+                st.session_state.ops_section_selectbox = "🔁 Stock In / Stock Out"
                 st.rerun()
         with col2:
             if st.button("⬅ Back to Transfers"):
