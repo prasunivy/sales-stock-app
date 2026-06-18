@@ -2383,11 +2383,14 @@ This action will:
                                 st.error(f"❌ Product not found in master: {p['product']}")
                                 st.stop()
 
-                            
+                            # Use the freshly-resolved id (prefilled rows may carry
+                            # a stale or missing product_id).
+                            _resolved_pid = product_resp.data[0]["id"]
+                            p["product_id"] = _resolved_pid
 
                             admin_supabase.table("ops_lines").insert({
                                 "ops_document_id": ops_document_id,
-                                "product_id": p["product_id"],
+                                "product_id": _resolved_pid,
 
                                 # Operator-entered quantities (NO calculations)
                                 "sale_qty": p.get("sale_qty", 0),
@@ -2473,8 +2476,13 @@ This action will:
                         
                         if create_stock_entries:
                             for p in st.session_state.ops_products:
-                                qty = p.get("total_qty", 0)
-                                
+                                # Skip blank/padding rows — they have no product_id
+                                # and would violate the stock_ledger not-null rule.
+                                _pid = p.get("product_id")
+                                qty = int(p.get("total_qty", 0) or 0)
+                                if not _pid or qty <= 0:
+                                    continue
+
                                 # ✅ ALWAYS CREATE STOCK OUT FOR SENDER (FROM entity)
                                 admin_supabase.table("stock_ledger").insert({
                                     "ops_document_id": ops_document_id,
