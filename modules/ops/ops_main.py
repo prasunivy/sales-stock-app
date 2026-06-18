@@ -550,6 +550,11 @@ def run_ops():
     labels = list(OPS_OPTIONS.keys())
     current_index = labels.index(current_label)
 
+    # Remember what label the menu is SUPPOSED to show this run. We compare the
+    # widget's returned value against this to detect a *real* user pick, rather
+    # than against current_section (which caused edit flows to bounce back).
+    _expected_label = current_label
+
     selected_label = st.selectbox(
         "⚙ OPS Menu",
         labels,
@@ -558,18 +563,15 @@ def run_ops():
     )
     selected_section = OPS_OPTIONS[selected_label]
 
-    # Only navigate if user deliberately picked a different menu item
-    # AND we are not mid-flow in a sub-section
-    if not in_sub_section and selected_section != current_section:
+    # Navigate ONLY when the user actually changed the menu away from what it
+    # was showing this run. If the label still matches what we expected, the
+    # rerun came from something else on the page (e.g. picking an entity), so
+    # we must NOT touch ops_section.
+    _user_changed_menu = (selected_label != _expected_label)
+
+    if _user_changed_menu and selected_section is not None:
         st.session_state.ops_section = selected_section
         st.rerun()
-
-    # If user picks a different menu item while in a sub-section,
-    # treat it as a deliberate navigation away
-    if in_sub_section and selected_section is not None and selected_section != display_section:
-        st.session_state.ops_section = selected_section
-        st.rerun()
-
     section = st.session_state.ops_section
 
     if not section:
