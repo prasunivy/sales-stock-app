@@ -550,34 +550,29 @@ def run_ops():
     labels = list(OPS_OPTIONS.keys())
     current_index = labels.index(current_label)
 
-    # Drive the menu from ops_section. We detect a REAL user change by comparing
-    # the widget's new value against the label we last drove it to (stored in a
-    # plain key, not the widget key). This avoids the widget's stale-value
-    # persistence bouncing edit/sub-section flows back to the previous menu item.
-    _prev_driven = st.session_state.get("_ops_menu_driven_label")
+    # Navigation via on_change callback: fires ONLY when the user actually picks
+    # a different menu item, never on incidental reruns (date change, entity
+    # pick, Preview, etc.). This makes mid-flow bounces structurally impossible.
+    def _on_ops_menu_change():
+        _picked = st.session_state.get("ops_section_selectbox")
+        _sec = OPS_OPTIONS.get(_picked)
+        if _sec is not None:
+            st.session_state.ops_section = _sec
 
-    # Keep the widget's stored value in sync with where we actually are, BEFORE
-    # the widget is drawn (legal because we only delete/reset, never set-after-draw).
-    if _prev_driven != current_label and "ops_section_selectbox" in st.session_state:
-        del st.session_state["ops_section_selectbox"]
+    # Seed the widget value to match the current section whenever we navigated
+    # programmatically (sub-section / forced flow). Tracked by _ops_menu_sync so
+    # it only re-seeds when the target actually changes, not on every run.
+    if st.session_state.get("_ops_menu_sync") != current_label:
+        st.session_state["ops_section_selectbox"] = current_label
+        st.session_state["_ops_menu_sync"] = current_label
 
-    selected_label = st.selectbox(
+    st.selectbox(
         "⚙ OPS Menu",
         labels,
-        index=current_index,
-        key="ops_section_selectbox"
+        key="ops_section_selectbox",
+        on_change=_on_ops_menu_change,
     )
-    selected_section = OPS_OPTIONS[selected_label]
 
-    # Record what the menu is now showing, so next run we can tell whether a
-    # change came from the user or from us navigating programmatically.
-    st.session_state._ops_menu_driven_label = selected_label
-
-    # A real user pick = the widget value differs from the label that matches
-    # the current section this run.
-    if selected_label != current_label and selected_section is not None:
-        st.session_state.ops_section = selected_section
-        st.rerun()
     section = st.session_state.ops_section
     if not section:
         st.info("☝️ Select an OPS function from the menu above")
