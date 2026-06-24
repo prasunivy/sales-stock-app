@@ -1141,6 +1141,17 @@ This action will:
             st.error("Invoice not selected")
             st.stop()
 
+        # CHANGED: fetch the original invoice ops_no so reversal rows carry the
+        # canonical "Cancellation of <ops_no>" narration that the Stock Statement
+        # exclusion recognises. Previously this path used the UUID, so deleted
+        # invoices were never excluded from the Stock Statement OUT columns.
+        _orig = admin_supabase.table("ops_documents") \
+            .select("ops_no") \
+            .eq("id", ops_id) \
+            .single() \
+            .execute().data
+        orig_ops_no = (_orig or {}).get("ops_no") or str(ops_id)
+
         # ---- REVERSE STOCK LEDGER ENTRIES ----
         stock_rows = admin_supabase.table("stock_ledger") \
             .select("*") \
@@ -1154,7 +1165,8 @@ This action will:
             "ops_type": "ADJUSTMENT",
             "stock_as": "adjustment",
             "direction": "ADJUST",
-            "narration": f"Reversal due to deletion of {ops_id}",
+            "narration": f"Cancellation of {orig_ops_no}",  # CHANGED: canonical format
+            "reference_no": orig_ops_no,                    # ADDED: link to original
             "created_by": admin_id
         }).execute()
 
@@ -1171,7 +1183,7 @@ This action will:
                 "qty_out": s["qty_in"],  # Reverse
                 "closing_qty": 0,
                 "direction": "ADJUST",
-                "narration": f"Reversal of deleted invoice"
+                "narration": f"Cancellation of {orig_ops_no}"  # CHANGED: canonical format
             }).execute()
 
         # ---- REVERSE FINANCIAL LEDGER ENTRIES ----
@@ -1188,7 +1200,7 @@ This action will:
                 "debit": l["credit"],  # Reverse
                 "credit": l["debit"],  # Reverse
                 "closing_balance": 0,
-                "narration": f"Reversal of deleted invoice"
+                "narration": f"Cancellation of {orig_ops_no}"  # CHANGED: canonical format
             }).execute()
 
         # ---- Soft delete invoice ----
@@ -4901,15 +4913,39 @@ This action will:
                 return "Other Out"
 
             # ── Identify CANCELLED invoice documents (so their OUT is excluded) ─
-            # Cancellation reversal rows carry narration "Cancellation of <ops_no>".
-            # We map those original ops_no values to their document ids, then drop
-            # BOTH the original OUT rows and the reversal rows from the OUT columns.
-            # Closing stock is unaffected (reversal still nets the original there).
+            # A cancelled/deleted invoice is reversed by a synthetic ADJUSTMENT
+            # ops_document. Older reversals used inconsistent narrations, so we
+            # detect cancelled originals through THREE robust signals and union
+            # them. This also excludes historical bad rows without a DB migration.
+            #
+            #   1) Reversal stock rows whose narration is "Cancellation of <ops_no>"
+            #      (canonical, both cancel paths now write this).
+            #   2) The reversal ops_document's reference_no = original ops_no.
+            #   3) Any ops_document with is_deleted = True (authoritative flag set
+            #      by every cancel/delete path).
             _cancelled_ops_nos = set()
             for r in _rows_all:
                 _n = r.get("narration") or ""
                 if _n.startswith("Cancellation of "):
-                    _cancelled_ops_nos.add(_n.replace("Cancellation of ", "").strip())
+                    _val = _n.replace("Cancellation of ", "").strip()
+                    # Guard: ignore legacy rows that stored a UUID (4 dashes)
+                    # instead of an ops_no (e.g. OPS-YYYYMMDD-NNNNNN, 2 dashes).
+                    if _val and _val.count("-") < 4:
+                        _cancelled_ops_nos.add(_val)
+
+            # Signal 2: reference_no on reversal ADJUSTMENT documents.
+            try:
+                _rev_docs = (admin_supabase.table("ops_documents")
+                             .select("reference_no")
+                             .eq("ops_type", "ADJUSTMENT")
+                             .not_.is_("reference_no", "null")
+                             .execute().data or [])
+                for _rd in _rev_docs:
+                    _rn = (_rd.get("reference_no") or "").strip()
+                    if _rn:
+                        _cancelled_ops_nos.add(_rn)
+            except Exception:
+                pass
 
             _cancelled_doc_ids = set()
             if _cancelled_ops_nos:
@@ -4921,6 +4957,22 @@ This action will:
                               .execute().data or [])
                     for _c in _crows:
                         _cancelled_doc_ids.add(_c["id"])
+
+            # Signal 3: authoritative is_deleted flag. Pull deleted document ids
+            # for the documents that actually appear in these stock rows, so the
+            # original OUT row of ANY deleted invoice is excluded even if its
+            # reversal narration was malformed.
+            _present_doc_ids = list({r.get("ops_document_id")
+                                     for r in _rows_all if r.get("ops_document_id")})
+            for _i in range(0, len(_present_doc_ids), 200):
+                _drows = (admin_supabase.table("ops_documents")
+                          .select("id")
+                          .in_("id", _present_doc_ids[_i:_i + 200])
+                          .eq("is_deleted", True)
+                          .execute().data or [])
+                for _d in _drows:
+                    _cancelled_doc_ids.add(_d["id"])
+
             st.session_state.ss_cancelled_doc_ids = _cancelled_doc_ids
 
             # ── Aggregate ─────────────────────────────────────────────────────
@@ -4940,7 +4992,12 @@ This action will:
 
                 # Row belongs to a cancelled invoice if it IS a reversal row, or
                 # it's the original OUT of a document that was cancelled.
-                _is_reversal       = _nar.startswith("Cancellation of ")
+                # CHANGED: also recognise legacy reversal narrations.
+                _is_reversal = (
+                    _nar.startswith("Cancellation of ")
+                    or _nar.startswith("Reversal due to deletion of ")
+                    or _nar == "Reversal of deleted invoice"
+                )
                 _is_cancelled_orig = _did in _cancelled_doc_ids
                 _excluded_from_out = _is_reversal or _is_cancelled_orig
 
