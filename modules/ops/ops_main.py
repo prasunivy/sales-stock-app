@@ -5779,7 +5779,7 @@ This action will:
         ops_ids = list({r["ops_document_id"] for r in stock_rows})
         ops_docs = (
             admin_supabase.table("ops_documents")
-            .select("id, ops_no, reference_no")
+            .select("id, ops_no, reference_no, is_deleted")  # CHANGED: include is_deleted
             .in_("id", ops_ids)
             .execute()
         ).data
@@ -5788,6 +5788,18 @@ This action will:
             o["id"]: f'{o["ops_no"]}{(" / " + o["reference_no"]) if o["reference_no"] else ""}'
             for o in ops_docs
         }
+
+        # ADDED: documents that are soft-deleted (cancelled invoices, deleted CNs).
+        # Their stock rows are already reversed elsewhere and net to zero, so they
+        # must NOT appear here or move the running closing qty. stock_ledger has no
+        # is_deleted column of its own, so we filter via the parent document.
+        _deleted_doc_ids = {o["id"] for o in ops_docs if o.get("is_deleted")}
+        stock_rows = [r for r in stock_rows
+                      if r.get("ops_document_id") not in _deleted_doc_ids]
+
+        if not stock_rows:
+            st.info("No stock ledger entries found.")
+            st.stop()
 
         # -------------------------
         # BUILD DISPLAY ROWS
