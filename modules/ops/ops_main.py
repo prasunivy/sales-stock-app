@@ -957,6 +957,11 @@ This action will:
                         "metadata": {"reverse_ops_id": reverse_ops_id}
                     }).execute()
 
+                    # Release every settlement stuck on this invoice.
+                    # Payments/CN/freight previously allocated to it go back to
+                    # their pool and every affected invoice is recomputed.
+                    _reverse_settlements_for_doc(ops_id)
+
                     # Mark the ORIGINAL invoice as cancelled so every report and
                     # party balance stops counting it. Stock ledger reversal rows
                     # already keep closing stock correct.
@@ -5485,7 +5490,9 @@ This action will:
                     txn_type = "Adjustment"
             else:
                 # Payment/Credit Note/Freight
-                if "freight" in row["narration"].lower():
+                if (row["narration"] or "").startswith("Cancellation of"):
+                    txn_type = "Cancellation"
+                elif "freight" in row["narration"].lower():
                     txn_type = "Freight"
                 elif "payment" in row["narration"].lower() or "receipt" in row["narration"].lower():
                     txn_type = "Payment"
@@ -8802,10 +8809,11 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                 "payment_status": new_st
             }).eq("id", inv_id).execute()
 
-        alloc_tab, cn_freight_tab, reverse_tab = st.tabs([
+        alloc_tab, cn_freight_tab, reverse_tab, search_tab = st.tabs([
             "💰 Allocate Payments",
             "📝 Apply Credit Notes & Freight",
-            "🔄 Reverse Allocations"
+            "🔄 Reverse Allocations",
+            "🔍 Search Allocations"
         ])
 
         # ================================================================
@@ -9238,6 +9246,184 @@ Amount: ₹{abs(entry['net_amount']):,.2f}""")
                                     except Exception as e:
                                         st.error(f"❌ Reversal failed: {e}")
                             st.divider()
+
+        # ================================================================
+        # TAB 4 — SEARCH ALLOCATIONS (debug / audit trail)
+        # ================================================================
+        with search_tab:
+            st.info("""
+            🔍 **Trace any allocation** — search by Invoice No, OPS/PAY No,
+            Reference No, or Party name. Shows exactly which payment / credit note /
+            freight was allocated to which invoice. Settlements pointing at a
+            CANCELLED (deleted) invoice are flagged — that money is stuck there
+            and should be reversed so it returns to the payment's pool.
+            """)
+
+            import pandas as pd
+
+            q = st.text_input(
+                "Search (Invoice No / OPS No / PAY No / Reference No / Party name)",
+                placeholder="e.g. OPS-20260427, PAY-20260627, TEMP-03, jadu pal",
+                key="allocsearch_q"
+            ).strip()
+
+            def _chunked_in(table, select_cols, col, ids):
+                """.in_() fetch chunked to 100 ids (PostgREST URL limit)."""
+                rows, ids = [], list(ids)
+                for i in range(0, len(ids), 100):
+                    rows.extend(
+                        admin_supabase.table(table).select(select_cols)
+                        .in_(col, ids[i:i+100]).execute().data or []
+                    )
+                return rows
+
+            if not q:
+                st.caption("Type an invoice number, payment number, reference, or party name above.")
+            else:
+                ql = q.lower()
+                doc_cols = ("id, ops_no, ops_date, reference_no, ops_type, stock_as, "
+                            "is_deleted, allocation_status, from_entity_id, "
+                            "from_entity_type, to_entity_id, to_entity_type")
+
+                # 1) Party matches by name
+                matched_sids = [s["id"] for s in st.session_state.stockists_master
+                                if ql in (s.get("name") or "").lower()]
+
+                # 2) Document matches by ops_no / reference_no
+                d1 = admin_supabase.table("ops_documents").select(doc_cols)\
+                    .ilike("ops_no", f"%{q}%").limit(200).execute().data or []
+                d2 = admin_supabase.table("ops_documents").select(doc_cols)\
+                    .ilike("reference_no", f"%{q}%").limit(200).execute().data or []
+                matched_docs = {d["id"]: d for d in (d1 + d2)}
+
+                # 3) A matched party pulls in ALL its payments + invoices
+                for sid in matched_sids[:20]:
+                    p_docs = admin_supabase.table("ops_documents").select(doc_cols)\
+                        .eq("from_entity_id", sid).eq("ops_type", "ADJUSTMENT")\
+                        .execute().data or []
+                    i_docs = admin_supabase.table("ops_documents").select(doc_cols)\
+                        .eq("to_entity_id", sid).execute().data or []
+                    for d in p_docs + i_docs:
+                        matched_docs[d["id"]] = d
+
+                if not matched_docs and not matched_sids:
+                    st.warning("No documents or parties matched that search.")
+                else:
+                    all_ids = list(matched_docs.keys())
+
+                    # 4) Settlements where a matched doc is source OR target
+                    s_src = _chunked_in("payment_settlements",
+                        "id, payment_ops_id, invoice_id, amount, created_at",
+                        "payment_ops_id", all_ids) if all_ids else []
+                    s_inv = _chunked_in("payment_settlements",
+                        "id, payment_ops_id, invoice_id, amount, created_at",
+                        "invoice_id", all_ids) if all_ids else []
+                    setts = {s["id"]: s for s in (s_src + s_inv)}
+
+                    # 5) Hydrate docs referenced by settlements but not yet loaded
+                    need_ids = set()
+                    for s in setts.values():
+                        for k in ("payment_ops_id", "invoice_id"):
+                            if s.get(k) and s[k] not in matched_docs:
+                                need_ids.add(s[k])
+                    if need_ids:
+                        for d in _chunked_in("ops_documents", doc_cols, "id", need_ids):
+                            matched_docs[d["id"]] = d
+
+                    def _party_of(d):
+                        if d.get("to_entity_type") == "Stockist" and d.get("to_entity_id"):
+                            return _stockist_name(d["to_entity_id"])
+                        if d.get("from_entity_type") == "Stockist" and d.get("from_entity_id"):
+                            return _stockist_name(d["from_entity_id"])
+                        return d.get("to_entity_type") or d.get("from_entity_type") or ""
+
+                    # ---- A. Settlement trace table -------------------------
+                    st.subheader(f"🔗 Settlements found: {len(setts)}")
+                    if setts:
+                        srows = []
+                        for s in sorted(setts.values(), key=lambda x: x.get("created_at") or ""):
+                            src_d = matched_docs.get(s.get("payment_ops_id"), {})
+                            inv_d = matched_docs.get(s.get("invoice_id"), {})
+                            flags = []
+                            if inv_d.get("is_deleted"):
+                                flags.append("⚠️ invoice CANCELLED — amount stuck")
+                            if src_d.get("is_deleted"):
+                                flags.append("⚠️ source deleted")
+                            srows.append({
+                                "Source (Pay/CN/Freight)": src_d.get("ops_no", "?"),
+                                "Src Date": src_d.get("ops_date", ""),
+                                "→ Invoice": inv_d.get("ops_no", "?"),
+                                "Inv Ref": inv_d.get("reference_no") or "",
+                                "Inv Date": inv_d.get("ops_date", ""),
+                                "Party": _party_of(inv_d) or _party_of(src_d),
+                                "Amount ₹": f"{float(s['amount']):,.2f}",
+                                "Flags": " | ".join(flags)
+                            })
+                        st.dataframe(pd.DataFrame(srows), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No settlements involve the matched documents.")
+
+                    # ---- B. Party allocation health ------------------------
+                    for sid in matched_sids[:3]:
+                        st.divider()
+                        st.subheader(f"📊 {_stockist_name(sid)} — allocation health")
+
+                        # Payments: total vs allocated vs available
+                        pays = [d for d in matched_docs.values()
+                                if d.get("from_entity_id") == sid
+                                and str(d.get("ops_no", "")).upper().startswith("PAY-")]
+                        prow = []
+                        for p in sorted(pays, key=lambda x: x.get("ops_date") or ""):
+                            led = admin_supabase.table("financial_ledger")\
+                                .select("credit").eq("ops_document_id", p["id"]).execute().data or []
+                            tot = sum(float(x["credit"]) for x in led)
+                            aset = admin_supabase.table("payment_settlements")\
+                                .select("amount").eq("payment_ops_id", p["id"]).execute().data or []
+                            al = sum(float(a["amount"]) for a in aset)
+                            prow.append({"Payment": p["ops_no"], "Date": p.get("ops_date", ""),
+                                         "Total ₹": f"{tot:,.2f}",
+                                         "Allocated ₹": f"{al:,.2f}",
+                                         "Available ₹": f"{tot - al:,.2f}",
+                                         "Status": p.get("allocation_status") or "—"})
+                        if prow:
+                            st.markdown("**💰 Payments**")
+                            st.dataframe(pd.DataFrame(prow), use_container_width=True, hide_index=True)
+
+                        # Invoices — INCLUDING cancelled ones, flagged
+                        invs = [d for d in matched_docs.values()
+                                if d.get("to_entity_id") == sid
+                                and d.get("ops_type") == "STOCK_OUT"
+                                and (d.get("stock_as") or "") == "normal"]
+                        irow = []
+                        for inv in sorted(invs, key=lambda x: x.get("ops_date") or ""):
+                            tt = _true_invoice_total(inv["id"])
+                            settled = _invoice_settled(inv["id"])
+                            irow.append({"Invoice": inv["ops_no"],
+                                         "Ref": inv.get("reference_no") or "",
+                                         "Date": inv.get("ops_date", ""),
+                                         "Total ₹": f"{tt:,.2f}",
+                                         "Settled ₹": f"{settled:,.2f}",
+                                         "Due ₹": f"{max(0.0, tt - settled):,.2f}",
+                                         "Cancelled?": "⚠️ YES" if inv.get("is_deleted") else ""})
+                        if irow:
+                            st.markdown("**🧾 Invoices (cancelled ones flagged)**")
+                            st.dataframe(pd.DataFrame(irow), use_container_width=True, hide_index=True)
+
+                        # Opening Balance health
+                        ob_rows2 = admin_supabase.table("financial_ledger")\
+                            .select("ops_document_id, debit, credit")\
+                            .eq("party_id", sid).eq("narration", "Opening Balance")\
+                            .execute().data or []
+                        if ob_rows2:
+                            ob_orig = sum(float(r["debit"]) for r in ob_rows2)
+                            ob_cred = sum(float(r["credit"]) for r in ob_rows2)
+                            ob_ids2 = list({r["ops_document_id"] for r in ob_rows2})
+                            ob_paid2 = _invoice_settled(ob_ids2[0]) if ob_ids2 else 0.0
+                            st.markdown(
+                                f"**💼 Opening Balance** — Original ₹{ob_orig:,.2f} | "
+                                f"Credited ₹{ob_cred:,.2f} | Settled ₹{ob_paid2:,.2f} | "
+                                f"**Due ₹{max(0.0, ob_orig - ob_cred - ob_paid2):,.2f}**"
+                            )
 
     # =========================
     # PAYMENT REGISTER
