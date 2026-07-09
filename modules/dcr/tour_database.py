@@ -110,7 +110,11 @@ def create_tour_programme(user_id, tour_date, territory_ids, worked_with_type, d
         admin_supabase.table("tour_programmes").insert({
             "user_id": user_id,
             "tour_date": str(tour_date),
-            "territory_ids": json.dumps(territory_ids),
+            # FIXED: pass the plain Python list — supabase-py stores it as a
+            # real jsonb ARRAY. json.dumps() wrapped it in quotes (double-
+            # encoding), which is what filled the database with
+            # territory_ids like "[\"uuid\"]" instead of ["uuid"].
+            "territory_ids": territory_ids if territory_ids else [],
             "worked_with_type": worked_with_type,
             "notes": notes,
             "status": status,
@@ -163,7 +167,11 @@ def update_tour_programme(tour_id, tour_date, territory_ids, worked_with_type, d
     safe_exec(
         admin_supabase.table("tour_programmes").update({
             "tour_date": str(tour_date),
-            "territory_ids": json.dumps(territory_ids),
+            # FIXED: pass the plain Python list — supabase-py stores it as a
+            # real jsonb ARRAY. json.dumps() wrapped it in quotes (double-
+            # encoding), which is what filled the database with
+            # territory_ids like "[\"uuid\"]" instead of ["uuid"].
+            "territory_ids": territory_ids if territory_ids else [],
             "worked_with_type": worked_with_type,
             "notes": notes,
             "status": status,
