@@ -5408,20 +5408,47 @@ This action will:
             or (float(r.get("credit") or 0) != 0)
         ]
 
-        if not ledger_rows:
+        # -------------------------
+        # OPENING BALANCE — computed from ALL ledger rows BEFORE From Date
+        # (not just rows with narration "Opening Balance" inside the range).
+        # This makes the ledger correct for ANY From Date, e.g. 1st April
+        # when the synthetic OB entry is dated 1st March.
+        # Paginated: Supabase caps a single query at 1000 rows.
+        # -------------------------
+        opening_balance = 0.0
+        _ob_start = 0
+        while True:
+            _ob_batch = (
+                admin_supabase.table("financial_ledger")
+                .select("debit, credit")
+                .eq("party_id", party_id)
+                .lt("txn_date", from_date.isoformat())
+                .order("id")
+                .range(_ob_start, _ob_start + 999)
+                .execute()
+            ).data or []
+            for _r in _ob_batch:
+                opening_balance += float(_r.get("debit") or 0) - float(_r.get("credit") or 0)
+            if len(_ob_batch) < 1000:
+                break
+            _ob_start += 1000
+
+        if not ledger_rows and opening_balance == 0:
             st.info("No ledger entries found.")
             st.stop()
 
         # -------------------------
         # FETCH OPS DOCUMENTS (FOR INVOICE NO & TYPE)
         # -------------------------
-        ops_ids = list({row["ops_document_id"] for row in ledger_rows})
-        ops_docs = (
-            admin_supabase.table("ops_documents")
-            .select("id, ops_no, reference_no, stock_as, ops_type")
-            .in_("id", ops_ids)
-            .execute()
-        ).data
+        ops_ids = [i for i in {row["ops_document_id"] for row in ledger_rows} if i]
+        ops_docs = []
+        if ops_ids:
+            ops_docs = (
+                admin_supabase.table("ops_documents")
+                .select("id, ops_no, reference_no, stock_as, ops_type")
+                .in_("id", ops_ids)
+                .execute()
+            ).data or []
 
         ops_map = {o["id"]: o for o in ops_docs}
 
@@ -5444,12 +5471,12 @@ This action will:
                 payment_settlements[payment_ops_id] += float(s["amount"])
 
         # -------------------------
-        # OPENING BALANCE (SYNTHETIC)
+        # In-range synthetic OB rows (when From Date <= OB entry date) fold
+        # into the pre-period opening computed above, exactly as before.
         # -------------------------
-        opening_balance = 0
         for row in ledger_rows:
             if row["narration"] == "Opening Balance":
-                opening_balance += row["debit"] - row["credit"]
+                opening_balance += float(row["debit"] or 0) - float(row["credit"] or 0)
 
         display_rows = []
         running_balance = opening_balance
@@ -5458,7 +5485,7 @@ This action will:
         total_credit = 0.0
 
         display_rows.append({
-            "Date": "",
+            "Date": from_date.isoformat(),
             "Invoice No": "",
             "Type": "Opening Balance",
             "Invoice Amount (Debit)": "",
@@ -5629,65 +5656,121 @@ This action will:
         # -------------------------
         st.divider()
         
-        if st.button("📥 Download Ledger as PDF (Print)"):
-            # Create HTML for PDF
-            html_content = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                    h2 {{ text-align: center; }}
-                    table {{ width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }}
-                    th {{ background-color: #4CAF50; color: white; padding: 8px; text-align: left; border: 1px solid #ddd; }}
-                    td {{ padding: 8px; border: 1px solid #ddd; }}
-                    tr:nth-child(even) {{ background-color: #f2f2f2; }}
-                    .total-row {{ font-weight: bold; background-color: #e8f5e9; }}
-                </style>
-            </head>
-            <body>
-                <h2>Ledger Statement - {party_name}</h2>
-                <p>Period: {from_date} to {to_date}</p>
-                
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Invoice No</th>
-                            <th>Type</th>
-                            <th>Invoice Amount (Debit)</th>
-                            <th>Gross Receipt (Credit)</th>
-                            <th>Discount</th>
-                            <th>Net Receipt (Credit)</th>
-                            <th>Balance Due</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            """
-            
-            for idx, row in enumerate(display_rows):
-                row_class = 'total-row' if row['Type'] == 'TOTAL' else ''
-                html_content += f"""
-                        <tr class="{row_class}">
-                            <td>{row['Date']}</td>
-                            <td>{row['Invoice No']}</td>
-                            <td>{row['Type']}</td>
-                            <td>{row['Invoice Amount (Debit)']}</td>
-                            <td>{row['Gross Receipt/Payment (Credit)']}</td>
-                            <td>{row['Discount']}</td>
-                            <td>{row['Net Receipt/Payment (Credit)']}</td>
-                            <td>{row['Balance Due']}</td>
-                        </tr>
-                """
-            
-            html_content += """
-                    </tbody>
-                </table>
-            </body>
-            </html>
-            """
-            
-            st.components.v1.html(html_content, height=600, scrolling=True)
-            st.info("💡 Use your browser's Print function (Ctrl+P / Cmd+P) and select 'Save as PDF' to download")
+        if st.button("📥 Generate Ledger PDF"):
+            try:
+                from io import BytesIO
+                import re as _re
+                from reportlab.lib.pagesizes import A4, landscape
+                from reportlab.lib import colors
+                from reportlab.platypus import (SimpleDocTemplate, Table,
+                                                TableStyle, Paragraph, Spacer)
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.lib.enums import TA_RIGHT
+
+                _teal    = colors.HexColor("#00695C")
+                _teal50  = colors.HexColor("#E0F2F1")
+                _altRow  = colors.HexColor("#F0FAF7")
+                _openBg  = colors.HexColor("#E8F5E9")
+                _cbColor = (colors.HexColor("#C62828") if running_balance > 0
+                            else colors.HexColor("#2E7D32"))
+
+                _styles = getSampleStyleSheet()
+                _h1  = ParagraphStyle("h1", parent=_styles["Normal"], fontSize=15,
+                                      textColor=_teal, fontName="Helvetica-Bold")
+                _sub = ParagraphStyle("sub", parent=_styles["Normal"], fontSize=9,
+                                      textColor=colors.HexColor("#616161"))
+                _r9  = ParagraphStyle("r9", parent=_styles["Normal"], fontSize=9,
+                                      alignment=TA_RIGHT)
+                _r10b = ParagraphStyle("r10b", parent=_styles["Normal"], fontSize=10,
+                                       alignment=TA_RIGHT, fontName="Helvetica-Bold",
+                                       textColor=_cbColor)
+
+                _buf = BytesIO()
+                _doc = SimpleDocTemplate(_buf, pagesize=landscape(A4),
+                                         leftMargin=20, rightMargin=20,
+                                         topMargin=20, bottomMargin=28)
+
+                def _footer(canv, doc_):
+                    canv.saveState()
+                    canv.setFont("Helvetica", 7)
+                    canv.setFillColor(colors.HexColor("#9E9E9E"))
+                    canv.drawString(20, 14,
+                        f"Generated on {datetime.now().strftime('%d/%m/%Y')}")
+                    canv.drawRightString(landscape(A4)[0] - 20, 14,
+                        f"Page {doc_.page}")
+                    canv.restoreState()
+
+                _hdr = Table(
+                    [[Paragraph("Ivy Pharmaceuticals", _h1),
+                      Paragraph(f"<b>Party: {party_name}</b>", _r9)],
+                     [Paragraph("Ledger Statement", _sub),
+                      Paragraph(f"Period: {from_date.strftime('%d/%m/%Y')} "
+                                f"to {to_date.strftime('%d/%m/%Y')}", _r9)],
+                     ["", Paragraph(f"Closing Balance: {running_balance:,.2f}",
+                                    _r10b)]],
+                    colWidths=[_doc.width * 0.5, _doc.width * 0.5])
+                _hdr.setStyle(TableStyle([
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LINEBELOW", (0, -1), (-1, -1), 1.2, _teal),
+                    ("BOTTOMPADDING", (0, -1), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ]))
+
+                _cols = ["Date", "Invoice No", "Type", "Invoice Amount\n(Debit)",
+                         "Gross Receipt/\nPayment (Credit)", "Discount",
+                         "Net Receipt/\nPayment (Credit)", "Balance Due"]
+                _data = [_cols]
+                for _row in display_rows:
+                    _data.append([
+                        _row["Date"], _row["Invoice No"], _row["Type"],
+                        _row["Invoice Amount (Debit)"],
+                        _row["Gross Receipt/Payment (Credit)"],
+                        _row["Discount"],
+                        _row["Net Receipt/Payment (Credit)"],
+                        _row["Balance Due"]])
+                _data.append(["", "", "TOTAL",
+                              f"{total_invoice:,.2f}", f"{total_gross:,.2f}",
+                              f"{total_discount:,.2f}", f"{total_net:,.2f}",
+                              f"{running_balance:,.2f}"])
+
+                _w = _doc.width
+                _tbl = Table(_data, repeatRows=1, colWidths=[
+                    _w*0.10, _w*0.15, _w*0.11, _w*0.13, _w*0.14,
+                    _w*0.10, _w*0.14, _w*0.13])
+                _tstyle = [
+                    ("BACKGROUND", (0, 0), (-1, 0), _teal),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                    ("ALIGN", (3, 0), (-1, -1), "RIGHT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#CFD8DC")),
+                    ("BACKGROUND", (0, 1), (-1, 1), _openBg),
+                    ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+                    ("BACKGROUND", (0, -1), (-1, -1), _teal50),
+                    ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ]
+                for _i in range(2, len(_data) - 1):
+                    if _i % 2 == 0:
+                        _tstyle.append(("BACKGROUND", (0, _i), (-1, _i), _altRow))
+                _tbl.setStyle(TableStyle(_tstyle))
+
+                _doc.build([_hdr, Spacer(1, 8), _tbl],
+                           onFirstPage=_footer, onLaterPages=_footer)
+
+                _safe = _re.sub(r"[^A-Za-z0-9_-]", "_", party_name)
+                st.download_button(
+                    "⬇️ Download Ledger PDF",
+                    data=_buf.getvalue(),
+                    file_name=(f"ledger_{_safe}_{from_date.isoformat()}"
+                               f"_to_{to_date.isoformat()}.pdf"),
+                    mime="application/pdf",
+                    key="fin_ledger_pdf_dl"
+                )
+            except Exception as _e:
+                st.error(f"PDF generation failed: {_e}")
 
    
 
@@ -5775,7 +5858,56 @@ This action will:
                     .execute()
             ).data
 
-        if not stock_rows:
+        # -------------------------
+        # OPENING STOCK — sum of ALL stock rows BEFORE From Date, so the
+        # Closing Qty column is a TRUE running stock for any From Date.
+        # Paginated (1000-row cap) and rows of soft-deleted documents are
+        # excluded, mirroring the in-period filter below.
+        # -------------------------
+        def _stk_open_batch(_start):
+            _q = (admin_supabase.table("stock_ledger")
+                  .select("qty_in, qty_out, ops_document_id")
+                  .eq("product_id", product_id)
+                  .eq("entity_type", entity_type))
+            if entity_type == "Company":
+                _q = _q.is_("entity_id", None)
+            else:
+                _q = _q.eq("entity_id", entity_id)
+            return (_q.lt("txn_date", from_date.isoformat())
+                      .order("id")
+                      .range(_start, _start + 999)
+                      .execute()).data or []
+
+        _open_rows = []
+        _op_start = 0
+        while True:
+            _b = _stk_open_batch(_op_start)
+            _open_rows.extend(_b)
+            if len(_b) < 1000:
+                break
+            _op_start += 1000
+
+        _open_doc_ids = list({r.get("ops_document_id") for r in _open_rows
+                              if r.get("ops_document_id")})
+        _open_deleted = set()
+        for _i in range(0, len(_open_doc_ids), 100):
+            _drows = (admin_supabase.table("ops_documents")
+                      .select("id")
+                      .in_("id", _open_doc_ids[_i:_i + 100])
+                      .eq("is_deleted", True)
+                      .execute().data or [])
+            for _d in _drows:
+                _open_deleted.add(_d["id"])
+
+        opening_qty = sum(
+            float(r.get("qty_in") or 0) - float(r.get("qty_out") or 0)
+            for r in _open_rows
+            if r.get("ops_document_id") not in _open_deleted
+        )
+        if float(opening_qty).is_integer():
+            opening_qty = int(opening_qty)
+
+        if not stock_rows and opening_qty == 0:
             st.info("No stock ledger entries found.")
             st.stop()
 
@@ -5783,13 +5915,15 @@ This action will:
         # -------------------------
         # FETCH OPS DOCUMENTS (VOUCHER NO)
         # -------------------------
-        ops_ids = list({r["ops_document_id"] for r in stock_rows})
-        ops_docs = (
-            admin_supabase.table("ops_documents")
-            .select("id, ops_no, reference_no, is_deleted")  # CHANGED: include is_deleted
-            .in_("id", ops_ids)
-            .execute()
-        ).data
+        ops_ids = [i for i in {r["ops_document_id"] for r in stock_rows} if i]
+        ops_docs = []
+        if ops_ids:
+            ops_docs = (
+                admin_supabase.table("ops_documents")
+                .select("id, ops_no, reference_no, is_deleted")  # include is_deleted
+                .in_("id", ops_ids)
+                .execute()
+            ).data or []
 
         ops_map = {
             o["id"]: f'{o["ops_no"]}{(" / " + o["reference_no"]) if o["reference_no"] else ""}'
@@ -5804,7 +5938,7 @@ This action will:
         stock_rows = [r for r in stock_rows
                       if r.get("ops_document_id") not in _deleted_doc_ids]
 
-        if not stock_rows:
+        if not stock_rows and opening_qty == 0:
             st.info("No stock ledger entries found.")
             st.stop()
 
@@ -5824,7 +5958,17 @@ This action will:
             )
         )
 
-        running_qty = 0
+        running_qty = opening_qty
+
+        display_rows.append({
+            "Date": from_date.isoformat(),
+            "Voucher No": "",
+            "Product": product_name,
+            "In Qty": "",
+            "Out Qty": "",
+            "Closing Qty": opening_qty,
+            "Narration": "Opening Stock"
+        })
 
         for r in stock_rows:
             qty_in = r["qty_in"] or 0
