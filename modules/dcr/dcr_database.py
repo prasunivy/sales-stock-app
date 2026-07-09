@@ -129,7 +129,10 @@ def create_dcr_draft(user_id, report_date, area_type, territory_ids, created_by)
         "month": report_date.month,
         "year": report_date.year,
         "area_type": area_type,
-        "territory_ids": json.dumps(territory_ids) if territory_ids else None,
+        # FIXED: plain list, not json.dumps() — stores a real jsonb array
+        # instead of a double-encoded string. [] instead of None so the
+        # column is always a valid array.
+        "territory_ids": territory_ids if territory_ids else [],
         "status": "draft",
         "current_step": 1,
         "created_by": created_by
@@ -151,7 +154,8 @@ def save_dcr_header(dcr_id, area_type, territory_ids):
     """
     data = {
         "area_type": area_type,
-        "territory_ids": json.dumps(territory_ids) if territory_ids else None,
+        # FIXED: plain list, not json.dumps() (see create_dcr_draft).
+        "territory_ids": territory_ids if territory_ids else [],
         "current_step": 1,
         "updated_at": datetime.utcnow().isoformat()
     }
@@ -183,7 +187,9 @@ def save_doctor_visit(dcr_id, doctor_id, product_ids, visited_with):
     data = {
         "dcr_report_id": dcr_id,
         "doctor_id": doctor_id,
-        "product_ids": json.dumps(product_ids),
+        # FIXED: plain list, not json.dumps() — this was the original source
+        # of the double-encoded product_ids that caused the DCR UUID crash.
+        "product_ids": product_ids if product_ids else [],
         "visited_with": visited_with,
         "sequence_no": next_seq
     }
@@ -211,7 +217,8 @@ def save_chemist_visits(dcr_id, chemist_ids):
     Save chemist IDs to DCR (as JSONB array)
     """
     data = {
-        "chemist_ids": json.dumps(chemist_ids) if chemist_ids else None,
+        # FIXED: plain list, not json.dumps() (see create_dcr_draft).
+        "chemist_ids": chemist_ids if chemist_ids else [],
         "updated_at": datetime.utcnow().isoformat()
     }
     
