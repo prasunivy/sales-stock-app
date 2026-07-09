@@ -4577,7 +4577,8 @@ This action will:
             with st.spinner("Fetching opening stock..."):
                 open_rows_raw = _sl_fetch_all(lambda: (
                     admin_supabase.table("stock_ledger")
-                    .select("id, product_id, entity_id, qty_in, qty_out")
+                    .select("id, product_id, entity_id, qty_in, qty_out, "
+                            "narration, ops_document_id")
                     .eq("entity_type", cs_entity_type)
                     .lt("txn_date", cs_from.isoformat())
                     .order("id")
@@ -4588,13 +4589,42 @@ This action will:
             with st.spinner("Fetching period movements..."):
                 period_rows_raw = _sl_fetch_all(lambda: (
                     admin_supabase.table("stock_ledger")
-                    .select("id, product_id, entity_id, qty_in, qty_out")
+                    .select("id, product_id, entity_id, qty_in, qty_out, "
+                            "narration, ops_document_id")
                     .eq("entity_type", cs_entity_type)
                     .gte("txn_date", cs_from.isoformat())
                     .lte("txn_date", cs_to.isoformat())
                     .order("id")
                 ))
             period_rows = _filter_entity(period_rows_raw)
+
+            # ── Exclude cancelled documents AND their reversal rows ──────────
+            # so this report matches the Stock Ledger and Stock Statement.
+            def _cs_is_rev(nar):
+                n = nar or ""
+                return (n.startswith("Cancellation of ")
+                        or n.startswith("Reversal due to deletion of ")
+                        or n.startswith("Reversal of deleted"))
+
+            _cs_doc_ids = list({r.get("ops_document_id")
+                                for r in (open_rows + period_rows)
+                                if r.get("ops_document_id")})
+            _cs_deleted = set()
+            for _i in range(0, len(_cs_doc_ids), 200):
+                _drows = (admin_supabase.table("ops_documents")
+                          .select("id")
+                          .in_("id", _cs_doc_ids[_i:_i + 200])
+                          .eq("is_deleted", True)
+                          .execute().data or [])
+                for _d in _drows:
+                    _cs_deleted.add(_d["id"])
+
+            open_rows = [r for r in open_rows
+                         if r.get("ops_document_id") not in _cs_deleted
+                         and not _cs_is_rev(r.get("narration"))]
+            period_rows = [r for r in period_rows
+                           if r.get("ops_document_id") not in _cs_deleted
+                           and not _cs_is_rev(r.get("narration"))]
 
             if not open_rows and not period_rows:
                 st.info("No stock data found for the selected entity and date range.")
@@ -5001,19 +5031,26 @@ This action will:
                 _is_reversal = (
                     _nar.startswith("Cancellation of ")
                     or _nar.startswith("Reversal due to deletion of ")
-                    or _nar == "Reversal of deleted invoice"
+                    or _nar.startswith("Reversal of deleted")
                 )
                 _is_cancelled_orig = _did in _cancelled_doc_ids
                 _excluded_from_out = _is_reversal or _is_cancelled_orig
 
-                # Closing / net ALWAYS uses every row.
+                # CHANGED: closing / net now ALSO skip cancelled originals and
+                # their reversal rows. Both sides of a complete pair net to
+                # zero, but excluding both makes EVERY month's Closing identical
+                # to the Stock Ledger. Previously a January invoice cancelled in
+                # May dipped the Jan-Apr closings here while the Stock Ledger
+                # never showed the movement at all — the mismatch you saw.
+                if _excluded_from_out:
+                    continue
                 if t < _from_s:
                     _opening[pid] += qi - qo
                 elif t <= _to_s:
                     ym = t[:7]
                     _net[(pid, ym)] += qi - qo
                     # OUT columns skip cancelled originals AND their reversals.
-                    if qo > 0 and not _excluded_from_out:
+                    if qo > 0:
                         _outcat[(pid, ym, _ss_cat(_nar))] += qo
 
             _all_pids = set(_opening.keys()) | {k[0] for k in _net.keys()}
@@ -5121,9 +5158,17 @@ This action will:
                             f"#### 🔎 {_pname} — all movements up to "
                             f"{_ss_mlabel(_ym)} (closing breakdown)"
                         )
+                        _ss_canc = st.session_state.get("ss_cancelled_doc_ids", set())
+                        def _ss_is_rev(nar):
+                            n = nar or ""
+                            return (n.startswith("Cancellation of ")
+                                    or n.startswith("Reversal due to deletion of ")
+                                    or n.startswith("Reversal of deleted"))
                         _dets = [r for r in _rows_all
                                  if r.get("product_id") == _pid
-                                 and (r.get("txn_date") or "")[:10] <= _ym + "-31"]
+                                 and (r.get("txn_date") or "")[:10] <= _ym + "-31"
+                                 and r.get("ops_document_id") not in _ss_canc
+                                 and not _ss_is_rev(r.get("narration"))]
                     else:
                         st.markdown(
                             f"#### 🔎 {_pname} — {_cat} OUT in {_ss_mlabel(_ym)}"
@@ -5134,7 +5179,9 @@ This action will:
                                  and (r.get("txn_date") or "")[:7] == _ym
                                  and float(r.get("qty_out") or 0) > 0
                                  and _ss_cat(r.get("narration")) == _cat
-                                 and not (r.get("narration") or "").startswith("Cancellation of ")
+                                 and not ((r.get("narration") or "").startswith("Cancellation of ")
+                                          or (r.get("narration") or "").startswith("Reversal due to deletion of ")
+                                          or (r.get("narration") or "").startswith("Reversal of deleted"))
                                  and r.get("ops_document_id") not in _ss_canc]
 
                     if not _dets:
@@ -5866,7 +5913,7 @@ This action will:
         # -------------------------
         def _stk_open_batch(_start):
             _q = (admin_supabase.table("stock_ledger")
-                  .select("qty_in, qty_out, ops_document_id")
+                  .select("qty_in, qty_out, ops_document_id, narration")
                   .eq("product_id", product_id)
                   .eq("entity_type", entity_type))
             if entity_type == "Company":
@@ -5899,10 +5946,21 @@ This action will:
             for _d in _drows:
                 _open_deleted.add(_d["id"])
 
+        # A cancellation writes its reversal rows under a NEW (non-deleted)
+        # CANCEL-*/REV-* adjustment document, so filtering deleted docs alone
+        # removes only the ORIGINAL side of the pair and inflates the balance.
+        # Both sides must be excluded together.
+        def _is_rev_nar(nar):
+            n = nar or ""
+            return (n.startswith("Cancellation of ")
+                    or n.startswith("Reversal due to deletion of ")
+                    or n.startswith("Reversal of deleted"))
+
         opening_qty = sum(
             float(r.get("qty_in") or 0) - float(r.get("qty_out") or 0)
             for r in _open_rows
             if r.get("ops_document_id") not in _open_deleted
+            and not _is_rev_nar(r.get("narration"))
         )
         if float(opening_qty).is_integer():
             opening_qty = int(opening_qty)
@@ -5936,7 +5994,8 @@ This action will:
         # is_deleted column of its own, so we filter via the parent document.
         _deleted_doc_ids = {o["id"] for o in ops_docs if o.get("is_deleted")}
         stock_rows = [r for r in stock_rows
-                      if r.get("ops_document_id") not in _deleted_doc_ids]
+                      if r.get("ops_document_id") not in _deleted_doc_ids
+                      and not _is_rev_nar(r.get("narration"))]
 
         if not stock_rows and opening_qty == 0:
             st.info("No stock ledger entries found.")
