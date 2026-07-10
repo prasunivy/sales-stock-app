@@ -5241,6 +5241,20 @@ This action will:
                         d3.metric("Total Out", int(df_det["Qty Out"].sum()))
                         st.dataframe(df_det, use_container_width=True,
                                      hide_index=True)
+
+                        # ── CSV download of the drill-down details ────────────
+                        import re as _re
+                        _safe_p = _re.sub(r"[^A-Za-z0-9_-]", "_", _pname).strip("_")
+                        _safe_c = _re.sub(r"[^A-Za-z0-9_-]", "_", str(_cat))
+                        _csv_bytes = df_det.to_csv(index=False).encode("utf-8-sig")
+                        st.download_button(
+                            "📥 Download details as CSV",
+                            data=_csv_bytes,
+                            file_name=f"stock_detail_{_safe_p}_{_ym}_{_safe_c}.csv",
+                            mime="text/csv",
+                            key="ss_detail_csv_dl",
+                        )
+
                         st.caption(
                             "Press **Back to statement** above, then select "
                             "another row + column to inspect a different figure."
