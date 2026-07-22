@@ -2,8 +2,11 @@
 Ivy Pharmaceuticals — AI Business Assistant
 Powered by Claude API
 Place at: modules/ai/ai_assistant.py
+RAILWAY-READY: reads ANTHROPIC_API_KEY from environment variables first,
+falls back to Streamlit secrets (works on both Railway and Streamlit Cloud).
 """
 
+import os
 import streamlit as st
 import json
 import time
@@ -205,10 +208,13 @@ def _fetch_context(question, role, user_id):
 
 # ── Call Claude API ───────────────────────────────────────────────
 def _call_claude(question, context):
-    try:
-        api_key = st.secrets["ANTHROPIC_API_KEY"]
-    except Exception:
-        return "⚠️ ANTHROPIC_API_KEY not found in Streamlit secrets."
+    # Environment variable first (Railway), then Streamlit secrets (Streamlit Cloud)
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        try:
+            api_key = st.secrets["ANTHROPIC_API_KEY"]
+        except Exception:
+            return "⚠️ ANTHROPIC_API_KEY not found in environment variables or Streamlit secrets."
 
     user_msg = f"Data from database:\n{context}\n\nQuestion: {question}"
 
