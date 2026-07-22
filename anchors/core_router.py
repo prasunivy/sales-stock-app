@@ -879,11 +879,12 @@ def _dash_birthdays(territory_ids, today):
         st.markdown("**Upcoming**")
         for e in upcoming:
             bg = "#fff8e1" if e["sort"] == 0 else "#f0faf7"
+            spec_html = ("  <span style='color:#5a7268;font-size:0.78rem;'>(" + e['spec'] + ")</span>") if e['spec'] else ""
             st.markdown(
                 f"<div style='background:{bg};border-left:4px solid #1a6b5a;"
                 f"padding:0.55rem 0.8rem;border-radius:6px;margin-bottom:5px;font-size:0.87rem;'>"
                 f"{e['icon']} <b>{e['name']}</b>"
-                f"{'  <span style="color:#5a7268;font-size:0.78rem;">(' + e['spec'] + ')</span>' if e['spec'] else ''}"
+                f"{spec_html}"
                 f"<br><span style='color:#5a7268;'>{e['label']} — {e['date']} &nbsp;·&nbsp; {e['when']}</span>"
                 f"</div>",
                 unsafe_allow_html=True
@@ -892,11 +893,12 @@ def _dash_birthdays(territory_ids, today):
     if past:
         st.markdown("**Recent (past 7 days)**")
         for e in past:
+            spec_html = ("  <span style='color:#5a7268;font-size:0.78rem;'>(" + e['spec'] + ")</span>") if e['spec'] else ""
             st.markdown(
                 f"<div style='background:#f9f9f9;border-left:4px solid #9ab4ad;"
                 f"padding:0.55rem 0.8rem;border-radius:6px;margin-bottom:5px;font-size:0.87rem;'>"
                 f"{e['icon']} <b>{e['name']}</b>"
-                f"{'  <span style="color:#5a7268;font-size:0.78rem;">(' + e['spec'] + ')</span>' if e['spec'] else ''}"
+                f"{spec_html}"
                 f"<br><span style='color:#5a7268;'>{e['label']} — {e['date']} &nbsp;·&nbsp; {e['when']}</span>"
                 f"</div>",
                 unsafe_allow_html=True
