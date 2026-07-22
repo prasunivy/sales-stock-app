@@ -2,8 +2,14 @@
 fcm_helper.py
 Place this in the anchors/ folder.
 Sends Firebase Cloud Messaging push notifications to field staff.
+RAILWAY-READY: reads Firebase service account JSON from the
+FIREBASE_SERVICE_ACCOUNT environment variable first, falls back to
+Streamlit secrets [firebase] section (works on both Railway and
+Streamlit Cloud).
 """
 
+import os
+import json
 import requests
 import streamlit as st
 import google.auth
@@ -12,10 +18,30 @@ from google.oauth2 import service_account
 from anchors.supabase_client import admin_supabase
 
 
+def _get_firebase_config() -> dict:
+    """Load Firebase service-account config.
+    Priority: FIREBASE_SERVICE_ACCOUNT env var (JSON string) → st.secrets["firebase"].
+    Returns {} if neither is available."""
+    raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception as e:
+            st.error(f"FIREBASE_SERVICE_ACCOUNT is not valid JSON: {e}")
+            return {}
+    try:
+        return dict(st.secrets["firebase"])
+    except Exception:
+        return {}
+
+
 def _get_access_token() -> str:
     """Get OAuth2 access token for FCM V1 API using service account."""
     try:
-        firebase_config = dict(st.secrets["firebase"])
+        firebase_config = _get_firebase_config()
+        if not firebase_config:
+            st.error("FCM: Firebase credentials not configured.")
+            return ""
         credentials = service_account.Credentials.from_service_account_info(
             firebase_config,
             scopes=["https://www.googleapis.com/auth/firebase.messaging"],
@@ -62,7 +88,10 @@ def send_push_notification(
         if not access_token:
             return False
 
-        project_id = st.secrets["firebase"]["project_id"]
+        project_id = _get_firebase_config().get("project_id", "")
+        if not project_id:
+            st.error("FCM: Firebase project_id not found in configuration.")
+            return False
         url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
 
         payload = {
