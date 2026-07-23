@@ -66,6 +66,7 @@ def route_module():
         "📈 Reports",
     ]
     if role == "admin":
+        nav_options.append("🛰️ Let's Go")
         nav_options.append("🔔 Notifications")
         nav_options.append("🔧 Admin")
 
@@ -81,6 +82,7 @@ def route_module():
         "📋 POB":           "POB",
         "🛒 Order From Stockist": "OFS",
         "📈 Reports":       "REPORTS",
+        "🛰️ Let's Go":      "LETS_GO",
         "🔔 Notifications": "NOTIFICATIONS",
         "🔧 Admin":         "ADMIN",
     }
@@ -185,6 +187,10 @@ def route_module():
     elif active == "REPORTS":
         from modules.statement.statement_main import run_reports
         run_reports()
+
+    elif active == "LETS_GO":
+        from modules.lets_go.lets_go_report import run_lets_go_report
+        run_lets_go_report()
 
     elif active == "NOTIFICATIONS":
         from modules.statement.notifications import run_notifications
